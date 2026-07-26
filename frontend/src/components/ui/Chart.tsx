@@ -72,7 +72,13 @@ export interface ChartProps {
     domain?: readonly [number, number] | undefined;
     ticks?: readonly number[] | undefined;
   };
-  /** Série de contexte, en pointillé, sans graduation. */
+  /**
+   * Séries partageant l'unité et l'échelle de la principale — une tendance lissée, par
+   * exemple. Contrairement à `context`, elles se lisent **sur le même axe** : leur
+   * position relative a un sens, et les comparer à l'œil est légitime.
+   */
+  overlays?: readonly (Series & { dashed?: boolean | undefined })[] | undefined;
+  /** Série de contexte, à l'unité différente : en pointillé, sans graduation. */
   context?: Series | undefined;
   /** Bande inférieure, en barres. */
   band?: BandSeries | undefined;
@@ -92,7 +98,15 @@ function extent(values: readonly number[]): readonly [number, number] {
   return [Math.min(...values), Math.max(...values)];
 }
 
-export function Chart({ labels, primary, context, band, labelEvery = 6, note }: ChartProps) {
+export function Chart({
+  labels,
+  primary,
+  overlays = [],
+  context,
+  band,
+  labelEvery = 6,
+  note,
+}: ChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [active, setActive] = useState<number | null>(null);
@@ -139,6 +153,21 @@ export function Chart({ labels, primary, context, band, labelEvery = 6, note }: 
           {primary.label}
           {primary.unit !== undefined && ` (${primary.unit})`}
         </span>
+        {overlays.map((overlay) => (
+          <span className={styles.legendItem} key={overlay.label}>
+            <b
+              className={styles.legendLine}
+              style={
+                overlay.dashed
+                  ? {
+                      background: `repeating-linear-gradient(90deg, ${TONE_VAR[overlay.tone]} 0 4px, transparent 4px 7px)`,
+                    }
+                  : { background: TONE_VAR[overlay.tone] }
+              }
+            />
+            {overlay.label}
+          </span>
+        ))}
         {context && (
           <span className={styles.legendItem}>
             <b
@@ -231,6 +260,20 @@ export function Chart({ labels, primary, context, band, labelEvery = 6, note }: 
             />
           )}
 
+          {overlays.map((overlay) => (
+            <polyline
+              key={overlay.label}
+              points={overlay.values
+                .map((value, index) => `${x(index)},${yPrimary(value)}`)
+                .join(' ')}
+              fill="none"
+              stroke={TONE_VAR[overlay.tone]}
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+              {...(overlay.dashed ? { strokeDasharray: '4 3' } : {})}
+            />
+          ))}
+
           <polyline
             points={primaryPoints}
             fill="none"
@@ -321,6 +364,15 @@ export function Chart({ labels, primary, context, band, labelEvery = 6, note }: 
                 ▬
               </span>{' '}
               {formatPrimary(primary.values[active] ?? 0)} {primary.unit}
+              {overlays.map((overlay) => (
+                <span key={overlay.label}>
+                  <br />
+                  <span className={styles.tipMark} style={{ color: TONE_VAR[overlay.tone] }}>
+                    ▬
+                  </span>{' '}
+                  {(overlay.format ?? formatPrimary)(overlay.values[active] ?? 0)} {overlay.unit}
+                </span>
+              ))}
               {context && (
                 <>
                   <br />

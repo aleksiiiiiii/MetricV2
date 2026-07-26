@@ -25,6 +25,7 @@ laisse la version précédente intacte plutôt qu'un fichier tronqué.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -51,6 +52,18 @@ class Row[TModel: CsvModel]:
     index: int
     model: TModel
     raw: Mapping[str, str]
+
+    @property
+    def token(self) -> str:
+        """Empreinte du contenu de la ligne, pour la garde anti-conflit (`STO-05`).
+
+        L'API l'expose et l'exige en retour dans `If-Match` : c'est la façon HTTP de
+        dire « je modifie la ligne telle que je l'ai lue ». Plus simple à transporter
+        qu'un dictionnaire de valeurs attendues — en particulier sur un `DELETE`, qui
+        n'a pas de corps de requête naturel.
+        """
+        material = "\x1f".join(f"{key}={self.raw.get(key, '')}" for key in sorted(self.raw))
+        return hashlib.sha256(material.encode()).hexdigest()[:12]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +149,43 @@ class CsvRepository[TModel: CsvModel]:
         await self._save(raws, sheet)
 
         return Row(index=index, model=item, raw=raws[index])
+
+    async def replace_by_token(self, index: int, token: str, item: TModel) -> Row[TModel]:
+        """Remplace une ligne identifiée par sa position et garantie par son jeton.
+
+        Une seule lecture fraîche au lieu de deux : le jeton **est** la garde, il n'y a
+        pas à comparer les valeurs une seconde fois.
+        """
+        sheet = await self.load(fresh=True)
+        self._guard_token(sheet, index, token)
+
+        raws = [dict(row.raw) for row in sheet.rows]
+        raws[index] = {**raws[index], **item.to_csv()}
+        await self._save(raws, sheet)
+
+        return Row(index=index, model=item, raw=raws[index])
+
+    async def delete_by_token(self, index: int, token: str) -> None:
+        """Supprime une ligne identifiée par sa position et garantie par son jeton."""
+        sheet = await self.load(fresh=True)
+        self._guard_token(sheet, index, token)
+
+        raws = [dict(row.raw) for i, row in enumerate(sheet.rows) if i != index]
+        await self._save(raws, sheet)
+
+    def _guard_token(self, sheet: Sheet[TModel], index: int, token: str) -> None:
+        if not 0 <= index < len(sheet.rows):
+            raise StorageConflictError(
+                detail=f"{self._path} : ligne {index} absente ({len(sheet.rows)} lignes)"
+            )
+        current = sheet.rows[index]
+        if current.token != token:
+            raise StorageConflictError(
+                detail=(
+                    f"{self._path}, ligne {index + 2} : jeton « {token} » périmé, "
+                    f"la ligne vaut désormais « {current.token} »"
+                )
+            )
 
     async def delete(self, index: int, expected: Mapping[str, str] | CsvModel) -> None:
         """Supprime une ligne, sous garde anti-conflit (`STO-05`)."""

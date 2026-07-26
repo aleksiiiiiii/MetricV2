@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router';
 
 import { RequireAuth } from '@/app/RequireAuth';
 import { Shell } from '@/app/Shell';
+import { Body } from '@/routes/Body';
 import { Dashboard } from '@/routes/Dashboard';
 import { KitchenSink } from '@/routes/KitchenSink';
 import { Login } from '@/routes/Login';
@@ -31,6 +32,7 @@ export function App() {
         }
       >
         <Route path="/" element={<Dashboard />} />
+        <Route path="/corps" element={<Body />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

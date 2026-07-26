@@ -25,7 +25,7 @@ def configured(monkeypatch: pytest.MonkeyPatch, dav: FakeWebDav) -> None:
         "get_settings",
         lambda: Settings(
             _env_file=None,
-            nextcloud_url="http://nextcloud.test",
+            nextcloud_url="http://nextcloud.test/remote.php/dav/files/aleksi",
             nextcloud_username="aleksi",
             nextcloud_password="secret",
             nextcloud_root="Metric",
@@ -97,3 +97,30 @@ async def test_a_server_without_etag_is_flagged_as_degraded(
 
     assert code == 0, "dégradé n'est pas cassé : le script continue"
     assert "garde anti-conflit sera dégradée" in out
+
+
+async def test_an_url_without_the_dav_endpoint_is_named_precisely(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Le cas rencontré en vrai : NEXTCLOUD_URL pointait sur la racine du site.
+
+    Le serveur répondait « ressource introuvable », ce qui n'aide en rien. Le script doit
+    nommer la cause et donner la ligne à coller.
+    """
+    monkeypatch.setattr(
+        check_storage,
+        "get_settings",
+        lambda: Settings(
+            _env_file=None,
+            nextcloud_url="https://nextcloud.exemple.fr",
+            nextcloud_username="MetricsApp",
+            nextcloud_password="secret",
+        ),
+    )
+
+    code = await check_storage.run()
+    out = capsys.readouterr().out
+
+    assert code == 2
+    assert "point d'accès WebDAV" in out
+    assert "https://nextcloud.exemple.fr/remote.php/dav/files/MetricsApp" in out

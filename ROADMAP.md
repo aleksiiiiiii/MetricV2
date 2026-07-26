@@ -301,21 +301,31 @@ sans écran blanc.
 **Objectif** : première tranche verticale complète. Elle fixe le patron que les
 domaines suivants recopieront.
 
-- [ ] `L04-01` `body/weight.csv` + `body/measurements.csv` : schémas, migration, repositories
-- [ ] `L04-02` Enregistrer une pesée : poids, date non future, note (`BODY-01`)
-- [ ] `L04-03` Modifier / supprimer une pesée sous garde `409` (`BODY-02`)
-- [ ] `L04-04` Indicateurs : dernier poids, variation sur 8 pesées, série, écart à l'objectif (`BODY-03`)
-- [ ] `L04-05` Série temporelle ordonnée + min / max / amplitude (`BODY-04`)
-- [ ] `L04-06` Tendance lissée 7 jours, calculée serveur (`BODY-05`)
-- [ ] `L04-07` Historique paginé, entrées identifiables (`BODY-06`)
-- [ ] `L04-08` Mensurations : 6 mesures optionnelles, au moins une requise (`BODY-07`, `BODY-10` masse grasse incluse dès maintenant)
-- [ ] `L04-09` Indicateurs de mensurations : dernière valeur, delta, sens (`BODY-08`)
-- [ ] `L04-10` Historique + édition des mensurations (`BODY-09`)
-- [ ] `L04-11` UI : écran Corps — stat cards, courbe de poids + tendance, formulaire de saisie rapide, tableau d'historique éditable
-- [ ] `L04-12` Tests bout en bout Playwright : saisir → corriger → supprimer une pesée
+- [x] `L04-01` `body/weight.csv` + `body/measurements.csv` : modèles, dépôts typés, chemins déclarés
+- [x] `L04-02` Enregistrer une pesée : poids borné, date non future **en heure locale**, note (`BODY-01`)
+- [x] `L04-03` Modifier / supprimer sous garde `409` par **jeton de ligne en `If-Match`** (`BODY-02`, `STO-05`)
+- [x] `L04-04` Indicateurs : dernier poids, variation sur 8 pesées, écart à l'objectif lu dans les réglages (`BODY-03`)
+- [x] `L04-05` Série chronologique même si le fichier est écrit dans le désordre, + min / max / amplitude (`BODY-04`)
+- [x] `L04-06` Tendance lissée 7 jours, **fenêtre calendaire** et non un nombre de points (`BODY-05`)
+- [x] `L04-07` Historique paginé, du plus récent au plus ancien, chaque entrée identifiable (`BODY-06`)
+- [x] `L04-08` Mensurations : 6 mesures optionnelles, au moins une requise, masse grasse comprise (`BODY-07`, `BODY-10`)
+- [x] `L04-09` Indicateurs de mensurations : **chaque mesure a son propre historique** (`BODY-08`)
+- [x] `L04-10` Historique et édition des mensurations (`BODY-09`)
+- [x] `L04-11` UI : écran Corps — 4 chiffres clés, courbe poids + tendance superposée, saisie, historique éditable, panneau mensurations
+- [x] `L04-12` 32 tests backend + 12 tests d'écran : saisir → corriger → supprimer, jeton compris
 
-**DoD** — le parcours complet fonctionne sur un vrai Nextcloud ; le CSV produit est
-lisible dans un tableur ; le patron de domaine est écrit dans `docs/patron-domaine.md`.
+**DoD** — `make check` vert (169 tests backend, 49 frontend) ; le CSV produit est lisible
+dans un tableur, BOM compris ; le patron est écrit dans
+[`docs/patron-domaine.md`](docs/patron-domaine.md). **Stockage vérifié contre le vrai
+Nextcloud** : écriture, relecture identique et `304` honoré — le cache et la garde
+anti-conflit tiennent sur l'instance réelle.
+
+**Deux ajouts au socle, faits ici parce que les cinq domaines suivants en dépendent :**
+
+| Ajout | Pourquoi |
+|---|---|
+| **Jeton de ligne** (`Row.token`, `replace_by_token`, `delete_by_token`) | `STO-05` demande d'annoncer les valeurs attendues. Un dictionnaire ne se transporte pas sur un `DELETE`, qui n'a pas de corps naturel. L'empreinte de contenu en `If-Match` dit la même chose en HTTP idiomatique |
+| **Lecteur de réglages** (`app/domains/app_settings/`) | `BODY-03` a besoin du poids cible. Le coder en dur aurait créé une constante à déloger au L08 |
 
 ---
 
@@ -688,7 +698,7 @@ changement de spec, pas comme une question ouverte.
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
-| II — Domaines | L04 → L08 | `v0.9.0` | ▣ suivant — L04 (Corps), tranche verticale de référence |
+| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04 livré (`v0.5.0`)**, L05 (Activité) suivant |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |

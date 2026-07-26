@@ -26,6 +26,23 @@ KO = "\033[31m✗\033[0m"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
+#: Chemin du point d'accès WebDAV de Nextcloud. `NEXTCLOUD_URL` doit le contenir :
+#: pointer sur la racine du site donne un 404 sur la moindre opération, et le message
+#: brut du serveur — « ressource introuvable » — n'aide en rien à comprendre pourquoi.
+DAV_ENDPOINT = "/remote.php/dav/files/"
+
+
+def diagnose_url(url: str, username: str) -> str | None:
+    """Aide ciblée si l'URL n'a pas la forme d'un point d'accès WebDAV."""
+    if DAV_ENDPOINT in url:
+        return None
+    base = url.rstrip("/")
+    who = username or "<utilisateur>"
+    return (
+        "NEXTCLOUD_URL pointe sur la racine du site, pas sur le point d'accès WebDAV.\n"
+        f"    Remplace-la par :\n\n    NEXTCLOUD_URL={base}{DAV_ENDPOINT}{who}\n"
+    )
+
 
 def step(label: str, detail: str = "", *, ok: bool = True) -> None:
     suffix = f" {DIM}{detail}{RESET}" if detail else ""
@@ -48,6 +65,12 @@ async def run() -> int:
         return 2
 
     step("Configuration", f"{settings.nextcloud_url} → /{settings.nextcloud_root}")
+
+    hint = diagnose_url(settings.nextcloud_url, settings.nextcloud_username)
+    if hint:
+        step("Forme de l'URL", "point d'accès WebDAV absent", ok=False)
+        print(f"\n  {hint}")
+        return 2
 
     client = WebDavClient(
         base_url=settings.nextcloud_url,
@@ -103,6 +126,9 @@ async def run() -> int:
     except StorageError as exc:
         step(type(exc).__name__, str(exc), ok=False)
         print(f"\n  {exc.message}\n")
+        hint = diagnose_url(settings.nextcloud_url, settings.nextcloud_username)
+        if hint:
+            print(f"  {hint}")
         return 1
     finally:
         await client.aclose()

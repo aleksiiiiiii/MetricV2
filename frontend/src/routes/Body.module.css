@@ -1,0 +1,130 @@
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: var(--s4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s3);
+}
+
+.error {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--recover);
+  border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+
+.note {
+  color: var(--ink-mid);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.iconButton {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink-low);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  transition: var(--t);
+}
+
+.iconButton:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.danger:hover {
+  color: var(--recover);
+  border-color: rgb(var(--recover-rgb) / 0.4);
+}
+
+.indicators {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+
+.indicator {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 12px;
+}
+
+.indicatorLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+.indicatorValue {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+  line-height: 1;
+}
+
+.indicatorUnit {
+  font-size: 11px;
+  color: var(--ink-low);
+  margin-left: 2px;
+}
+
+.indicatorDelta {
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-top: 6px;
+  color: var(--ink-mid);
+}
+
+.up {
+  color: var(--load);
+}
+
+.down {
+  color: var(--effort);
+}
+
+.flat {
+  color: var(--ink-low);
+}
+
+.empty {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 12px;
+}

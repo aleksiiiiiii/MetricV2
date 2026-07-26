@@ -3,6 +3,48 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.5.0] — 2026-07-26
+
+Lot **L04 — Corps : poids et mensurations**. Première tranche verticale complète, et
+patron des cinq domaines suivants. 169 tests backend, 49 frontend.
+
+### Ajouté
+
+- **Pesées** (`BODY-01` → `BODY-06`) — saisie bornée, correction et suppression sous
+  garde, indicateurs, série chronologique, tendance lissée et historique paginé, le tout
+  en **une seule requête** par écran.
+- **Mensurations** (`BODY-07` → `BODY-10`) — six mesures facultatives dont la masse
+  grasse, au moins une requise. Chaque mesure garde son propre historique : « le relevé
+  précédent » d'un tour de bras n'est pas forcément la ligne d'avant.
+- **Écran Corps** — quatre chiffres clés, courbe de poids avec tendance superposée sur le
+  même axe, saisie, historique éditable, panneau mensurations. Aucune valeur inventée :
+  sur historique vide, l'écran dit ce que coûte le prochain geste.
+- **Jeton de ligne** — chaque entrée porte l'empreinte de son contenu ; modifier ou
+  supprimer exige de la renvoyer en `If-Match` (`STO-05`). Un en-tête absent est un
+  conflit, jamais une permission — sinon la garde se contournerait en l'omettant.
+- **Lecteur de réglages** — `settings/settings.csv` avec les défauts de l'annexe, pour
+  que l'écart au poids cible ne soit pas une constante codée en dur.
+- **Superposition dans `Chart`** — une série partageant l'unité de la principale se trace
+  sur le **même axe**, contrairement à la série de contexte.
+- [`docs/patron-domaine.md`](docs/patron-domaine.md) — les quatre fichiers, les deux
+  pièges de calcul rencontrés, les huit familles de tests, et une liste de reprise.
+
+### Corrigé
+
+- **`test_every_data_route_requires_a_token` ne vérifiait rien.** Il parcourait
+  `app.routes`, où FastAPI n'aplatit pas les routeurs inclus : la seule route visible
+  était la santé, justement exemptée. Il lit désormais le schéma OpenAPI publié, et un
+  second test interroge réellement chaque lecture sans jeton.
+- **`check-storage` ne diagnostiquait pas l'erreur de configuration la plus probable.**
+  Une `NEXTCLOUD_URL` pointant sur la racine du site donne un « ressource introuvable »
+  incompréhensible ; le script nomme la cause et donne la ligne à coller.
+
+### Vérifié
+
+- Stockage éprouvé contre le **vrai Nextcloud** : écriture, relecture identique, `304`
+  honoré sur lecture conditionnelle, nettoyage. Le point resté ouvert depuis le lot L01
+  est fermé.
+
 ## [0.4.0] — 2026-07-26
 
 Lot **L03 — Design system et coquille applicative**. Le jalon I est bouclé : l'application

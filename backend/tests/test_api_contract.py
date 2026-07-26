@@ -7,13 +7,11 @@ from typing import Any
 
 import pytest
 from fastapi import APIRouter, FastAPI
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from app.config import Settings
 from app.core import exceptions
-from app.core.deps import require_auth
 from app.core.exceptions import MetricError
 from app.core.validation import Note, PastDate, Reps, VolumeMl, WeightKg
 from app.domains.api import PROTECTED_PREFIXES
@@ -31,40 +29,51 @@ PUBLIC_PATHS = {
 }
 
 
-def dependency_calls(route: APIRoute) -> set[Any]:
-    """Toutes les fonctions de dépendance d'une route, y compris imbriquées."""
-    found: set[Any] = set()
-    pending = list(route.dependant.dependencies)
-    while pending:
-        dependant = pending.pop()
-        if dependant.call is not None:
-            found.add(dependant.call)
-        pending.extend(dependant.dependencies)
-    return found
+def operations(spec: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
+    """`(méthode, chemin, opération)` de tout ce que l'API publie."""
+    return [
+        (method.upper(), path, operation)
+        for path, methods in spec["paths"].items()
+        for method, operation in methods.items()
+    ]
 
 
 # ── Découpage et protection ───────────────────────────
 
 
-def test_every_data_route_requires_a_token(settings: Settings) -> None:
-    """Garde structurelle de `AUTH-05`.
+def test_every_data_route_requires_a_token(client: TestClient) -> None:
+    """Garde structurelle de `AUTH-05`, lue dans le **contrat publié**.
 
-    Ce test grandit tout seul : chaque route ajoutée par un lot ultérieur est vérifiée
-    ici sans qu'on ait à y penser. C'est le but de porter la protection sur le groupe de
-    routeurs plutôt que route par route.
+    Première version de ce test : elle parcourait `app.routes` et cherchait la dépendance
+    d'authentification. Elle ne vérifiait rien — FastAPI n'y aplatit pas les routeurs
+    inclus, si bien que la seule route visible était la santé, justement exemptée.
+    Le schéma OpenAPI, lui, énumère toutes les opérations et porte leur exigence de
+    sécurité : il ne peut pas se vider en silence.
     """
-    app = create_app(settings)
+    spec = client.get("/api/openapi.json").json()
+    published = operations(spec)
+
+    assert len(published) > 5, "le schéma doit contenir toutes les opérations"
 
     unprotected = [
-        route.path
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        and route.path.startswith("/api")
-        and route.path not in PUBLIC_PATHS
-        and require_auth not in dependency_calls(route)
+        f"{method} {path}"
+        for method, path, operation in published
+        if path not in PUBLIC_PATHS and not operation.get("security")
     ]
-
     assert unprotected == []
+
+
+def test_every_data_route_actually_answers_401(client: TestClient) -> None:
+    """Deuxième filet : le contrat pourrait dire vrai et le code faire autrement.
+
+    On interroge réellement chaque lecture publiée sans jeton.
+    """
+    spec = client.get("/api/openapi.json").json()
+
+    for method, path, _ in operations(spec):
+        if method != "GET" or path in PUBLIC_PATHS or "{" in path:
+            continue
+        assert client.get(path).status_code == 401, path
 
 
 def test_login_and_health_stay_reachable_without_a_token(client: TestClient) -> None:

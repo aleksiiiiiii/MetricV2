@@ -139,6 +139,8 @@ export interface RequestOptions {
   /** Requête de connexion : un `401` y est un refus d'identifiants, pas une expiration. */
   anonymous?: boolean;
   query?: Record<string, string | number | undefined>;
+  /** En-têtes additionnels — `If-Match` pour la garde anti-conflit (`STO-05`). */
+  headers?: Record<string, string>;
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -174,7 +176,7 @@ async function readError(response: Response): Promise<ApiError> {
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, signal, anonymous = false, query } = options;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   const token = anonymous ? null : tokenStore.read();
