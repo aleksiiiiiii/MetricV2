@@ -70,4 +70,5 @@ main — `make console status`.
 
 ## État
 
-Voir [ROADMAP.md](ROADMAP.md#5-suivi). Version courante : `v0.1.0` (lot L00 — fondations).
+Voir [ROADMAP.md](ROADMAP.md#5-suivi). Version courante : `v0.4.0` — jalon I (socle)
+terminé : stockage, API, authentification, design system.
