@@ -29,7 +29,7 @@ const SPACES = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const;
 export function KitchenSink() {
   return (
     <main className="wrap">
-      <p className="eyebrow">Référence visuelle · tokens · v0.1.0</p>
+      <p className="eyebrow">Référence visuelle · tokens</p>
       <h1 style={{ marginTop: 10 }}>Charte</h1>
       <p className="lede" style={{ marginTop: 14 }}>
         Reprise fidèle de <code>GuidelinesUI.html</code>. Cette page est le test visuel du projet :

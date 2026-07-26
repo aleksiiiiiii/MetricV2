@@ -39,7 +39,7 @@ export function Home() {
 
   return (
     <main className="wrap">
-      <p className="eyebrow">Fondations · lot L00 · v0.1.0</p>
+      <p className="eyebrow">Socle · lot L01 · stockage</p>
       <h1 style={{ marginTop: 10 }}>Metric</h1>
       <p className="lede" style={{ marginTop: 14 }}>
         Le journal instrumenté d'une vie. Chaque jour laisse une trace : une course, un sommeil, une
