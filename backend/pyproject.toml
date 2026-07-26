@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3",
+  "pytest-asyncio>=0.24",
   "pytest-cov>=6.0",
   "ruff>=0.8",
   "mypy>=1.13",
@@ -71,3 +72,6 @@ disallow_untyped_defs = false
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
 filterwarnings = ["error"]
+# La couche stockage est asynchrone de bout en bout : `async def test_…` sans décorateur.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

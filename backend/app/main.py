@@ -1,12 +1,14 @@
 """Point d'entrée de l'API Metric.
 
 Le découpage en routeurs par domaine (`API-01`) est mis en place au lot L02 ; ce module
-ne porte pour l'instant que l'assemblage de l'application et la route de santé
-(`API-04`), qui reste publique (`AUTH-05`).
+porte l'assemblage de l'application, le cycle de vie de la couche stockage, et la route
+de santé (`API-04`), qui reste publique (`AUTH-05`).
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Literal
 
@@ -16,6 +18,8 @@ from pydantic import BaseModel, Field
 
 from app import __version__
 from app.config import Settings, get_settings
+from app.core.errors import register_error_handlers
+from app.storage.provider import StorageProvider
 
 
 class HealthResponse(BaseModel):
@@ -34,6 +38,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Construit l'application. Paramétrable pour permettre des tests isolés."""
     settings = settings or get_settings()
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        """Ouvre et referme le pool de connexions Nextcloud (`STO-08`).
+
+        Le client WebDAV doit naître dans la boucle d'événements, et ses connexions
+        keep-alive être relâchées à l'arrêt.
+        """
+        provider = StorageProvider(settings)
+        await provider.start()
+        app.state.storage = provider
+        try:
+            yield
+        finally:
+            await provider.stop()
+
     app = FastAPI(
         title="Metric",
         version=__version__,
@@ -43,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
 
     app.add_middleware(
@@ -52,6 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    register_error_handlers(app)
 
     @app.get(
         "/api/health",

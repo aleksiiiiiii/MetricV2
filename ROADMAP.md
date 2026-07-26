@@ -178,22 +178,37 @@ conséquence) :
 **Objectif** : lire et écrire des CSV sur Nextcloud de façon sûre. C'est la pièce la
 plus risquée du projet : tout le reste s'appuie dessus.
 
-- [ ] `L01-01` Client WebDAV : GET / PUT / PROPFIND / MKCOL, pool keep-alive, identifiants côté serveur uniquement (`STO-01`)
-- [ ] `L01-02` Retry sur erreur transitoire et `429`, `Retry-After` honoré, backoff plafonné (`STO-08`)
-- [ ] `L01-03` Erreurs de stockage traduites en `502`/`503` + message français + code machine (`STO-09`, `API-07`)
-- [ ] `L01-04` `CsvRepository` génériqué : en-tête explicite, un fichier par domaine, lecture typée (`STO-02`)
-- [ ] `L01-05` Écriture en ajout, sans réécriture du fichier (`STO-03`)
-- [ ] `L01-06` Migration automatique d'en-tête : remappage par nom de colonne, colonnes manquantes vides (`STO-04`)
-- [ ] `L01-07` Garde anti-conflit : valeurs attendues de la ligne visée, `409` si divergence (`STO-05`)
-- [ ] `L01-08` Réécriture complète pour édition/suppression : temporaire + `MOVE` atomique, sous garde `L01-07`
-- [ ] `L01-09` Cache mémoire par fichier, TTL court, invalidation à l'écriture **et sur changement d'ETag/mtime distant** (`STO-06`)
-- [ ] `L01-10` Fichiers binaires : arborescence datée, création des dossiers parents (`STO-07`)
-- [ ] `L01-11` Script `check_storage.py` : écrit puis relit une ligne de test (`STO-11`)
-- [ ] `L01-12` Tests contre un serveur WebDAV factice : conflit, coupure en cours d'écriture, en-tête migré, `429`
+- [x] `L01-01` Client WebDAV : GET / PUT / DELETE / MKCOL / PROPFIND, pool keep-alive borné, identifiants côté serveur uniquement (`STO-01`)
+- [x] `L01-02` Retry sur erreur transitoire, `429` et verrou `423`, `Retry-After` honoré (secondes ou date HTTP), backoff exponentiel plafonné avec gigue (`STO-08`)
+- [x] `L01-03` Erreurs de stockage traduites en `502`/`503`/`409`/`404` + message français + code machine ; le détail technique reste dans les journaux (`STO-09`, `API-07`)
+- [x] `L01-04` `CsvRepository` génériqué (PEP 695) : en-tête explicite, un fichier par domaine, lecture typée par modèle Pydantic, ligne fautive signalée par numéro et colonne (`STO-02`)
+- [x] `L01-05` Ajout en fin de fichier, sans jamais réécrire une ligne existante — voir la note sur le mécanisme ci-dessous (`STO-03`)
+- [x] `L01-06` Migration automatique d'en-tête : remappage par nom, colonne nouvelle → défaut du modèle, **colonne inconnue de l'app préservée** (`STO-04`)
+- [x] `L01-07` Garde anti-conflit : valeurs attendues de la ligne visée, `409` si divergence, message disant ce qui a été trouvé (`STO-05`)
+- [x] `L01-08` Écriture sous `If-Match` sur l'ETag du fichier — voir la note ci-dessous
+- [x] `L01-09` Cache mémoire par fichier, TTL 30 s, invalidation à l'écriture **et revalidation conditionnelle par ETag** au-delà du TTL (`STO-06`, **D8**)
+- [x] `L01-10` Fichiers binaires : arborescence datée, création des parents une seule fois, hors du cache CSV (`STO-07`)
+- [x] `L01-11` Script `check_storage.py` : écrit, relit, vérifie la revalidation conditionnelle, nettoie (`STO-11`)
+- [x] `L01-12` Faux serveur WebDAV ASGI en mémoire + 79 tests : conflit, écriture interrompue, en-tête migré, `429`, `423`, coupure réseau, serveur sans ETag
 
-**DoD** — `check_storage.py` vert sur un vrai Nextcloud ; une écriture interrompue ne
-corrompt aucun fichier ; deux écritures concurrentes sur la même ligne produisent
-un `409` et non un écrasement.
+**DoD** — `make check` vert (79 tests backend, `mypy --strict`, ruff) ; couverture de la
+couche stockage à **95 %** ; une écriture interrompue laisse le fichier précédent intact ;
+deux écritures concurrentes sur la même ligne produisent un `409` et non un écrasement ;
+`check_storage.py` diagnostique une configuration absente, de mauvais identifiants et un
+serveur sans ETag sans jamais lever de traceback. **Reste à faire : exécuter
+`make check-storage` contre le vrai Nextcloud** — non vérifiable sans identifiants.
+
+**Deux écarts assumés par rapport au libellé des tâches :**
+
+| Prévu | Livré | Pourquoi |
+|---|---|---|
+| `L01-05` « écriture en ajout, sans réécriture du fichier » | `PUT` complet du fichier, en n'ajoutant qu'en fin | WebDAV n'a pas de verbe d'ajout et l'extension de mise à jour partielle de Sabre n'est pas active sur une Nextcloud standard. L'**invariant** est tenu (aucune ligne existante réécrite) et la propriété recherchée aussi : le `PUT` de Sabre écrit dans un temporaire puis renomme, donc une interruption laisse la version précédente intacte |
+| `L01-08` « temporaire + `MOVE` atomique » | `PUT` unique sous `If-Match` | Le temporaire + `MOVE` coûte deux requêtes et **perd la garde `If-Match`**, donc protège moins bien contre le vrai risque de `STO-05` — l'écriture concurrente depuis un autre appareil. L'atomicité côté serveur est déjà assurée par Sabre |
+
+Deux comportements ont par ailleurs été ajoutés au-delà de la spec, parce que leur
+absence aurait été un défaut : un ajout concurrent est **rejoué automatiquement** (les
+ajouts commutent, un `409` obligerait à ressaisir), et une colonne ajoutée à la main dans
+un tableur **survit** à une écriture de l'app.
 
 > **Décision technique** : `STO-03` (append) et l'édition de lignes (`BODY-02`, `ACT-04`,
 > config des pistes) sont inconciliables tels quels. Règle retenue : **append pour toute
@@ -646,7 +661,7 @@ changement de spec, pas comme une question ouverte.
 
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
-| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours — **L00 livré (`v0.1.0`)**, L01 suivant |
+| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours — **L00 (`v0.1.0`) et L01 (`v0.2.0`) livrés**, L02 suivant |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☐ à faire |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |

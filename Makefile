@@ -6,7 +6,7 @@ UVICORN := backend/.venv/bin/uvicorn
 
 .DEFAULT_GOAL := help
 .PHONY: help setup setup-api setup-web dev dev-api dev-web check check-api check-web \
-        test test-api test-web fmt fmt-check build fonts clean
+        test test-api test-web fmt fmt-check build fonts check-storage clean
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -72,6 +72,9 @@ build: ## Build de production du frontend
 
 fonts: ## Retélécharge les polices locales
 	cd frontend && npm run fonts
+
+check-storage: ## Diagnostique la configuration Nextcloud (STO-11)
+	cd backend && .venv/bin/python -m app.scripts.check_storage
 
 clean: ## Supprime les artefacts de build et les caches
 	rm -rf frontend/dist frontend/node_modules/.vite
