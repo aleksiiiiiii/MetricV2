@@ -1,0 +1,186 @@
+/* Grille d'assiduité. Reprise de GuidelinesUI.html section 05, étendue aux quatre états
+   de `HEAT-05` — la charte n'en connaissait qu'un gradient. */
+
+.scroll {
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, var(--heat-cell));
+  gap: var(--heat-gap);
+  width: max-content;
+}
+
+.cell {
+  width: var(--heat-cell);
+  height: var(--heat-cell);
+  border-radius: var(--heat-radius);
+  border: 1px solid rgb(255 255 255 / 0.02);
+  padding: 0;
+  background: var(--surface-2);
+  transition: var(--t-fast);
+  cursor: pointer;
+}
+
+.cell:hover {
+  outline: 1px solid var(--ink-mid);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* ── Les quatre états (`HEAT-05`) ─────────────────── */
+
+/* `off` : rien n'était attendu. Une grille majoritairement grise n'est pas un échec —
+   c'est ce qui rend lisible une piste non quotidienne. */
+.off {
+  background: var(--surface-2);
+}
+
+/* Hors plage : avant la création de la piste (`HEAT-07`), ou dans le futur. La cellule
+   existe pour que la grille garde sa géométrie, mais elle ne dit rien. */
+.void {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.void:hover {
+  outline: none;
+}
+
+/* `missed` : attendu, non validé. Le seul état qui accuse. */
+.missed {
+  background: rgb(var(--recover-rgb) / 0.28);
+  border-color: rgb(var(--recover-rgb) / 0.35);
+}
+
+/* Jour neutralisé (`HEAT-06`) : maladie, voyage, deload. Ni réussite ni échec — un
+   contour sans remplissage, visiblement différent d'un jour vide. */
+.neutralised {
+  background: repeating-linear-gradient(45deg, var(--surface-2) 0 3px, transparent 3px 6px);
+  border-color: var(--line);
+}
+
+/* `done` : validé, avec son niveau d'intensité. */
+.level1 {
+  background: rgb(var(--accent-rgb) / var(--heat-a1));
+}
+.level2 {
+  background: rgb(var(--accent-rgb) / var(--heat-a2));
+}
+.level3 {
+  background: rgb(var(--accent-rgb) / var(--heat-a3));
+}
+.level4 {
+  background: rgb(var(--accent-rgb) / var(--heat-a4));
+}
+
+/* `bonus` : validé alors que rien n'était attendu. Même couleur, liseré visible : c'est
+   une bonne surprise, pas une obligation tenue. */
+.bonus {
+  box-shadow: inset 0 0 0 1px rgb(var(--effort-rgb) / 0.7);
+}
+
+/* ── Semaines (`HEAT-11`, `HEAT-28`) ──────────────── */
+
+/* Pour une piste `per_week`, c'est la semaine qui porte le statut, jamais le jour. */
+.weekBar {
+  display: grid;
+  grid-auto-flow: column;
+  gap: var(--heat-gap);
+  width: max-content;
+  margin-top: var(--heat-gap);
+}
+
+.weekMark {
+  height: 3px;
+  width: var(--heat-cell);
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.weekReached {
+  background: var(--effort);
+}
+.weekPartial {
+  background: var(--load);
+}
+.weekMissed {
+  background: var(--recover);
+}
+
+/* ── Mois et légende ──────────────────────────────── */
+
+.months {
+  display: grid;
+  grid-auto-flow: column;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-low);
+  margin-bottom: 8px;
+  letter-spacing: 0.08em;
+  width: max-content;
+}
+
+.month {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-low);
+  flex-wrap: wrap;
+}
+
+.legendCell {
+  width: 11px;
+  height: 11px;
+  border-radius: var(--heat-radius);
+  display: block;
+  border: 1px solid rgb(255 255 255 / 0.02);
+}
+
+.legendSpacer {
+  width: 10px;
+}
+
+/* ── Infobulle ────────────────────────────────────── */
+
+.wrap {
+  position: relative;
+}
+
+.tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: nowrap;
+  transform: translate(-50%, -115%);
+  z-index: 5;
+  box-shadow: var(--shadow);
+}
+
+.tipDate {
+  color: var(--ink-low);
+  letter-spacing: 0.1em;
+  margin-bottom: 3px;
+}

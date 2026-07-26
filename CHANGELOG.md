@@ -3,6 +3,50 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.4.0] — 2026-07-26
+
+Lot **L03 — Design system et coquille applicative**. Le jalon I est bouclé : l'application
+se connecte, navigue, et dispose de toute la bibliothèque visuelle. 37 tests frontend.
+
+### Ajouté
+
+- **18 composants** repris de la charte : `Button` (5 variantes), `Card`, `Badge`,
+  `Field`, `Rule`, `Eyebrow`, `Segmented`, `Empty`, `AiBlock`, `Stat`, `Sparkline`,
+  `Bars`, `Progress`, `Ring`, `Table`, `Check`, `Heatmap`, `Chart`, `Toaster`.
+- **`Heatmap`** — six états distincts, dont la distinction qui compte : `off` (rien
+  n'était attendu) et `missed` (attendu, non validé) ne se ressemblent pas. Une piste
+  « deux fois par semaine » est majoritairement grise, et une grille grise ne doit pas se
+  lire comme un échec (`HEAT-05`). Le composant ne décide rien : états et niveaux
+  viennent du serveur (`HEAT-30`).
+- **`Chart`** — axe gradué, aire dégradée, série de contexte en pointillé, bande
+  inférieure à seuil d'alerte, curseur et infobulle suiveuse.
+- **Client API typé** — injection du jeton, décodage de l'enveloppe `{code, message,
+  fields}`, distinction entre panne réseau et refus métier, et purge du jeton sur session
+  expirée en un seul endroit (`AUTH-06`).
+- **Écran de connexion et routes protégées** — le jeton présent au démarrage est
+  **confronté au serveur** plutôt que cru sur parole ; sans cela un jeton expiré pendant
+  que l'app était fermée afficherait l'application puis ferait échouer chaque écran.
+- **TanStack Query configuré** — clés nommées par domaine, réessai réservé aux pannes
+  passagères. Une mutation n'est jamais rejouée : réessayer une écriture en conflit est
+  le meilleur moyen d'écraser la mauvaise ligne (`STO-05`).
+- **Formateurs** — dates FR, `mm:ss` / `h:mm:ss`, allure, volumes, virgule décimale, et
+  une sérialisation de date en **heure locale** : `toISOString()` rattacherait au mauvais
+  jour une saisie faite après minuit (`HEAT-32`).
+- Galerie de charte complète sur `/_kitchen-sink`, **publique** : aucune donnée
+  utilisateur, consultable sans session, et vérifiable par capture automatisée.
+
+### Corrigé
+
+- `tokenStore` avalait silencieusement l'indisponibilité de `localStorage`, ce qui aurait
+  fait perdre la session au premier rechargement sans rien annoncer — navigation privée
+  Safari, cookies bloqués. Repli en mémoire détecté à l'exécution, et `persistent`
+  permet de le signaler.
+
+### Retiré
+
+- L'écran d'attente `Home` du lot L00, remplacé par le tableau de bord et l'écran de
+  connexion.
+
 ## [0.3.0] — 2026-07-26
 
 Lot **L02 — Socle API + authentification**. L'API est désormais close : plus aucune route

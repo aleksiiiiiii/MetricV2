@@ -1,0 +1,107 @@
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.headerInner {
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: 0 clamp(20px, 4vw, 56px);
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  height: 56px;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-size: 18px;
+  color: var(--ink);
+  text-decoration: none;
+  flex: none;
+}
+
+.nav {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.navLink {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+  text-decoration: none;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  transition: var(--t);
+}
+
+.navLink:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.navActive {
+  color: var(--signal);
+  background: var(--surface-2);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.username {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-low);
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 640px) {
+  .username {
+    display: none;
+  }
+}
+
+.main {
+  flex: 1;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-low);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}

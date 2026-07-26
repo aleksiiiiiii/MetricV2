@@ -1,0 +1,281 @@
+/* Primitives de la charte : boutons, carte, badge, champ, surtitre, règle graduée.
+   Reprise fidèle de GuidelinesUI.html sections 01 et 03. */
+
+/* ── Boutons ──────────────────────────────────────── */
+
+.btn {
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 18px;
+  border-radius: var(--r-btn);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: var(--t);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primary {
+  background: var(--signal);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.primary:hover:not(:disabled) {
+  background: #93b8c3;
+  transform: translateY(-1px);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.quiet {
+  background: transparent;
+  color: var(--ink-mid);
+  padding: 10px 12px;
+}
+
+.quiet:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+/* Saisie rapide : la cible du projet, un relevé en un geste. */
+.log {
+  background: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 14px 16px;
+  width: 100%;
+  justify-content: space-between;
+  border-radius: var(--r-sm);
+}
+
+.log:hover:not(:disabled) {
+  border-color: var(--effort);
+  background: #1b2530;
+}
+
+.logHint {
+  font-style: normal;
+  color: var(--ink-low);
+}
+
+.btnBusy {
+  /* Le libellé garde sa place pendant l'attente : pas de saut de mise en page. */
+  opacity: 0.7;
+  cursor: progress;
+}
+
+/* ── Carte ────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s5);
+}
+
+.cardFlush {
+  /* Pour une carte qui contient un tableau bord à bord. */
+  padding: var(--s5) 8px 8px;
+}
+
+/* ── Badge ────────────────────────────────────────── */
+
+.badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border-radius: var(--r-badge);
+  border: 1px solid;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.signal {
+  color: var(--signal);
+  border-color: rgb(var(--signal-rgb) / var(--badge-border-a));
+  background: rgb(var(--signal-rgb) / var(--badge-bg-a));
+}
+
+.effort {
+  color: var(--effort);
+  border-color: rgb(var(--effort-rgb) / var(--badge-border-a));
+  background: rgb(var(--effort-rgb) / var(--badge-bg-a));
+}
+
+.load {
+  color: var(--load);
+  border-color: rgb(var(--load-rgb) / var(--badge-border-a));
+  background: rgb(var(--load-rgb) / var(--badge-bg-a));
+}
+
+.recover {
+  color: var(--recover);
+  border-color: rgb(var(--recover-rgb) / var(--badge-border-a));
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+}
+
+/* ── Champ ────────────────────────────────────────── */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+.input {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 11px 13px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  transition: var(--t);
+  width: 100%;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px rgb(var(--signal-rgb) / 0.13);
+}
+
+.input::placeholder {
+  color: var(--ink-low);
+}
+
+.inputInvalid {
+  border-color: var(--recover);
+}
+
+.inputInvalid:focus {
+  border-color: var(--recover);
+  box-shadow: 0 0 0 3px rgb(var(--recover-rgb) / 0.13);
+}
+
+.fieldError {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--recover);
+}
+
+.fieldHint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-low);
+}
+
+/* ── Sélecteur segmenté ───────────────────────────── */
+
+.seg {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.seg button {
+  background: transparent;
+  border: none;
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: var(--t);
+}
+
+.seg button:hover {
+  color: var(--ink);
+}
+
+.seg button[aria-pressed='true'] {
+  background: var(--surface-2);
+  color: var(--signal);
+}
+
+/* ── État vide ────────────────────────────────────── */
+
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+  padding: 32px;
+  text-align: center;
+}
+
+.empty p {
+  color: var(--ink-mid);
+  font-size: 14px;
+  margin: 8px 0 16px;
+}
+
+/* ── Bloc IA ──────────────────────────────────────── */
+
+.ai {
+  border: 1px solid rgb(var(--signal-rgb) / 0.28);
+  background:
+    linear-gradient(180deg, rgb(var(--signal-rgb) / 0.07), transparent 70%), var(--surface);
+  border-radius: var(--r);
+  padding: var(--s5);
+  position: relative;
+}
+
+.aiTag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.aiDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 0 4px rgb(var(--signal-rgb) / 0.14);
+}
+
+.ai p {
+  color: var(--ink-mid);
+  font-size: 14px;
+}
+
+.ai strong {
+  color: var(--ink);
+  font-weight: 600;
+}

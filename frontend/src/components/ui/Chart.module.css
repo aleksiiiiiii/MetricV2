@@ -1,0 +1,101 @@
+/* Graphique croisé. Reprise de GuidelinesUI.html section 07. */
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mid);
+  margin-top: var(--s4);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.legendLine {
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  display: block;
+}
+
+.legendBlock {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: block;
+}
+
+.wrap {
+  position: relative;
+  margin-top: 18px;
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  touch-action: none;
+}
+
+.axis {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  fill: var(--ink-low);
+  letter-spacing: 0.08em;
+}
+
+.tip {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: nowrap;
+  transform: translate(-50%, -115%);
+  z-index: 5;
+  box-shadow: var(--shadow);
+}
+
+.tipVisible {
+  opacity: 1;
+}
+
+.tipDate {
+  color: var(--ink-low);
+  letter-spacing: 0.1em;
+  margin-bottom: 3px;
+}
+
+.tipMark {
+  text-decoration: none;
+  display: inline-block;
+  width: 9px;
+}
+
+.note {
+  color: var(--ink-mid);
+  font-size: 13px;
+  margin-top: var(--s4);
+  border-top: 1px solid var(--line-soft);
+  padding-top: var(--s4);
+}

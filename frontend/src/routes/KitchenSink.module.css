@@ -140,3 +140,17 @@
   border-radius: 4px;
   background: rgb(var(--signal-rgb) / 0.45);
 }
+
+/* ── Ajouts L03 ───────────────────────────────────── */
+
+.chartHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tableTitle {
+  padding: 0 12px 14px;
+}

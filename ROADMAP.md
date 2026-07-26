@@ -266,20 +266,31 @@ pour une application mono-utilisateur.
 **Objectif** : la bibliothèque de composants des guidelines, et une app authentifiée
 qui navigue.
 
-- [ ] `L03-01` Primitives : `Button` (primary / ghost / quiet / log / disabled), `Card`, `Badge` (4 signaux), `Field`/`Input`, `Rule` (règle graduée), `Eyebrow`
-- [ ] `L03-02` Composants de données : `Stat` (+ sparkline), `Bars`, `Ring`, `Table`, `Segmented`, `Empty`, `AiBlock`, `Check` (checklist)
-- [ ] `L03-03` `Heatmap` : grille 7 lignes × N semaines, niveaux 0–4, en-tête de mois, légende, infobulle. **Pilotée par les données du serveur, aucune règle d'état côté client**
-- [ ] `L03-04` `Chart` : axes, grille de fond, aires dégradées, courbes, bande inférieure, curseur + infobulle suiveuse (motif de la section 07 des guidelines)
-- [ ] `L03-05` Client API : `fetch` typé, injection du jeton, décodage des erreurs `API-07` vers messages français
-- [ ] `L03-06` `401` → purge du jeton local + motif exploitable (`AUTH-06`) ; déconnexion manuelle (`AUTH-07`)
-- [ ] `L03-07` `QueryClient` : clés par domaine, politique de réessai, invalidations croisées
-- [ ] `L03-08` Écran de connexion, routes protégées, persistance de session au redémarrage
-- [ ] `L03-09` Coquille : navigation, en-tête, conteneur, zone de notifications discrètes
-- [ ] `L03-10` Utilitaires de format : dates FR, `mm:ss` / `h:mm:ss`, allure, volumes, virgule décimale
-- [ ] `L03-11` Kitchen sink promu en page de test visuel, snapshots Vitest
+- [x] `L03-01` Primitives : `Button` (primary / ghost / quiet / log / busy / disabled), `Card`, `Badge` (4 signaux), `Field` avec erreur par champ, `Rule`, `Eyebrow`, `Segmented`, `Empty`, `AiBlock`
+- [x] `L03-02` Composants de données : `Stat` (+ `Sparkline`), `Bars`, `Progress`, `Ring`, `Table` générique, `Check` / `CheckGroup`
+- [x] `L03-03` `Heatmap` : grille 7 × N, **six états** (`off`, `missed`, `done` 1–4, `bonus`, neutralisé, hors plage), statuts hebdomadaires, en-tête de mois, légende, infobulle. **Aucune règle d'état côté client** (`HEAT-30`)
+- [x] `L03-04` `Chart` : axe gradué, grille de fond, aire dégradée, série de contexte en pointillé, bande inférieure à seuil d'alerte, curseur + infobulle suiveuse
+- [x] `L03-05` Client API : `fetch` typé, injection du jeton, décodage de `{code, message, fields}` en exception typée, distinction panne réseau / refus métier
+- [x] `L03-06` `401` → purge du jeton + notification, une seule fois et au même endroit (`AUTH-06`) ; déconnexion manuelle (`AUTH-07`)
+- [x] `L03-07` `QueryClient` : clés nommées par domaine, réessai **uniquement** sur panne passagère, jamais sur refus métier ni sur mutation
+- [x] `L03-08` Écran de connexion, routes protégées, jeton **revalidé auprès du serveur** au démarrage
+- [x] `L03-09` Coquille : en-tête collant, navigation, déconnexion, zone de notifications discrètes
+- [x] `L03-10` Utilitaires de format : dates FR, `mm:ss` / `h:mm:ss`, allure, volumes, virgule décimale, signe moins typographique
+- [x] `L03-11` Kitchen sink promu en galerie complète des 18 composants + 37 tests frontend
 
-**DoD** — session qui survit à un rechargement ; expiration gérée sans écran blanc ;
-tous les composants des guidelines disponibles et documentés dans le kitchen sink.
+**DoD** — `make check` vert (37 tests frontend, ESLint, `tsc` strict, Prettier) ; build de
+production à 98 kB gzip ; **connexion et galerie vérifiées par capture** dans un vrai
+navigateur. Session revalidée au démarrage plutôt que crue sur parole ; expiration gérée
+sans écran blanc.
+
+**Décisions prises en construisant :**
+
+| Sujet | Décision |
+|---|---|
+| Galerie de charte publique | `/_kitchen-sink` est hors authentification : la page ne contient aucune donnée utilisateur, et pouvoir l'ouvrir sans session la rend consultable depuis n'importe quel appareil — et vérifiable par une capture automatisée |
+| Persistance du jeton | `localStorage` avec **repli en mémoire** détecté à l'exécution. Navigation privée Safari, cookies bloqués, environnement de test : avaler l'erreur ferait perdre la session sans rien annoncer |
+| Échelles multiples du graphique | La charte superpose deux unités. Conservé, avec trois garde-fous : un seul axe gradué, la série de contexte en pointillé, et les chiffres exacts à l'infobulle. La lecture précise passe par le curseur, jamais par la géométrie |
+| Props optionnelles | Déclarées `?: T \| undefined` dans toute la bibliothèque : `exactOptionalPropertyTypes` refuse de passer une valeur potentiellement absente à une prop simplement optionnelle |
 
 ---
 
@@ -676,8 +687,8 @@ changement de spec, pas comme une question ouverte.
 
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
-| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours — **L00 (`v0.1.0`), L01 (`v0.2.0`), L02 (`v0.3.0`) livrés**, L03 suivant |
-| II — Domaines | L04 → L08 | `v0.9.0` | ☐ à faire |
+| I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
+| II — Domaines | L04 → L08 | `v0.9.0` | ▣ suivant — L04 (Corps), tranche verticale de référence |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
