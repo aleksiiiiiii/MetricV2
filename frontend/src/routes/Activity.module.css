@@ -1,0 +1,193 @@
+.split {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: var(--s4);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s3);
+}
+
+.triple {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--s3);
+}
+
+.error {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--recover);
+  border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  line-height: 1.5;
+}
+
+.note {
+  color: var(--ink-mid);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.empty {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* ── Semaine ──────────────────────────────────────── */
+
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+.day {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.dayRest {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.dayName {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+.dayValue {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+}
+
+.dayToday {
+  border-color: var(--signal);
+}
+
+/* ── Actions de ligne ─────────────────────────────── */
+
+.actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.iconButton {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink-low);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  transition: var(--t);
+  white-space: nowrap;
+}
+
+.iconButton:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.danger:hover {
+  color: var(--recover);
+  border-color: rgb(var(--recover-rgb) / 0.4);
+}
+
+/* ── Groupes négligés ─────────────────────────────── */
+
+.groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+/* ── Journal d'exercices ──────────────────────────── */
+
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--s3);
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s3);
+  align-items: baseline;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.entryDetail {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-mid);
+  font-variant-numeric: tabular-nums;
+}
+
+.select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 11px 13px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  width: 100%;
+  transition: var(--t);
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px rgb(var(--signal-rgb) / 0.13);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}

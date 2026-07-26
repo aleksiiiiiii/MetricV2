@@ -3,6 +3,51 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.6.0] — 2026-07-26
+
+Lot **L05 — Activité sportive**. Le plus gros domaine du backlog, 18 fonctionnalités, et
+la source de six des neuf pistes d'assiduité à venir. 241 tests backend, 61 frontend.
+
+### Ajouté
+
+- **Courses** (`ACT-01`, `ACT-02`, `ACT-05`) — saisie en formats souples : `44:12`,
+  `1:18:44`, `44`, `44,5`, `1h30`, et `5mi` converti en kilomètres. Allure dérivée **et
+  stockée**, vitesse dans le détail.
+- **Séances** (`ACT-03`, `ACT-04`, `ACT-18`) — identifiant stable qui survit aux
+  corrections, effort perçu 1–10, sept types suggérés sans contrainte. Supprimer une
+  séance purge ses exercices.
+- **Catalogue et journal** (`ACT-06` → `ACT-09`) — neuf groupes musculaires, charge ×
+  séries × réps, charge 0 = poids du corps, et le rappel de la dernière performance à la
+  sélection d'un exercice.
+- **Agrégats** (`ACT-10` → `ACT-16`) — volume par jour avec repos distingué de zéro,
+  totaux de semaine ISO, huit semaines d'historique, historique fusionné, tonnage par
+  groupe, records et 1RM par Epley, groupes négligés.
+- **Duplication d'une séance** (`ACT-17`) — exercices compris, sans hériter du RPE :
+  l'effort perçu appartient à la séance vécue, pas au modèle.
+- **`app/core/parsing.py`** — analyse des durées, distances et décimales françaises,
+  placé dans le socle parce que l'import Apple (`IMP-03`) devra normaliser exactement les
+  mêmes formats.
+- **`remove_where`** sur le dépôt CSV — suppression en cascade en une écriture, plutôt
+  qu'une par ligne qui laisserait le fichier dans un état intermédiaire.
+- **Écran Activité** — semaine, volume par jour, tonnage, groupes négligés, progression
+  des charges, historique fusionné, saisie de course et de séance, journal d'exercices et
+  catalogue.
+
+### Corrigé
+
+- Deux champs portaient le libellé « Durée » sur la même page : ambigu pour un lecteur
+  d'écran comme pour un test. Celui de la séance est désormais « Durée de séance ».
+
+### Choix de modélisation
+
+- `exercise_log.csv` **duplique** le nom de l'exercice et son groupe musculaire alors
+  qu'il porte déjà `exercise_id`. `ACT-06` exige que retirer un exercice conserve
+  l'historique : sans duplication, une ligne deviendrait illisible dès que son exercice
+  disparaît, et le fichier doit rester compréhensible seul dans un tableur.
+- Un groupe musculaire jamais travaillé rend `null` et non un grand nombre : « jamais »
+  et « il y a très longtemps » ne se traitent pas pareil, et une valeur inventée
+  fausserait la génération IA de planning (`PLAN-03`).
+
 ## [0.5.0] — 2026-07-26
 
 Lot **L04 — Corps : poids et mensurations**. Première tranche verticale complète, et

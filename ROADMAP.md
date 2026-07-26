@@ -333,28 +333,38 @@ anti-conflit tiennent sur l'instance réelle.
 
 **Objectif** : le plus gros domaine, et la source de 6 des 9 pistes d'assiduité.
 
-- [ ] `L05-01` `activity/runs.csv`, `workouts.csv`, `exercises.csv`, `exercise_log.csv` : schémas et repositories
-- [ ] `L05-02` Enregistrer une course, formats souples normalisés — virgule décimale, `mm:ss`, `h:mm:ss`, minutes seules (`ACT-01`)
-- [ ] `L05-03` Allure min/km : aperçu à la volée + valeur stockée (`ACT-02`)
-- [ ] `L05-04` Enregistrer une séance, identifiant stable, 7 types suggérés (`ACT-03`)
-- [ ] `L05-05` Modifier / supprimer une activité ; supprimer une séance purge ses exercices (`ACT-04`)
-- [ ] `L05-06` Détail d'une course : distance, temps, allure, vitesse, FC, dénivelé, note (`ACT-05`)
-- [ ] `L05-07` Catalogue d'exercices, 9 groupes musculaires, retrait sans perte d'historique (`ACT-06`)
-- [ ] `L05-08` Journal d'exercices : charge × séries × réps, charge 0 = poids du corps, éditable (`ACT-07`)
-- [ ] `L05-09` Rappel de la dernière performance à la sélection d'un exercice (`ACT-08`)
-- [ ] `L05-10` Progression des charges : dernière perf, delta, série de la charge max, groupé par muscle (`ACT-09`)
-- [ ] `L05-11` Volume hebdomadaire par jour, repos distingué (`ACT-10`) + totaux de la semaine, remise à zéro le lundi (`ACT-11`)
-- [ ] `L05-12` Historique du volume sur 8 semaines (`ACT-12`) + historique fusionné courses/séances (`ACT-13`)
-- [ ] `L05-13` Tonnage par groupe musculaire et par semaine (`ACT-14`)
-- [ ] `L05-14` Records personnels + 1RM estimé (Epley), historisés par exercice (`ACT-15`)
-- [ ] `L05-15` Jours depuis la dernière sollicitation de chaque groupe (`ACT-16`)
-- [ ] `L05-16` Duplication d'une séance passée, exercices compris (`ACT-17`)
-- [ ] `L05-17` RPE 1–10 optionnel par séance (`ACT-18`)
-- [ ] `L05-18` UI : écran Activité — saisie rapide course / séance, journal d'exercices, tableau des séances, barres de volume, progression par exercice
-- [ ] `L05-19` Tests : normalisation des formats de temps, Epley, bornes de semaine ISO, purge en cascade
+- [x] `L05-01` Quatre fichiers d'activité : modèles, dépôts typés, chemins déclarés
+- [x] `L05-02` Course : formats souples normalisés — `44:12`, `1:18:44`, `44`, `44,5`, `1h30`, `5mi` (`ACT-01`)
+- [x] `L05-03` Allure min/km dérivée **et stockée**, vitesse km/h dans le détail (`ACT-02`)
+- [x] `L05-04` Séance à **identifiant stable**, survivant aux corrections, 7 types suggérés sans contrainte (`ACT-03`)
+- [x] `L05-05` Correction et suppression sous garde ; supprimer une séance **purge ses exercices** (`ACT-04`)
+- [x] `L05-06` Détail d'une course comme ressource unitaire (`ACT-05`)
+- [x] `L05-07` Catalogue, 9 groupes musculaires, **retrait sans perte d'historique** (`ACT-06`)
+- [x] `L05-08` Journal charge × séries × réps, charge 0 = poids du corps (`ACT-07`)
+- [x] `L05-09` Rappel de la dernière performance à la sélection (`ACT-08`)
+- [x] `L05-10` Progression : dernière charge, écart, série des maxima par séance (`ACT-09`)
+- [x] `L05-11` Volume par jour avec **repos distingué de zéro**, totaux de semaine ISO (`ACT-10`, `ACT-11`)
+- [x] `L05-12` Huit semaines d'historique + historique fusionné courses / séances (`ACT-12`, `ACT-13`)
+- [x] `L05-13` Tonnage par groupe musculaire et par semaine (`ACT-14`)
+- [x] `L05-14` Records et 1RM estimé par Epley (`ACT-15`)
+- [x] `L05-15` Groupes négligés — **« jamais » n'est pas un grand nombre** (`ACT-16`)
+- [x] `L05-16` Duplication d'une séance, exercices compris, sans hériter du RPE (`ACT-17`)
+- [x] `L05-17` Effort perçu 1–10 par séance (`ACT-18`)
+- [x] `L05-18` UI : écran Activité — semaine, volume par jour, tonnage, groupes négligés, progression, historique, saisie course et séance, journal d'exercices, catalogue
+- [x] `L05-19` 72 tests backend + 12 tests d'écran : formats, Epley, semaines ISO, purge en cascade
 
-**DoD** — une séance de musculation complète se saisit en moins d'une minute ; les
-agrégats hebdomadaires basculent bien le lundi ; un record est détecté à l'écriture.
+**DoD** — `make check` vert (241 tests backend, 61 frontend) ; les quatre fichiers CSV
+sont conformes à l'annexe et lisibles en tableur ; une séance de musculation complète se
+saisit sans quitter l'écran ; les agrégats basculent bien le lundi ; un record est détecté
+à l'écriture.
+
+**Trois décisions de modélisation :**
+
+| Sujet | Décision |
+|---|---|
+| Dénormalisation du journal | `exercise_log.csv` duplique le nom et le groupe musculaire alors qu'il porte déjà `exercise_id`. Ce n'est pas un oubli : `ACT-06` exige que retirer un exercice conserve l'historique, et le fichier doit rester compréhensible seul dans un tableur (`STO-02`) |
+| Analyse des formats dans le socle | `app/core/parsing.py` et non dans le domaine : l'import Apple (`IMP-03`) doit normaliser exactement les mêmes formats, et deux analyseurs finiraient par diverger |
+| Ordre de la suppression en cascade | La séance part **en premier**, sous garde ; purger d'abord laisserait des exercices orphelins si la garde refusait la suppression |
 
 ---
 
@@ -698,7 +708,7 @@ changement de spec, pas comme une question ouverte.
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
-| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04 livré (`v0.5.0`)**, L05 (Activité) suivant |
+| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04 (`v0.5.0`) et L05 (`v0.6.0`) livrés**, L06 suivant |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |

@@ -1,6 +1,6 @@
 [project]
 name = "metric-backend"
-version = "0.5.0"
+version = "0.6.0"
 description = "Metric — API de suivi sportif personnel, stockage CSV sur Nextcloud"
 requires-python = ">=3.12"
 dependencies = [
@@ -54,6 +54,11 @@ select = [
 ignore = [
   "E501",  # longueur gérée par le formateur
 ]
+# Le signe multiplié est la notation du backlog (« charge × séries × réps ») et le tiret
+# demi-cadratin ponctue les commentaires français. Ce ne sont pas des coquilles.
+# L'espace fine insécable (U+202F) est ce que produit le formatage français des
+# nombres : on la retire des saisies à dessein, ce n'est pas une coquille.
+allowed-confusables = ["×", "–", "’", "\u202f"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]

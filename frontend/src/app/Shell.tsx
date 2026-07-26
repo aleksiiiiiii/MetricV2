@@ -16,6 +16,7 @@ import styles from './Shell.module.css';
 const NAV = [
   { to: '/', label: 'Tableau de bord', end: true },
   { to: '/corps', label: 'Corps', end: false },
+  { to: '/activite', label: 'Activité', end: false },
   { to: '/_kitchen-sink', label: 'Charte', end: false },
 ] as const;
 

@@ -28,9 +28,14 @@ export const keys = {
   },
   activity: {
     all: () => ['activity'] as const,
+    overview: () => ['activity', 'overview'] as const,
+    progress: () => ['activity', 'progress'] as const,
     runs: () => ['activity', 'runs'] as const,
     workouts: () => ['activity', 'workouts'] as const,
+    workout: (id: number) => ['activity', 'workouts', id] as const,
     exercises: () => ['activity', 'exercises'] as const,
+    types: () => ['activity', 'types'] as const,
+    muscleGroups: () => ['activity', 'muscle-groups'] as const,
   },
   hydration: {
     all: () => ['hydration'] as const,

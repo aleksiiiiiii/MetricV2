@@ -27,7 +27,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from pydantic import ValidationError
@@ -194,6 +194,24 @@ class CsvRepository[TModel: CsvModel]:
 
         raws = [dict(row.raw) for i, row in enumerate(sheet.rows) if i != index]
         await self._save(raws, sheet)
+
+    async def remove_where(self, matches: Callable[[TModel], bool]) -> int:
+        """Supprime toutes les lignes qui satisfont un critère, en une écriture.
+
+        Nécessaire aux suppressions en cascade — purger les exercices d'une séance
+        supprimée (`ACT-04`). Les faire une par une multiplierait les allers-retours et
+        laisserait le fichier dans un état intermédiaire en cas de coupure.
+
+        Sans garde par jeton : la ligne visée n'est pas désignée par l'utilisateur mais
+        déduite d'une suppression qu'il a déjà confirmée.
+        """
+        sheet = await self.load(fresh=True)
+        kept = [dict(row.raw) for row in sheet.rows if not matches(row.model)]
+
+        removed = len(sheet.rows) - len(kept)
+        if removed:
+            await self._save(kept, sheet)
+        return removed
 
     async def overwrite(self, items: Sequence[TModel]) -> None:
         """Réécrit le fichier entier.
