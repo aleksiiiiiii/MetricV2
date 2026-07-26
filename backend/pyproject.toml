@@ -1,6 +1,6 @@
 [project]
 name = "metric-backend"
-version = "0.2.0"
+version = "0.3.0"
 description = "Metric — API de suivi sportif personnel, stockage CSV sur Nextcloud"
 requires-python = ">=3.12"
 dependencies = [
@@ -8,6 +8,8 @@ dependencies = [
   "uvicorn[standard]>=0.32",
   "pydantic>=2.10",
   "pydantic-settings>=2.6",
+  "argon2-cffi>=23.1",
+  "pyjwt>=2.10",
   # httpx2 et non httpx : starlette 1.x déprécie httpx pour son TestClient, et le
   # client WebDAV (`L01-01`) doit parler la même bibliothèque que les tests.
   "httpx2>=2.9",

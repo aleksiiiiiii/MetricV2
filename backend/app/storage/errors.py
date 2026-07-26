@@ -6,25 +6,22 @@ mappe les codes vers ses propres formulations : il ne parse jamais du texte.
 Règle de traduction : une panne du stockage n'est jamais une 500 brute. Ce qui vient
 d'en face devient `502`, ce qui relève de l'indisponibilité ou de la configuration
 devient `503`, un conflit d'écriture devient `409`.
+
+Ces erreurs sont une branche du catalogue commun (`app.core.exceptions`) : un seul
+gestionnaire les traduit toutes en réponse HTTP.
 """
 
 from __future__ import annotations
 
+from app.core.exceptions import MetricError
 
-class StorageError(Exception):
+
+class StorageError(MetricError):
     """Base de toutes les erreurs de la couche stockage."""
 
     code = "storage_error"
     status_code = 502
     message = "Le stockage a renvoyé une réponse inattendue."
-
-    def __init__(self, message: str | None = None, *, detail: str | None = None) -> None:
-        self.message = message or type(self).message
-        self.detail = detail
-        super().__init__(self.message)
-
-    def __str__(self) -> str:
-        return f"{self.message} ({self.detail})" if self.detail else self.message
 
 
 class StorageUnavailableError(StorageError):

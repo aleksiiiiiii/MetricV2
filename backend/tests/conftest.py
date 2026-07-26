@@ -9,28 +9,59 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.core.security import hash_password
 from app.main import create_app
 from app.storage.cache import FileCache
 from app.storage.files import FileStore
 from app.storage.webdav import WebDavClient
 from tests.fake_webdav import FakeWebDav
 
+#: Compte de test. Le hash est calculé une fois pour toute la session : Argon2 est lent
+#: par conception, et le recalculer par test coûterait plusieurs secondes.
+TEST_USERNAME = "aleksi"
+TEST_PASSWORD = "un mot de passe de test"
+
+
+@pytest.fixture(scope="session")
+def password_hash() -> str:
+    return hash_password(TEST_PASSWORD)
+
 
 @pytest.fixture
-def settings() -> Settings:
+def settings(password_hash: str) -> Settings:
     """Réglages de test, isolés de tout `.env` local."""
     return Settings(
         _env_file=None,
         app_env="test",
         cors_origins="http://localhost:5173",
+        auth_username=TEST_USERNAME,
+        auth_password_hash=password_hash,
+        jwt_secret="secret-de-test-suffisamment-long-pour-etre-credible",
     )
 
 
 @pytest.fixture
 def client(settings: Settings) -> Iterator[TestClient]:
-    # `with` déclenche le lifespan : sans lui, la couche stockage ne serait pas montée.
+    # `with` déclenche le lifespan : sans lui, ni la couche stockage ni les objets de
+    # sécurité ne seraient montés.
     with TestClient(create_app(settings)) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def token(client: TestClient) -> str:
+    """Jeton d'une session ouverte, pour les tests qui ont juste besoin d'être authentifiés."""
+    response = client.post(
+        "/api/auth/login",
+        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+    )
+    assert response.status_code == 200, response.text
+    return str(response.json()["access_token"])
+
+
+@pytest.fixture
+def auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ── Couche stockage ───────────────────────────────────

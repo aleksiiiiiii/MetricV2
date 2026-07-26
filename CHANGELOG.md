@@ -3,6 +3,51 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.3.0] — 2026-07-26
+
+Lot **L02 — Socle API + authentification**. L'API est désormais close : plus aucune route
+de données n'est joignable sans jeton. 134 tests backend, 96 % de couverture.
+
+### Ajouté
+
+- **Connexion mono-utilisateur** (`AUTH-01` → `AUTH-03`) — Argon2id, JWT signé de 7 jours,
+  `Authorization: Bearer`. La session survit à la fermeture de l'app et au redémarrage.
+- **Anti-brute-force** (`AUTH-04`) — 5 échecs / 60 s / adresse, fenêtre glissante en
+  mémoire, `429` annonçant le délai en corps et en en-tête `Retry-After`. Trois détails
+  qui font la différence : Argon2 est exécuté **même sur identifiant inconnu** (sinon le
+  temps de réponse dirait lequel des deux champs est faux), le quota est consulté **avant**
+  de hacher (sinon l'attaque coûterait plus au serveur qu'à l'attaquant), et une réussite
+  remet le compteur à zéro.
+- **Protection des routes** (`AUTH-05`) — portée sur le groupe de routeurs de données, pas
+  route par route : un endpoint ajouté par un lot ultérieur est protégé par construction.
+  Un test structurel le vérifie à chaque exécution.
+- **`make hash-password`** (`AUTH-08`) — saisie sans écho, jamais de mot de passe en clair
+  sur disque ni en argument de commande, propose aussi un `JWT_SECRET`.
+- **Catalogue d'erreurs** (`API-07`) — un module unique, codes machine stables, messages
+  français. Quatre gestionnaires couvrent le métier, la validation, les erreurs de FastAPI
+  et l'imprévu — aucun traceback ne sort jamais dans une réponse.
+- **Socle de validation** (`API-06`) — 18 types bornés réutilisables, et une règle
+  « jamais dans le futur » évaluée en **heure locale** : à 1 h du matin à Paris, `date.today()`
+  en UTC serait encore la veille et refuserait une pesée légitime.
+- **Découpage par domaine** (`API-01`) — 12 routeurs préfixés, prêts à recevoir leurs
+  routes lot par lot.
+- **Refus de démarrer en production** avec un secret de développement, un hash de mot de
+  passe absent ou un stockage non configuré (`API-02`).
+- `/api/health` annonce désormais aussi `auth_configured`.
+
+### Modifié
+
+- `StorageError` descend de `MetricError` : un seul gestionnaire traduit tout le catalogue.
+- Les messages d'erreur de FastAPI sont traduits — un 404 de routage répondait
+  « Not Found » en anglais alors que l'API est francophone.
+- `DEV_JWT_SECRET` allongé à 50 caractères : PyJWT signale toute clé HMAC de moins de
+  32 octets comme trop courte pour SHA-256 (RFC 7518 §3.2).
+
+### Non vérifié
+
+- `make check-storage` contre un vrai Nextcloud : `NEXTCLOUD_USERNAME` et
+  `NEXTCLOUD_PASSWORD` sont encore vides dans `.env`.
+
 ## [0.2.0] — 2026-07-26
 
 Lot **L01 — Couche stockage WebDAV + CSV**. La pièce la plus risquée du projet : tout le

@@ -1,8 +1,10 @@
 """Point d'entrée de l'API Metric.
 
-Le découpage en routeurs par domaine (`API-01`) est mis en place au lot L02 ; ce module
-porte l'assemblage de l'application, le cycle de vie de la couche stockage, et la route
-de santé (`API-04`), qui reste publique (`AUTH-05`).
+Ce module assemble l'application : cycle de vie des ressources partagées, gestionnaires
+d'erreurs, découpage en routeurs par domaine (`API-01`) et route de santé (`API-04`).
+
+Les routes publiques sont énumérées ici, et elles sont trois : la santé, la documentation
+(`API-05`) et la connexion. Tout le reste exige un jeton (`AUTH-05`).
 """
 
 from __future__ import annotations
@@ -19,6 +21,9 @@ from pydantic import BaseModel, Field
 from app import __version__
 from app.config import Settings, get_settings
 from app.core.errors import register_error_handlers
+from app.core.security import PasswordChecker, TokenIssuer
+from app.core.throttle import LoginThrottle
+from app.domains.api import protected_router, public_router
 from app.storage.provider import StorageProvider
 
 
@@ -31,6 +36,7 @@ class HealthResponse(BaseModel):
     time: datetime = Field(description="Heure locale du serveur, fuseau inclus")
     timezone: str = Field(description="Fuseau de découpage des journées")
     storage_configured: bool = Field(description="Stockage Nextcloud renseigné")
+    auth_configured: bool = Field(description="Identifiant et hash de mot de passe présents")
     ai_enabled: bool = Field(description="Clé OpenRouter présente (IA-07)")
 
 
@@ -40,14 +46,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Ouvre et referme le pool de connexions Nextcloud (`STO-08`).
+        """Ouvre et referme les ressources partagées.
 
-        Le client WebDAV doit naître dans la boucle d'événements, et ses connexions
-        keep-alive être relâchées à l'arrêt.
+        Le client WebDAV détient un pool de connexions keep-alive (`STO-08`) : il doit
+        naître dans la boucle d'événements et être relâché à l'arrêt. Les objets de
+        sécurité sont construits une fois car ils portent un coût fixe — Argon2 est lent
+        par conception.
         """
         provider = StorageProvider(settings)
         await provider.start()
+
         app.state.storage = provider
+        app.state.password_checker = PasswordChecker(settings)
+        app.state.token_issuer = TokenIssuer(settings)
+        app.state.login_throttle = LoginThrottle()
         try:
             yield
         finally:
@@ -88,8 +100,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             time=datetime.now(tz=settings.tz),
             timezone=settings.timezone,
             storage_configured=settings.storage_configured,
+            auth_configured=bool(settings.auth_username and settings.auth_password_hash),
             ai_enabled=settings.ai_enabled,
         )
+
+    app.include_router(public_router)
+    app.include_router(protected_router)
 
     return app
 

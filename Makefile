@@ -6,7 +6,7 @@ UVICORN := backend/.venv/bin/uvicorn
 
 .DEFAULT_GOAL := help
 .PHONY: help setup setup-api setup-web dev dev-api dev-web check check-api check-web \
-        test test-api test-web fmt fmt-check build fonts check-storage clean
+        test test-api test-web fmt fmt-check build fonts check-storage hash-password clean
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -75,6 +75,9 @@ fonts: ## Retélécharge les polices locales
 
 check-storage: ## Diagnostique la configuration Nextcloud (STO-11)
 	cd backend && .venv/bin/python -m app.scripts.check_storage
+
+hash-password: ## Génère le hash Argon2id à coller dans .env (AUTH-08)
+	cd backend && .venv/bin/python -m app.scripts.hash_password
 
 clean: ## Supprime les artefacts de build et les caches
 	rm -rf frontend/dist frontend/node_modules/.vite

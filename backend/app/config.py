@@ -14,7 +14,13 @@ from __future__ import annotations
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Valeur de repli du secret JWT. Utilisable en développement, refusée en production.
+#: Au moins 32 octets : en deçà, PyJWT signale une clé HMAC trop courte pour SHA-256
+#: (RFC 7518 §3.2), et le développement croulerait sous les avertissements.
+DEV_JWT_SECRET = "developpement-uniquement-a-remplacer-en-production"
 
 
 class Settings(BaseSettings):
@@ -44,7 +50,7 @@ class Settings(BaseSettings):
     # ── Authentification (`AUTH-01`, `AUTH-02`, `AUTH-03`) ──
     auth_username: str = ""
     auth_password_hash: str = ""
-    jwt_secret: str = "dev-secret-a-remplacer"
+    jwt_secret: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_ttl_days: int = 7
 
@@ -52,6 +58,11 @@ class Settings(BaseSettings):
     # Liste séparée par des virgules : pydantic-settings traiterait un `list[str]`
     # comme du JSON, ce qui interdirait la forme lisible en `.env`.
     cors_origins: str = "http://localhost:5173"
+
+    # Derrière un reverse-proxy (`OPS-01`), l'adresse de l'appelant est dans
+    # `X-Forwarded-For` (`AUTH-04`). Faux par défaut : en exposition directe, l'en-tête
+    # est forgeable et rendrait l'anti-brute-force inopérant.
+    trust_proxy_headers: bool = False
 
     # ── IA OpenRouter (`IA-01`, `IA-07`) ──────────────
     # Sans clé, les fonctions IA renvoient un message clair et le reste de
@@ -82,6 +93,39 @@ class Settings(BaseSettings):
     def storage_configured(self) -> bool:
         """Vrai si le stockage Nextcloud est renseigné."""
         return bool(self.nextcloud_url and self.nextcloud_username)
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def refuse_unsafe_production(self) -> Settings:
+        """Refuse de démarrer en production avec une configuration dangereuse.
+
+        Échouer au démarrage plutôt qu'à la première requête : une API en production
+        avec le secret JWT de développement est une porte ouverte, et le seul moment où
+        l'on regarde les journaux de démarrage est justement le déploiement.
+        """
+        if not self.is_production:
+            return self
+
+        problems: list[str] = []
+        if self.jwt_secret == DEV_JWT_SECRET:
+            problems.append("JWT_SECRET est resté sur la valeur de développement")
+        if len(self.jwt_secret) < 32:
+            problems.append("JWT_SECRET fait moins de 32 caractères")
+        if not self.auth_username:
+            problems.append("AUTH_USERNAME est vide")
+        if not self.auth_password_hash:
+            problems.append("AUTH_PASSWORD_HASH est vide (voir « make hash-password »)")
+        if not self.storage_configured:
+            problems.append("le stockage Nextcloud n'est pas renseigné")
+
+        if problems:
+            raise ValueError(
+                "Configuration de production incomplète : " + " ; ".join(problems) + "."
+            )
+        return self
 
 
 @lru_cache

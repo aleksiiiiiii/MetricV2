@@ -226,23 +226,38 @@ un tableur **survit** à une écriture de l'app.
 
 **Objectif** : une API structurée, protégée, documentée.
 
-- [ ] `L02-01` Découpage en routeurs par domaine, préfixe `/api`, squelettes vides (`API-01`)
-- [ ] `L02-02` Configuration centralisée `.env` typée Pydantic Settings (`API-02`)
-- [ ] `L02-03` CORS configurable par environnement (`API-03`)
-- [ ] `L02-04` `GET /api/health` public (`API-04`)
-- [ ] `L02-05` OpenAPI + interface d'essai, chaque endpoint annoté (`API-05`)
-- [ ] `L02-06` Socle de validation : bornes de vraisemblance réutilisables — poids 0–500 kg, réps 1–200, FC 1–260, volume 0–5000 ml, date jamais future (`API-06`)
-- [ ] `L02-07` Catalogue d'erreurs typées : `storage_unavailable`, `conflict`, `ai_quota`, `session_expired`, `validation_error`… + gestionnaire global (`API-07`)
-- [ ] `L02-08` Connexion mono-utilisateur contre la config serveur (`AUTH-01`)
-- [ ] `L02-09` Vérification Argon2id, comparaison en temps constant (`AUTH-02`)
-- [ ] `L02-10` Émission JWT signé, 7 jours par défaut, `Authorization: Bearer` (`AUTH-03`)
-- [ ] `L02-11` Anti-brute-force : 5 échecs / 60 s / IP → `429` avec délai annoncé ; **hachage exécuté même si l'identifiant est faux** (`AUTH-04`)
-- [ ] `L02-12` Dépendance d'authentification sur toutes les routes métier ; seules santé, doc et flux iCal restent publics (`AUTH-05`)
-- [ ] `L02-13` Script `hash_password.py`, jamais de mot de passe en clair sur disque (`AUTH-08`)
-- [ ] `L02-14` Tests : `401` sans jeton, jeton expiré, jeton falsifié, égalité des temps de réponse identifiant faux / mot de passe faux
+- [x] `L02-01` Découpage en routeurs par domaine, préfixe `/api`, 12 squelettes prêts à recevoir leurs routes (`API-01`)
+- [x] `L02-02` Configuration typée Pydantic Settings + **refus de démarrer** en production avec une configuration dangereuse (`API-02`)
+- [x] `L02-03` CORS configurable par environnement (`API-03`)
+- [x] `L02-04` `GET /api/health` public, annonçant stockage / auth / IA configurés (`API-04`)
+- [x] `L02-05` OpenAPI + interface d'essai, schéma de session déclaré (`API-05`)
+- [x] `L02-06` Socle de validation : 18 types bornés réutilisables — poids 0–500 kg, réps 1–200, FC 1–260, volume 0–5000 ml, date jamais future **en heure locale** (`API-06`)
+- [x] `L02-07` Catalogue d'erreurs typées en un seul module + 4 gestionnaires globaux (métier, validation, `HTTPException`, filet de sécurité) (`API-07`)
+- [x] `L02-08` Connexion mono-utilisateur contre la config serveur (`AUTH-01`)
+- [x] `L02-09` Vérification Argon2id, comparaison d'identifiant en temps constant (`AUTH-02`)
+- [x] `L02-10` Émission JWT signé, 7 jours par défaut, `Authorization: Bearer` (`AUTH-03`)
+- [x] `L02-11` Anti-brute-force : 5 échecs / 60 s / IP → `429` avec délai annoncé en corps **et** en en-tête ; **hachage exécuté même si l'identifiant est faux** ; quota consulté **avant** de hacher (`AUTH-04`)
+- [x] `L02-12` Dépendance d'authentification portée par le **groupe** de routeurs de données ; seules santé, doc et connexion sont publiques (`AUTH-05`, `AUTH-06`, `AUTH-07`)
+- [x] `L02-13` `make hash-password`, saisie sans écho, jamais de mot de passe en clair sur disque ni en argument (`AUTH-08`)
+- [x] `L02-14` 55 tests : `401` sans jeton, jeton expiré / falsifié / non signé / sans échéance, quota, catalogue, bornes, durcissement
 
-**DoD** — toute route métier répond `401` sans jeton valide ; le timing ne distingue
-pas un identifiant inconnu d'un mot de passe faux ; `/docs` liste l'API complète.
+**DoD** — `make check` vert (134 tests backend, couverture **96 %**, `mypy --strict`,
+ruff) ; parcours complet vérifié en **HTTP réel** hors harnais de test : connexion,
+route protégée, jeton altéré, six échecs consécutifs, blocage du bon mot de passe pendant
+la pénalité, déconnexion. Une route de données ajoutée par un lot ultérieur est protégée
+par construction, et un test structurel le vérifie automatiquement.
+
+**Deux choix qui vont au-delà du libellé :**
+
+| Sujet | Décision |
+|---|---|
+| Protection des routes | Portée sur le **groupe** de routeurs, pas route par route. Un endpoint ajouté au lot L07 est protégé parce qu'il est dans le groupe, pas parce que son auteur y a pensé — l'oubli devient structurellement impossible, et `test_every_data_route_requires_a_token` le vérifie à chaque exécution |
+| Configuration de production | `APP_ENV=production` avec un secret de développement, un hash absent ou un stockage non renseigné **empêche le démarrage**. Échouer au déploiement plutôt qu'à la première requête : c'est le seul moment où l'on regarde les journaux |
+
+**Limite assumée** : le jeton étant autoporteur, la déconnexion (`AUTH-07`) est
+client-side — un jeton volé reste valide jusqu'à son échéance. Une liste de révocation
+supposerait un état serveur, donc une écriture Nextcloud par déconnexion, disproportionné
+pour une application mono-utilisateur.
 
 ---
 
@@ -661,7 +676,7 @@ changement de spec, pas comme une question ouverte.
 
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
-| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours — **L00 (`v0.1.0`) et L01 (`v0.2.0`) livrés**, L02 suivant |
+| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours — **L00 (`v0.1.0`), L01 (`v0.2.0`), L02 (`v0.3.0`) livrés**, L03 suivant |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☐ à faire |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
