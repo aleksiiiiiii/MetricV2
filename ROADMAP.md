@@ -646,7 +646,7 @@ changement de spec, pas comme une question ouverte.
 
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
-| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours (L00) |
+| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours — **L00 livré (`v0.1.0`)**, L01 suivant |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☐ à faire |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
