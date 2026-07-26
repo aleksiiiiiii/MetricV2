@@ -5,7 +5,7 @@ PY := backend/.venv/bin/python
 UVICORN := backend/.venv/bin/uvicorn
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-api setup-web dev dev-api dev-web check check-api check-web \
+.PHONY: help setup setup-api setup-web console dev dev-api dev-web check check-api check-web \
         test test-api test-web fmt fmt-check build fonts check-storage hash-password clean
 
 help: ## Affiche cette aide
@@ -25,7 +25,10 @@ setup-web:
 	cd frontend && npm run fonts
 
 # ── Développement ──────────────────────────────────
-dev: ## Lance API + frontend ensemble
+console: ## Console interactive : start / stop / logs / status
+	@python3 scripts/metric.py $(filter-out $@,$(MAKECMDGOALS))
+
+dev: ## Lance API + frontend ensemble (au premier plan, Ctrl-C arrête tout)
 	@bash scripts/dev.sh
 
 dev-api: ## Lance l'API seule sur :8000

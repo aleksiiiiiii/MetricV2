@@ -27,22 +27,44 @@ En cas de contradiction, c'est lui qui fait autorité.
 ## Démarrage
 
 ```bash
-make setup     # venv backend + npm install frontend + polices locales
-cp .env.example .env    # puis renseigner Nextcloud et le secret JWT
-make dev       # API sur :8000, frontend sur :5173 (proxy /api → :8000)
+make setup              # venv backend + npm install frontend + polices locales
+cp .env.example .env    # puis : make console → « hash » et « env »
+make console            # console interactive
 ```
 
 Le frontend démarre sans backend configuré : seuls les écrans de données échouent,
 proprement.
 
+## Console
+
+`make console` ouvre une console qui pilote les deux serveurs. Elle choisit un port
+libre si le port habituel est pris, et le proxy du frontend suit automatiquement.
+
+```
+metric ❯ start            démarre l'API et le frontend
+metric ❯ status           état, URL, et quelles clés de .env sont renseignées
+metric ❯ logs api -f      suit les journaux en direct
+metric ❯ restart web      redémarre un seul service
+metric ❯ hash             génère le hash de mot de passe (AUTH-08)
+metric ❯ env              ce qui est renseigné dans .env, sans jamais les valeurs
+metric ❯ help             toutes les commandes
+```
+
+Les serveurs sont détachés : quitter la console ne les arrête pas, et les retrouver
+suffit à rouvrir la console. Une commande passée en argument s'exécute et rend la
+main — `make console status`.
+
 ## Commandes
 
 | Commande | Effet |
 |---|---|
-| `make dev` | Lance backend et frontend ensemble |
+| `make console` | Console interactive (chemin recommandé) |
+| `make dev` | Lance les deux au premier plan, Ctrl-C arrête tout |
 | `make dev-api` / `make dev-web` | Lance l'un ou l'autre |
 | `make check` | Lint + types + tests, des deux côtés (ce que vérifie la CI) |
 | `make test` | Tests seuls |
+| `make hash-password` | Hash Argon2id à coller dans `.env` |
+| `make check-storage` | Diagnostique la configuration Nextcloud |
 | `make fmt` | Formatage |
 | `make build` | Build de production du frontend |
 

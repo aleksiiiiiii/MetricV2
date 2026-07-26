@@ -8,7 +8,13 @@ import { defineConfig } from 'vitest/config';
  * Le frontend ne connaît que `/api` : l'URL du backend n'est jamais compilée dans le
  * bundle. En développement le proxy l'envoie sur uvicorn, en production le
  * reverse-proxy s'en charge (`OPS-01`).
+ *
+ * Le port de l'API est lu dans l'environnement : la console de développement
+ * (`make console`) bascule sur un autre port si 8000 est occupé, et le proxy doit
+ * suivre. Valeur de repli identique au défaut d'uvicorn.
  */
+const API_PORT = process.env.METRIC_API_PORT ?? '8000';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -20,7 +26,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: `http://127.0.0.1:${API_PORT}`,
         changeOrigin: true,
       },
     },

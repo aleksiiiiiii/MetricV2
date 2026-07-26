@@ -19,7 +19,7 @@ import sys
 
 from app.core.security import hash_password
 
-MIN_LENGTH = 12
+MIN_LENGTH = 6
 
 
 def run() -> int:

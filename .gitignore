@@ -33,6 +33,10 @@ npm-debug.log*
 playwright-report/
 test-results/
 
+# ── Console de développement ───────────────────────
+# PID, ports, journaux et historique des serveurs lancés localement.
+.metric/
+
 # ── Données locales ────────────────────────────────
 # Les données de production vivent sur Nextcloud (STO-01),
 # jamais dans le dépôt. Ce dossier ne sert qu'aux tests locaux.
