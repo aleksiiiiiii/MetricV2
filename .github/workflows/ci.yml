@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Une nouvelle poussée annule la vérification en cours sur la même branche.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+
+      - name: Installer les dépendances
+        run: pip install -e "./backend[dev]"
+
+      - name: Ruff — lint
+        run: ruff check backend
+
+      - name: Ruff — formatage
+        run: ruff format --check backend
+
+      - name: Mypy — types stricts
+        run: mypy app tests
+        working-directory: backend
+
+      - name: Pytest
+        run: pytest
+        working-directory: backend
+
+  frontend:
+    name: Frontend — lint, types, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installer les dépendances
+        run: npm ci --no-audit --no-fund
+
+      - name: Prettier
+        run: npm run fmt:check
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript
+        run: npm run types
+
+      - name: Vitest
+        run: npm run test
+
+      # Les polices sont versionnées : le build ne dépend d'aucun appel réseau
+      # vers Google Fonts.
+      - name: Build de production
+        run: npx vite build

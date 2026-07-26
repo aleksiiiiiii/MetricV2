@@ -1,0 +1,97 @@
+/* ═══════════════════════════════════════════════════
+   METRIC — Design tokens
+   Direction : planche de bord instrumentée.
+   Fond sombre mat, accents désaturés, données en mono.
+
+   Source de vérité : GuidelinesUI.html (`:root`). Les valeurs du bloc « Charte »
+   ci-dessous en sont la reprise exacte — ne pas les modifier sans modifier la charte.
+   Le bloc « Extensions » ajoute ce que la charte utilisait en valeurs littérales et
+   qu'une application a besoin de nommer.
+   ═══════════════════════════════════════════════════ */
+
+:root {
+  /* ── Charte — fond & surfaces ──────────────────── */
+  --bg: #0b0f16;
+  --surface: #131a24;
+  --surface-2: #18212d;
+  --line: #1f2a38;
+  --line-soft: #182231;
+
+  /* ── Charte — 4 couleurs de signal ─────────────── */
+  --signal: #7fa8b4; /* primaire — cyan ardoise, mesure / neutre */
+  --effort: #8aa37b; /* sauge — activité, série tenue */
+  --load: #c39b6e; /* argile — charge, seuil approché */
+  --recover: #a9748a; /* mauve — repos, alerte, dette */
+
+  /* ── Charte — texte ───────────────────────────── */
+  --ink: #e3e8ee;
+  --ink-mid: #97a3b0;
+  --ink-low: #5c6874;
+
+  /* ── Charte — type ────────────────────────────── */
+  --display: 'Space Grotesk', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── Charte — rayons ──────────────────────────── */
+  --r: 14px;
+  --r-sm: 8px;
+
+  /* ═══ Extensions ═══════════════════════════════ */
+
+  /* Composantes RVB des signaux. La charte écrivait `rgba(127,168,180,.20)` à la
+     main ; les nommer permet de dériver n'importe quelle opacité, et surtout de
+     paramétrer une couleur d'accent par piste (`HEAT-20`, `L11-12`) sans dupliquer
+     quatre variantes par couleur. */
+  --signal-rgb: 127 168 180;
+  --effort-rgb: 138 163 123;
+  --load-rgb: 195 155 110;
+  --recover-rgb: 169 116 138;
+  --ink-rgb: 227 232 238;
+
+  /* Accent courant : ce que lisent les composants génériques. Une piste le
+     surcharge localement, la valeur par défaut reste le signal primaire. */
+  --accent: var(--signal);
+  --accent-rgb: var(--signal-rgb);
+
+  /* Opacités des 4 niveaux d'intensité de heatmap (`HEAT-15`).
+     Reprises des classes `.l1`–`.l4` de la charte. */
+  --heat-a1: 0.2;
+  --heat-a2: 0.4;
+  --heat-a3: 0.65;
+  --heat-a4: 1;
+
+  /* Cellule de heatmap. La charte fixe 12 px et 3 px de gouttière. */
+  --heat-cell: 12px;
+  --heat-gap: 3px;
+  --heat-radius: 3px;
+
+  /* Opacités de fond / bordure des badges, reprises de `.b-*`. */
+  --badge-bg-a: 0.09;
+  --badge-border-a: 0.32;
+
+  /* Échelle d'espacement. La charte employait 6 / 8 / 10 / 14 / 20 / 26 px
+     directement dans les règles ; on les nomme pour éviter la dérive. */
+  --s1: 4px;
+  --s2: 6px;
+  --s3: 10px;
+  --s4: 14px;
+  --s5: 20px;
+  --s6: 26px;
+  --s7: 36px;
+  --s8: 52px;
+
+  /* Rayon des contrôles — la charte utilise 10 px pour les boutons, 5 px pour
+     les badges. */
+  --r-btn: 10px;
+  --r-badge: 5px;
+
+  /* Transitions. `.16s ease` pour les contrôles, `.1s` pour les cellules. */
+  --t: 0.16s ease;
+  --t-fast: 0.1s ease;
+
+  /* Élévation des surfaces flottantes (infobulles, tiroirs). */
+  --shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+
+  /* Largeur de lecture du contenu. */
+  --wrap: 1080px;
+}

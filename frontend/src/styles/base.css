@@ -1,0 +1,221 @@
+/* ═══════════════════════════════════════════════════
+   METRIC — Socle global
+   Reset, corps de page, typographie et primitives de mise en page reprises de la
+   charte. Tout ce qui est composant (carte, bouton, badge, stat, heatmap…) vit en
+   CSS Module dans `components/ui/` — pas ici.
+   ═══════════════════════════════════════════════════ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Empêche iOS d'agrandir le texte en paysage. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Le fond couvre le rebond de défilement sur mobile. */
+  min-height: 100dvh;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+/* ── Typographie ──────────────────────────────────── */
+
+h1 {
+  font-size: clamp(34px, 6vw, 54px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+}
+
+h2 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Surtitre monospace en capitales — motif récurrent de la charte. */
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+.lede {
+  color: var(--ink-mid);
+  max-width: 56ch;
+  font-size: 16px;
+}
+
+/* Tout ce qui est chiffre, unité, horodatage. La chasse fixe aligne les colonnes
+   seule : l'œil compare sans effort. */
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: var(--signal);
+  text-decoration-color: rgb(var(--signal-rgb) / 0.4);
+  text-underline-offset: 3px;
+}
+
+/* ── Accessibilité ────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+/* Retire le focus visible au clic souris, le conserve au clavier. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Primitives de mise en page ───────────────────── */
+
+.wrap {
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: clamp(20px, 4vw, 56px);
+}
+
+.grid {
+  display: grid;
+  gap: var(--s4);
+}
+
+.g2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.g3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.g4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 760px) {
+  .g2,
+  .g3,
+  .g4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.row {
+  display: flex;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.spread {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s4);
+}
+
+.mt {
+  margin-top: var(--s4);
+}
+
+.ta-r {
+  text-align: right;
+}
+
+/* ── Règle graduée : motif signature de la charte ─── */
+
+.rule {
+  position: relative;
+  height: 1px;
+  background: var(--line);
+  margin: var(--s8) 0 var(--s6);
+}
+
+/* Les graduations verticales, tous les 16 px. */
+.rule::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0 auto 0;
+  height: 5px;
+  background-image: linear-gradient(to right, var(--line) 1px, transparent 1px);
+  background-size: 16px 100%;
+}
+
+.rule > span {
+  position: absolute;
+  top: -9px;
+  left: 0;
+  background: var(--bg);
+  padding-right: var(--s4);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+/* ── Mouvement réduit ─────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

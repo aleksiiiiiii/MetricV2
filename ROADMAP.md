@@ -1,0 +1,656 @@
+# Metric — Feuille de route & lots de livraison
+
+Plan de construction de l'application **Metric** à partir de zéro, découpé en **lots
+versionnés**. Un lot = une version mineure = un incrément démontrable.
+
+**Sources de vérité**
+| Document | Rôle | Autorité |
+|---|---|---|
+| `backlogV2.md` | Domaine métier complet, 13 sections, annexe CSV | Référence globale |
+| `heat_backlog.md` | Spec `HEAT` v2 (moteur d'assiduité multi-pistes) | **Remplace** la partie `HEAT` de la section 12 |
+| `GuidelinesUI.html` | Tokens, composants, motifs visuels | Référence UI exclusive |
+
+> `backlogV2.md` annonce les sections 1–11 comme « réalisées » : c'est l'état de la v1.
+> Ce dépôt est vide, tout est à reconstruire. Le statut est donc traité comme
+> **spécification acquise et stable**, pas comme du code existant.
+
+---
+
+## 0. Cadre technique
+
+Stack imposée par `backlogV2.md` (« stack de référence »), complétée là où le backlog
+est muet.
+
+### Backend
+| Choix | Détail |
+|---|---|
+| Runtime | Python 3.14 (version présente sur la machine ; le code reste compatible 3.12+) |
+| Framework | FastAPI + Pydantic v2 (validation `API-06`, OpenAPI `API-05`) |
+| Dépendances | `venv` + `pip`, `pyproject.toml` + `requirements.lock` — `uv` n'est pas installé sur la machine, la bascule reste triviale (même `pyproject`) |
+| Stockage | Nextcloud WebDAV via `httpx` + wrapper minimal (GET/PUT/PROPFIND/MKCOL) |
+| Auth | `argon2-cffi` (AUTH-02) + `pyjwt` (AUTH-03) |
+| Qualité | `pytest`, `ruff`, `mypy --strict` |
+| Fuseau | `zoneinfo` Europe/Paris, partout (`HEAT-32`) |
+
+Wrapper WebDAV maison plutôt qu'une lib : on a besoin de 5 verbes, mais de beaucoup de
+contrôle sur le retry / `Retry-After` / keep-alive (`STO-08`).
+
+### Frontend
+| Choix | Détail |
+|---|---|
+| Base | React 19 + Vite + TypeScript strict |
+| Données | TanStack Query v5 (cache, écriture optimiste `SUP-04`) |
+| Routing | React Router v7 (mode déclaratif) |
+| Styles | CSS natif + CSS Modules, tokens extraits de `GuidelinesUI.html`. **Aucun kit UI** |
+| Graphiques | SVG écrit à la main, repris des patterns des guidelines. **Aucune lib de charts** |
+| PWA | `vite-plugin-pwa` (prérequis `NOT-01`, `OPS-01`) |
+| Tests | Vitest + Testing Library, Playwright pour les parcours |
+
+Pas de lib de charts : les guidelines fournissent déjà courbes, barres, anneau, heatmap
+et graphique croisé en SVG. Une lib imposerait son propre langage visuel et il faudrait
+la combattre à chaque écran.
+
+### Arborescence
+```
+metric/
+├── backend/
+│   ├── app/
+│   │   ├── main.py  config.py
+│   │   ├── core/            # sécurité, erreurs typées, dépendances FastAPI
+│   │   ├── storage/         # webdav.py  csv_repo.py  cache.py  migrations.py
+│   │   ├── domains/         # body activity nutrition hydration supplements
+│   │   │                    # planning goals settings aggregates heatmap
+│   │   │                    # (chacun : models / repository / service / router)
+│   │   ├── ai/              # openrouter.py  prompts/  extract.py  images.py
+│   │   └── scripts/         # hash_password.py  check_storage.py
+│   └── tests/
+├── frontend/
+│   └── src/
+│       ├── styles/          # tokens.css  base.css
+│       ├── components/ui/   # Button Card Stat Badge Field Heatmap Chart Check …
+│       ├── features/<domaine>/
+│       ├── lib/             # api client, queryClient, auth, formats
+│       └── routes/
+├── docs/
+├── docker-compose.yml
+├── CHANGELOG.md
+└── ROADMAP.md
+```
+
+Un dossier par domaine, avec la même structure quadruple. C'est ce qui rend `API-01`
+(« chaque domaine testable isolément ») vrai dans les faits et pas seulement sur le
+papier.
+
+### Convention de versioning
+- **SemVer** en `0.x` jusqu'au périmètre complet, `1.0.0` à la mise en production.
+- **1 lot = 1 version mineure.** Tag `v0.N.0` à la clôture du lot, correctifs en `0.N.x`.
+- Branche `main` toujours déployable ; un lot = une branche `feat/lot-NN-slug`.
+- **Conventional commits** (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`),
+  scope = domaine (`feat(heatmap): …`).
+- `CHANGELOG.md` alimenté à la clôture de chaque lot (Keep a Changelog).
+- Un lot n'est clos que si sa **DoD** est intégralement vérifiée. Pas de lot « clos à 90 % ».
+
+### Définition de « terminé » (transverse, tout lot)
+- [ ] Endpoints typés, validés (`API-06`), erreurs à code machine stable (`API-07`)
+- [ ] Tests unitaires sur les règles de calcul + tests d'API sur les cas limites
+- [ ] Aucune règle métier réimplémentée côté client
+- [ ] UI conforme aux tokens des guidelines (zéro couleur / police en dur)
+- [ ] États vide / chargement / erreur traités, pas seulement le cas nominal
+- [ ] `ruff` + `mypy --strict` + `tsc --noEmit` au vert
+- [ ] `CHANGELOG.md` mis à jour, tag posé
+
+---
+
+## 1. Vue d'ensemble des lots
+
+| Lot | Version | Titre | Dépend de |
+|---|---|---|---|
+| **Jalon I — Socle** | | | |
+| L00 | `v0.1.0` | Fondations, outillage, tokens UI | — |
+| L01 | `v0.2.0` | Couche stockage WebDAV + CSV | L00 |
+| L02 | `v0.3.0` | Socle API + authentification | L01 |
+| L03 | `v0.4.0` | Design system & coquille applicative | L02 |
+| **Jalon II — Domaines de saisie** | | | |
+| L04 | `v0.5.0` | Corps : poids & mensurations *(tranche verticale de référence)* | L03 |
+| L05 | `v0.6.0` | Activité sportive & exercices | L04 |
+| L06 | `v0.7.0` | Hydratation & suppléments | L04 |
+| L07 | `v0.8.0` | Nutrition & fichiers binaires | L04 |
+| L08 | `v0.9.0` | Réglages & agrégats du tableau de bord | L05, L06, L07 |
+| **Jalon III — Assiduité** | | | |
+| L09 | `v0.10.0` | Moteur `HEAT` — modèle, config, pistes | L08 |
+| L10 | `v0.11.0` | Moteur `HEAT` — calcul, cadences, statistiques | L09 |
+| L11 | `v0.12.0` | Heatmaps & réglage des pistes (UI) | L10 |
+| **Jalon IV — Intelligence** | | | |
+| L12 | `v0.13.0` | Couche IA OpenRouter + analyse de repas + import Apple | L07 |
+| L13 | `v0.14.0` | Planning sport & export iCal | L12 |
+| L14 | `v0.15.0` | Objectifs IA & bilan hebdomadaire | L12, L13 |
+| **Jalon V — Production** | | | |
+| L15 | `v0.16.0` | PWA & notifications push | L11 |
+| L16 | `v0.17.0` | Export, hors-ligne, recherche, corrélations | L11 |
+| L17 | `v1.0.0` | Durcissement, déploiement, documentation | tous |
+
+Ordre motivé : le socle d'abord parce que tout en dépend ; **le Corps en premier
+domaine** parce que c'est le plus simple et qu'il valide la chaîne complète
+CSV → API → Query → écran ; les heatmaps après les domaines de saisie parce qu'une
+piste sans données sources est une grille vide ; l'IA après, parce que `IA-07` en fait
+un confort et jamais un prérequis.
+
+---
+
+# Jalon I — Socle
+
+## L00 · `v0.1.0` — Fondations, outillage, tokens UI
+
+**Objectif** : un dépôt qui démarre, se teste et sait déjà parler la langue visuelle
+de Metric.
+
+- [x] `L00-01` `git init`, `main`, `.gitignore`, `.editorconfig`, `README`, réglages VS Code
+- [x] `L00-02` Backend : squelette `venv` + `pip`, FastAPI qui démarre, `ruff` + `mypy --strict` + `pytest` configurés
+- [x] `L00-03` Frontend : Vite + React 19 + TS strict, ESLint + Prettier, Vitest
+- [x] `L00-04` Proxy Vite `/api` → uvicorn, `make dev` lance les deux et les arrête ensemble
+- [x] `L00-05` `.env.example` complet et documenté (`API-02`) : URL Nextcloud, identifiants, secret JWT, CORS, clé OpenRouter, clé iCal
+- [x] `L00-06` **Extraction des tokens** de `GuidelinesUI.html` → `styles/tokens.css` : couleurs, 2 polices, rayons, échelle typo. Polices téléchargées et versionnées en local (`npm run fonts`), plus aucun CDN Google
+- [x] `L00-07` `base.css` : reset, fond, typographie, primitives de mise en page, règle graduée, `prefers-reduced-motion`, `.num` tabular-nums
+- [x] `L00-08` Page `/_kitchen-sink` : référence visuelle des **tokens** (couleurs, typo, niveaux d'intensité, espacement). Devient la galerie des composants au `L03-11`, une fois `components/ui/` écrit
+- [x] `L00-09` `docker-compose.yml` de développement — **écrit mais non exécuté** : Docker n'est pas installé sur la machine. Le chemin de travail est `make dev` ; la pile conteneurisée est validée au `L17-01`
+- [x] `L00-10` GitHub Actions : formatage + lint + types + tests des deux côtés, plus build de production
+
+**DoD** — `make check` vert des deux côtés (5 tests backend, 5 tests frontend, `mypy
+--strict` et ESLint sans avertissement) ; les deux serveurs démarrent et `/api/health`
+répond **à travers le proxy Vite** ; les polices sont servies localement ; le build de
+production passe (77 kB gzip). `docker compose up` reste à vérifier au L17.
+
+**Écarts d'environnement constatés et absorbés** (le cadre du §0 a été corrigé en
+conséquence) :
+
+| Attendu | Constaté | Décision |
+|---|---|---|
+| Python 3.12 + `uv` | Python 3.14.6, `uv` absent | `venv` + `pip`, `pyproject.toml` conservé — bascule vers `uv` triviale |
+| `httpx` | starlette 1.x déprécie `httpx` dans son `TestClient` | Tout le projet passe à **`httpx2`**, y compris le futur client WebDAV (`L01-01`) |
+| TypeScript 7 disponible | `typescript-eslint` exige `<6.1.0` | **TypeScript 6.0** — le lint prime sur la dernière majeure |
+| Docker | absent de la machine | `docker-compose.yml` livré non exécuté, validation reportée au `L17-01` |
+| Port 5173 libre | occupé par un autre processus Node | Vite bascule seul de port ; `dev.sh` n'affiche plus d'URL frontend codée en dur |
+
+---
+
+## L01 · `v0.2.0` — Couche stockage WebDAV + CSV
+
+**Objectif** : lire et écrire des CSV sur Nextcloud de façon sûre. C'est la pièce la
+plus risquée du projet : tout le reste s'appuie dessus.
+
+- [ ] `L01-01` Client WebDAV : GET / PUT / PROPFIND / MKCOL, pool keep-alive, identifiants côté serveur uniquement (`STO-01`)
+- [ ] `L01-02` Retry sur erreur transitoire et `429`, `Retry-After` honoré, backoff plafonné (`STO-08`)
+- [ ] `L01-03` Erreurs de stockage traduites en `502`/`503` + message français + code machine (`STO-09`, `API-07`)
+- [ ] `L01-04` `CsvRepository` génériqué : en-tête explicite, un fichier par domaine, lecture typée (`STO-02`)
+- [ ] `L01-05` Écriture en ajout, sans réécriture du fichier (`STO-03`)
+- [ ] `L01-06` Migration automatique d'en-tête : remappage par nom de colonne, colonnes manquantes vides (`STO-04`)
+- [ ] `L01-07` Garde anti-conflit : valeurs attendues de la ligne visée, `409` si divergence (`STO-05`)
+- [ ] `L01-08` Réécriture complète pour édition/suppression : temporaire + `MOVE` atomique, sous garde `L01-07`
+- [ ] `L01-09` Cache mémoire par fichier, TTL court, invalidation à l'écriture **et sur changement d'ETag/mtime distant** (`STO-06`)
+- [ ] `L01-10` Fichiers binaires : arborescence datée, création des dossiers parents (`STO-07`)
+- [ ] `L01-11` Script `check_storage.py` : écrit puis relit une ligne de test (`STO-11`)
+- [ ] `L01-12` Tests contre un serveur WebDAV factice : conflit, coupure en cours d'écriture, en-tête migré, `429`
+
+**DoD** — `check_storage.py` vert sur un vrai Nextcloud ; une écriture interrompue ne
+corrompt aucun fichier ; deux écritures concurrentes sur la même ligne produisent
+un `409` et non un écrasement.
+
+> **Décision technique** : `STO-03` (append) et l'édition de lignes (`BODY-02`, `ACT-04`,
+> config des pistes) sont inconciliables tels quels. Règle retenue : **append pour toute
+> création**, réécriture atomique sous garde `409` pour modification/suppression. Le
+> versioning Nextcloud (`STO-10`) reste le filet de sécurité.
+>
+> **Point non trivial** : Nextcloud peut être écrit par ailleurs (autre appareil,
+> édition tableur). Le cache ne peut donc pas être invalidé seulement par *nos* propres
+> écritures — d'où la vérification d'ETag de `L01-09`, qui conditionne la validité de
+> `HEAT-33`.
+
+---
+
+## L02 · `v0.3.0` — Socle API + authentification
+
+**Objectif** : une API structurée, protégée, documentée.
+
+- [ ] `L02-01` Découpage en routeurs par domaine, préfixe `/api`, squelettes vides (`API-01`)
+- [ ] `L02-02` Configuration centralisée `.env` typée Pydantic Settings (`API-02`)
+- [ ] `L02-03` CORS configurable par environnement (`API-03`)
+- [ ] `L02-04` `GET /api/health` public (`API-04`)
+- [ ] `L02-05` OpenAPI + interface d'essai, chaque endpoint annoté (`API-05`)
+- [ ] `L02-06` Socle de validation : bornes de vraisemblance réutilisables — poids 0–500 kg, réps 1–200, FC 1–260, volume 0–5000 ml, date jamais future (`API-06`)
+- [ ] `L02-07` Catalogue d'erreurs typées : `storage_unavailable`, `conflict`, `ai_quota`, `session_expired`, `validation_error`… + gestionnaire global (`API-07`)
+- [ ] `L02-08` Connexion mono-utilisateur contre la config serveur (`AUTH-01`)
+- [ ] `L02-09` Vérification Argon2id, comparaison en temps constant (`AUTH-02`)
+- [ ] `L02-10` Émission JWT signé, 7 jours par défaut, `Authorization: Bearer` (`AUTH-03`)
+- [ ] `L02-11` Anti-brute-force : 5 échecs / 60 s / IP → `429` avec délai annoncé ; **hachage exécuté même si l'identifiant est faux** (`AUTH-04`)
+- [ ] `L02-12` Dépendance d'authentification sur toutes les routes métier ; seules santé, doc et flux iCal restent publics (`AUTH-05`)
+- [ ] `L02-13` Script `hash_password.py`, jamais de mot de passe en clair sur disque (`AUTH-08`)
+- [ ] `L02-14` Tests : `401` sans jeton, jeton expiré, jeton falsifié, égalité des temps de réponse identifiant faux / mot de passe faux
+
+**DoD** — toute route métier répond `401` sans jeton valide ; le timing ne distingue
+pas un identifiant inconnu d'un mot de passe faux ; `/docs` liste l'API complète.
+
+---
+
+## L03 · `v0.4.0` — Design system & coquille applicative
+
+**Objectif** : la bibliothèque de composants des guidelines, et une app authentifiée
+qui navigue.
+
+- [ ] `L03-01` Primitives : `Button` (primary / ghost / quiet / log / disabled), `Card`, `Badge` (4 signaux), `Field`/`Input`, `Rule` (règle graduée), `Eyebrow`
+- [ ] `L03-02` Composants de données : `Stat` (+ sparkline), `Bars`, `Ring`, `Table`, `Segmented`, `Empty`, `AiBlock`, `Check` (checklist)
+- [ ] `L03-03` `Heatmap` : grille 7 lignes × N semaines, niveaux 0–4, en-tête de mois, légende, infobulle. **Pilotée par les données du serveur, aucune règle d'état côté client**
+- [ ] `L03-04` `Chart` : axes, grille de fond, aires dégradées, courbes, bande inférieure, curseur + infobulle suiveuse (motif de la section 07 des guidelines)
+- [ ] `L03-05` Client API : `fetch` typé, injection du jeton, décodage des erreurs `API-07` vers messages français
+- [ ] `L03-06` `401` → purge du jeton local + motif exploitable (`AUTH-06`) ; déconnexion manuelle (`AUTH-07`)
+- [ ] `L03-07` `QueryClient` : clés par domaine, politique de réessai, invalidations croisées
+- [ ] `L03-08` Écran de connexion, routes protégées, persistance de session au redémarrage
+- [ ] `L03-09` Coquille : navigation, en-tête, conteneur, zone de notifications discrètes
+- [ ] `L03-10` Utilitaires de format : dates FR, `mm:ss` / `h:mm:ss`, allure, volumes, virgule décimale
+- [ ] `L03-11` Kitchen sink promu en page de test visuel, snapshots Vitest
+
+**DoD** — session qui survit à un rechargement ; expiration gérée sans écran blanc ;
+tous les composants des guidelines disponibles et documentés dans le kitchen sink.
+
+---
+
+# Jalon II — Domaines de saisie
+
+## L04 · `v0.5.0` — Corps : poids & mensurations
+
+**Objectif** : première tranche verticale complète. Elle fixe le patron que les
+domaines suivants recopieront.
+
+- [ ] `L04-01` `body/weight.csv` + `body/measurements.csv` : schémas, migration, repositories
+- [ ] `L04-02` Enregistrer une pesée : poids, date non future, note (`BODY-01`)
+- [ ] `L04-03` Modifier / supprimer une pesée sous garde `409` (`BODY-02`)
+- [ ] `L04-04` Indicateurs : dernier poids, variation sur 8 pesées, série, écart à l'objectif (`BODY-03`)
+- [ ] `L04-05` Série temporelle ordonnée + min / max / amplitude (`BODY-04`)
+- [ ] `L04-06` Tendance lissée 7 jours, calculée serveur (`BODY-05`)
+- [ ] `L04-07` Historique paginé, entrées identifiables (`BODY-06`)
+- [ ] `L04-08` Mensurations : 6 mesures optionnelles, au moins une requise (`BODY-07`, `BODY-10` masse grasse incluse dès maintenant)
+- [ ] `L04-09` Indicateurs de mensurations : dernière valeur, delta, sens (`BODY-08`)
+- [ ] `L04-10` Historique + édition des mensurations (`BODY-09`)
+- [ ] `L04-11` UI : écran Corps — stat cards, courbe de poids + tendance, formulaire de saisie rapide, tableau d'historique éditable
+- [ ] `L04-12` Tests bout en bout Playwright : saisir → corriger → supprimer une pesée
+
+**DoD** — le parcours complet fonctionne sur un vrai Nextcloud ; le CSV produit est
+lisible dans un tableur ; le patron de domaine est écrit dans `docs/patron-domaine.md`.
+
+---
+
+## L05 · `v0.6.0` — Activité sportive & exercices
+
+**Objectif** : le plus gros domaine, et la source de 6 des 9 pistes d'assiduité.
+
+- [ ] `L05-01` `activity/runs.csv`, `workouts.csv`, `exercises.csv`, `exercise_log.csv` : schémas et repositories
+- [ ] `L05-02` Enregistrer une course, formats souples normalisés — virgule décimale, `mm:ss`, `h:mm:ss`, minutes seules (`ACT-01`)
+- [ ] `L05-03` Allure min/km : aperçu à la volée + valeur stockée (`ACT-02`)
+- [ ] `L05-04` Enregistrer une séance, identifiant stable, 7 types suggérés (`ACT-03`)
+- [ ] `L05-05` Modifier / supprimer une activité ; supprimer une séance purge ses exercices (`ACT-04`)
+- [ ] `L05-06` Détail d'une course : distance, temps, allure, vitesse, FC, dénivelé, note (`ACT-05`)
+- [ ] `L05-07` Catalogue d'exercices, 9 groupes musculaires, retrait sans perte d'historique (`ACT-06`)
+- [ ] `L05-08` Journal d'exercices : charge × séries × réps, charge 0 = poids du corps, éditable (`ACT-07`)
+- [ ] `L05-09` Rappel de la dernière performance à la sélection d'un exercice (`ACT-08`)
+- [ ] `L05-10` Progression des charges : dernière perf, delta, série de la charge max, groupé par muscle (`ACT-09`)
+- [ ] `L05-11` Volume hebdomadaire par jour, repos distingué (`ACT-10`) + totaux de la semaine, remise à zéro le lundi (`ACT-11`)
+- [ ] `L05-12` Historique du volume sur 8 semaines (`ACT-12`) + historique fusionné courses/séances (`ACT-13`)
+- [ ] `L05-13` Tonnage par groupe musculaire et par semaine (`ACT-14`)
+- [ ] `L05-14` Records personnels + 1RM estimé (Epley), historisés par exercice (`ACT-15`)
+- [ ] `L05-15` Jours depuis la dernière sollicitation de chaque groupe (`ACT-16`)
+- [ ] `L05-16` Duplication d'une séance passée, exercices compris (`ACT-17`)
+- [ ] `L05-17` RPE 1–10 optionnel par séance (`ACT-18`)
+- [ ] `L05-18` UI : écran Activité — saisie rapide course / séance, journal d'exercices, tableau des séances, barres de volume, progression par exercice
+- [ ] `L05-19` Tests : normalisation des formats de temps, Epley, bornes de semaine ISO, purge en cascade
+
+**DoD** — une séance de musculation complète se saisit en moins d'une minute ; les
+agrégats hebdomadaires basculent bien le lundi ; un record est détecté à l'écriture.
+
+---
+
+## L06 · `v0.7.0` — Hydratation & suppléments
+
+**Objectif** : les deux domaines de saisie « en un geste », et les sources restantes
+des pistes d'assiduité.
+
+- [ ] `L06-01` `hydration/intake_log.csv` : volume + horodatage + type optionnel (`HYD-01`)
+- [ ] `L06-02` Raccourcis de volume paramétrables — 250 / 500 / 750 par défaut (`HYD-02`)
+- [ ] `L06-03` Total du jour vs objectif réglable, ratio d'atteinte (`HYD-03`)
+- [ ] `L06-04` Correction / suppression d'une prise du jour (`HYD-04`)
+- [ ] `L06-05` Série quotidienne, moyennes 7 et 30 jours, jours ayant atteint l'objectif (`HYD-05`)
+- [ ] `L06-06` `supplements/schedule.csv` avec **`frequency` renseignée** et **`created`** — prérequis de `HEAT-23` et `HEAT-07`
+- [ ] `L06-07` Configurer le planning : nom, dose, unité, moment, tri par horaire (`SUP-01`)
+- [ ] `L06-08` Retrait d'un supplément sans perte d'historique (`SUP-02`)
+- [ ] `L06-09` Checklist du jour : cocher écrit une prise horodatée, remise à zéro quotidienne (`SUP-03`)
+- [ ] `L06-10` Écriture optimiste avec annulation en cas d'échec (`SUP-04`)
+- [ ] `L06-11` Décocher supprime la prise du jour (`SUP-05`)
+- [ ] `L06-12` Ratio du jour + booléen « journée complète » (`SUP-06`)
+- [ ] `L06-13` UI : composant checklist des guidelines (section 08), groupé par moment, série par item ; contrôles d'hydratation en un geste
+- [ ] `L06-14` Tests : bascule optimiste annulée, frontière de jour à 23 h 30 en Europe/Paris
+
+**DoD** — cocher un supplément est instantané à l'écran et cohérent après
+rechargement ; une prise à 23 h 30 appartient au jour affiché par l'horloge.
+
+---
+
+## L07 · `v0.8.0` — Nutrition & fichiers binaires
+
+**Objectif** : les repas, avec photo, sans IA pour l'instant (elle arrive au L12).
+
+- [ ] `L07-01` `nutrition/meals.csv`, `favorites.csv` : schémas et repositories
+- [ ] `L07-02` Ajouter un repas : photo et/ou description, au moins l'un des deux (`NUT-01`)
+- [ ] `L07-03` Rangement `nutrition/photos/AAAA/MM/JJ/`, nom unique horodaté (`NUT-02`)
+- [ ] `L07-04` Typage du repas présélectionné selon l'heure (`NUT-03`)
+- [ ] `L07-05` Saisie / ajustement manuel des macros (`NUT-05`)
+- [ ] `L07-06` Totaux du jour : protéines vs objectif, sucres vs plafond, calories (`NUT-06`)
+- [ ] `L07-07` Liste des repas, bornée ou complète (`NUT-07`)
+- [ ] `L07-08` Service authentifié des photos, tout parcours d'arborescence bloqué, réponses cachables (`NUT-08`)
+- [ ] `L07-09` Modifier / supprimer un repas en préservant photo et source (`NUT-09`)
+- [ ] `L07-10` Repas favoris réutilisables en une action (`NUT-10`)
+- [ ] `L07-11` UI : écran Nutrition — capture/téléversement, macros éditables, totaux du jour, galerie du jour
+- [ ] `L07-12` Tests de sécurité : `../`, chemin absolu, lien symbolique, extension inattendue
+
+**DoD** — un repas photo s'enregistre depuis un téléphone ; aucune requête ne sort du
+dossier photos ; les macros sont modifiables sans IA (`IA-07` par construction).
+
+---
+
+## L08 · `v0.9.0` — Réglages & agrégats du tableau de bord
+
+**Objectif** : les réglages partagés, et l'écran d'accueil en un seul appel.
+
+- [ ] `L08-01` `settings/settings.csv` clé/valeur (**D2** : tout sous `settings/`), lecture typée, **valeurs de repli identiques backend et frontend** (annexe du backlog)
+- [ ] `L08-02` Réglages exposés : poids cible, protéines cible, plafond sucres, objectif d'hydratation, raccourcis, métrique mise en avant
+- [ ] `L08-03` `GET /api/aggregates/dashboard` : tous les indicateurs de synthèse en une requête (`AGG-01`)
+- [ ] `L08-04` Totaux d'entraînement : total, semaine courante, 8 semaines, répartition courses / muscu (`AGG-02`)
+- [ ] `L08-05` Série d'assiduité toutes sources + état des 7 derniers jours, hier reste valide tant que le jour en cours n'est pas fini (`AGG-03`)
+- [ ] `L08-06` Séries temporelles génériques : contrat unique, plages 1 mois / 3 mois / tout, stats dernier / variation / moyenne / min / max (`AGG-04`)
+- [ ] `L08-07` UI : tableau de bord — rangée de stat cards, sélecteur de période, graphique croisé, état vide « aucun relevé aujourd'hui »
+- [ ] `L08-08` UI : écran Réglages (section généraliste, les pistes viendront au L11)
+- [ ] `L08-09` Tests : un seul appel réseau au chargement du tableau de bord ; streak sur données trouées
+
+**DoD** — le tableau de bord se charge en une requête ; `AGG-04` sert déjà au moins
+trois métriques différentes sans code spécifique.
+
+> `AGG-03` (« au moins une donnée, toutes sources ») et `HEAT-27` (série
+> cadence-consciente par piste) sont **deux algorithmes distincts** et le resteront.
+> Le premier mesure l'assiduité de suivi, le second le respect d'un engagement.
+
+---
+
+# Jalon III — Assiduité
+
+> **Numérotation** : `HEAT-01` à `HEAT-33` désignent ici exclusivement la v2
+> (`heat_backlog.md`). Les `HEAT-01` à `HEAT-08` de `backlogV2.md` §12 sont **abandonnés
+> en tant qu'identifiants** ; leur contenu est absorbé : ancien `-02` → source
+> `activity.duration`, `-03` → `hydration.intake`, `-04` → voir décision **D5**,
+> `-05` → `entry_count`, `-06` → `HEAT-29`, `-07` → `HEAT-26`, `-08` → `HEAT-22`.
+> Les renvois de `SUP-06` (« heatmap `HEAT-03` ») et `HYD-01` pointent vers l'ancienne
+> numérotation : à corriger dans le backlog.
+
+## L09 · `v0.10.0` — Moteur `HEAT` : modèle, config, pistes
+
+**Objectif** : le modèle de piste et son cycle de vie. Aucun calcul d'état encore, mais
+tout ce qui le paramètre.
+
+- [ ] `L09-01` Modèle `Track` : id, libellé, source, filtre, seuil de validation, seuils d'intensité, binaire, accent, position, actif, date de création (`HEAT-01`)
+- [ ] `L09-02` `settings/heatmap_tracks.csv` + `heatmap_cadences.csv` + `heatmap_off_days.csv`, sérialisation `params` lisible en tableur `min_count=1;window_days=2` (`STO-02`)
+- [ ] `L09-03` Registre de sources extensible : `activity.muscle_group`, `activity.runs`, `activity.duration`, `supplement.intake`, `hydration.intake`, `entry_count` — une interface, six implémentations (`HEAT-02`)
+- [ ] `L09-04` Contrat d'agrégat quotidien : chaque source rend **un nombre par jour**, rien d'autre (`HEAT-03`)
+- [ ] `L09-05` Historique de cadences versionné avec `valid_from`, résolution de la cadence applicable à une date (`HEAT-14`)
+- [ ] `L09-06` Plages neutralisées, `track_id` vide = toutes les pistes (`HEAT-06`)
+- [ ] `L09-07` `GET/POST/PATCH/DELETE /api/heatmap/tracks` — création, modification versionnée, suppression sous garde `409` (`HEAT-18`, `HEAT-19`, `HEAT-21`)
+- [ ] `L09-08` Modification des seuils et libellés, **avec recalcul complet de l'historique** et avertissement explicite dans la réponse (`HEAT-20`)
+- [ ] `L09-09` Désactivation vs suppression : la désactivation conserve l'historique, la suppression n'efface jamais les données sources (`HEAT-21`)
+- [ ] `L09-10` Ordre et piste mise en avant comme réglages (`HEAT-22`)
+- [ ] `L09-11` `POST/DELETE /api/heatmap/off-days` (`HEAT-06`)
+- [ ] `L09-12` Amorçage des 9 pistes par défaut, mapping groupe musculaire → piste **en configuration** et non en constante ; `autre` délibérément non mappé (**D7**) (`heat_backlog` §5)
+- [ ] `L09-13` Amorçage des seuils (**D9**, **D10**) : `per_week` calculé sur la fréquence réelle des 4 dernières semaines et non figé à 2 ; validation de la piste `eau` à **1500 ml**, gradient d'intensité inchangé jusqu'à 2000 ml
+- [ ] `L09-14` Cadence `supplement.intake` (**D3**) : `schedule.frequency` = valeur courante éditable, `settings/heatmap_cadences.csv` = journal append-only alimenté à chaque changement ; le moteur lit le journal pour juger le passé (`HEAT-23`, `HEAT-14`)
+- [ ] `L09-15` Suppléments gradués non amorcés mais supportés (**D11**) : mode binaire par défaut, deux seuils suffisent à passer en gradué (`HEAT-15`, `HEAT-16`)
+- [ ] `L09-16` Tests : cadence résolue à une date passée, création de piste non rétroactive (`HEAT-07`), suppression sans perte de source
+
+**DoD** — les 9 pistes par défaut existent à l'initialisation, toutes modifiables ;
+ajouter une piste ne demande aucune ligne de code ; ajouter une *source* est le seul
+cas qui en demande.
+
+---
+
+## L10 · `v0.11.0` — Moteur `HEAT` : calcul, cadences, statistiques
+
+**Objectif** : le cœur du projet. C'est le lot où la justesse compte le plus.
+
+- [ ] `L10-01` Règle de validation `agrégat ≥ seuil`, seuil toujours paramètre de piste (`HEAT-04`)
+- [ ] `L10-02` Machine à états du jour : `off` / `missed` / `done` / `bonus` (`HEAT-05`)
+- [ ] `L10-03` Priorité des règles neutralisantes : neutralisé (`HEAT-06`) > antérieur à la création (`HEAT-07`) > jour en cours (`HEAT-08`) > cadence
+- [ ] `L10-04` Cadence `daily` (`HEAT-09`)
+- [ ] `L10-05` Cadence `window` : fenêtre **glissante** `min_count` / `window_days`, `missed` si la fenêtre qui se referme sur le jour contient moins de `min_count` validations (`HEAT-10`)
+- [ ] `L10-06` Cadence `per_week` : unité = semaine ISO lundi→dimanche, **aucun `missed` au jour**, statut porté par la semaine (`HEAT-11`)
+- [ ] `L10-07` Cadence `conditional` : attendu si un déclencheur est vrai — séance existante, séance d'un groupe donné (`HEAT-12`)
+- [ ] `L10-08` Cadence `none` : purement descriptive (`HEAT-13`)
+- [ ] `L10-09` Seuils d'intensité par piste → niveau 1–4 (`HEAT-15`) et mode binaire (`HEAT-16`)
+- [ ] `L10-10` **Découplage validation / intensité** : un jour peut être validé et pâle (`HEAT-17`)
+- [ ] `L10-11` Grille complète : aucun jour omis, `date → { valeur, état, niveau }` (`HEAT-24`)
+- [ ] `L10-12` Statistiques : jours validés, jours attendus, taux de respect, plus longue série, série en cours, meilleur jour, total cumulé (`HEAT-26`)
+- [ ] `L10-13` Série cadence-consciente : `off` et neutralisés **transparents**, ils n'incrémentent ni ne cassent (`HEAT-27`)
+- [ ] `L10-14` Statuts hebdomadaires atteint / partiel / manqué, réalisé sur attendu (`HEAT-28`)
+- [ ] `L10-15` Détail d'un jour par source : exercices et séries, distance et allure, prises horodatées, volumes (`HEAT-29`)
+- [ ] `L10-16` Découpage en jours en fuseau local Europe/Paris, jamais UTC (`HEAT-32`)
+- [ ] `L10-17` Plage par défaut (**D6**) : `from` = lundi de la semaine d'il y a 52 semaines, `to` = dimanche de la semaine courante → 53 colonnes pleines ; les jours futurs de la semaine en cours sont rendus `off` (`HEAT-31`)
+- [ ] `L10-18` **Batterie de tests de règles** : la fenêtre glissante sur rythme L/M/V vs M/J/S (les deux corrects), grippe de 5 jours au milieu d'une série de 90, changement de cadence à mi-historique, piste créée hier, whey un jour sur deux pendant 3 mois → série de 3 mois
+- [ ] `L10-19` Tests de propriété : aucune grille ne contient de trou ; aucun jour `missed` sur une piste `per_week` ou `none`
+
+**DoD** — chaque exemple cité en clair dans `heat_backlog.md` est un test qui passe ;
+tout calcul est serveur (`HEAT-30`) ; couverture de la machine à états ≥ 95 %.
+
+---
+
+## L11 · `v0.12.0` — Heatmaps & réglage des pistes (UI)
+
+**Objectif** : neuf grilles à l'écran, en un appel, explorables.
+
+- [ ] `L11-01` `GET /api/heatmap/{id}?from=&to=` : grille + stats + cadence, forme de réponse exactement conforme à `heat_backlog` §8 (`HEAT-24`)
+- [ ] `L11-02` `GET /api/heatmap?tracks=a,b,c&from=&to=` : lecture multi-pistes en une requête (`HEAT-25`)
+- [ ] `L11-03` `GET /api/heatmap/{id}/day/{date}` : détail explorable (`HEAT-29`)
+- [ ] `L11-04` Cache serveur des grilles, clé = piste + plage + version de config + ETag des sources ; invalidation à toute écriture de source ou de config (`HEAT-33`)
+- [ ] `L11-05` Test de performance : 9 pistes × 371 jours sans relire Nextcloud à chaque affichage
+- [ ] `L11-06` UI : écran Assiduité — les 9 grilles, `off` visuellement distinct de `missed` (une grille majoritairement `off` **ne doit pas se lire comme un échec**)
+- [ ] `L11-07` UI : rendu `per_week` — statut de semaine, pas de rouge au jour
+- [ ] `L11-08` UI : tiroir de détail au clic sur une cellule
+- [ ] `L11-09` UI : stat cards par piste — taux de respect, série en cours, record, total
+- [ ] `L11-10` UI : réglages des pistes — créer, réordonner, mettre en avant, changer la cadence, éditer les seuils **avec avertissement de recalcul rétroactif** (`HEAT-19`, `HEAT-20`, `HEAT-22`)
+- [ ] `L11-11` UI : neutraliser une plage (maladie, voyage, deload) et l'annuler
+- [ ] `L11-12` Palette : accent par piste tiré des 4 signaux des guidelines, niveaux en opacité `l1`–`l4`
+
+**DoD** — l'écran affiche 9 grilles en un appel réseau ; changer une cadence depuis
+l'UI n'altère pas le passé ; changer un seuil le recalcule, et l'utilisateur en a été
+averti avant de valider.
+
+---
+
+# Jalon IV — Intelligence
+
+## L12 · `v0.13.0` — Couche IA + analyse de repas + import Apple
+
+- [ ] `L12-01` Client OpenRouter unique, API compatible OpenAI, modèle préféré configurable (`IA-01`)
+- [ ] `L12-02` Découverte des modèles gratuits : filtrage modération/embedding/TTS, classement, cache 1 h (`IA-02`)
+- [ ] `L12-03` Cascade multi-modèles sur `429` ou réponse inexploitable ; échec total distinguant quota saturé et autre erreur (`IA-03`)
+- [ ] `L12-04` Cascade restreinte aux modèles vision pour les appels sur image (`IA-04`)
+- [ ] `L12-05` Extraction JSON robuste : nettoyage `<think>…`, premier objet valide par équilibrage d'accolades (`IA-05`)
+- [ ] `L12-06` Préparation d'images : 1024 px max, JPEG, data URL (`IA-06`)
+- [ ] `L12-07` Dégradation propre sans clé : message clair, app pleinement utilisable en manuel (`IA-07`)
+- [ ] `L12-08` Analyse IA de l'assiette : protéines, sucres ajoutés, calories **proposés, jamais imposés** (`NUT-04`)
+- [ ] `L12-09` Import Apple : analyse d'un screenshot, aucune écriture sans validation (`IMP-01`)
+- [ ] `L12-10` Pré-remplissage intégralement modifiable (`IMP-02`)
+- [ ] `L12-11` Conversions : miles → km, `28:45` → décimal, dates relatives → absolue non future ; **valeurs absentes laissées vides, jamais inventées** (`IMP-03`)
+- [ ] `L12-12` Détection de doublon probable à la minute près (`IMP-04`)
+- [ ] `L12-13` `source=apple|manual` dans le CSV (`IMP-05`)
+- [ ] `L12-14` Capture illisible : message explicite, relance ou saisie manuelle (`IMP-06`)
+- [ ] `L12-15` UI : bloc IA des guidelines (section 10), valeurs proposées visuellement distinctes des valeurs saisies, action « Pas d'accord »
+- [ ] `L12-16` Tests avec réponses de modèle simulées : JSON bavard, JSON tronqué, `429` en cascade, aucune clé configurée
+
+**DoD** — sans clé API, aucune fonctionnalité n'est bloquée ; avec clé, un
+screenshot Apple Fitness pré-remplit une course en une action, et rien n'est écrit
+sans validation.
+
+---
+
+## L13 · `v0.14.0` — Planning sport & export iCal
+
+- [ ] `L13-01` `planning/plan.csv`, repository, calendrier mensuel navigable, semaine au lundi (`PLAN-01`)
+- [ ] `L13-02` Planifier / modifier / supprimer une séance : date, heure, type, titre suggéré, durée, note (`PLAN-02`)
+- [ ] `L13-03` Génération IA : fréquence réelle des 4 dernières semaines + groupes travaillés (`ACT-16`) + objectif actif + contraintes libres → 1 ou 2 semaines, alternance des groupes, récupération, pas de doublon (`PLAN-03`)
+- [ ] `L13-04` Aperçu avant écriture, retrait individuel, adoption en une fois marquée source IA (`PLAN-04`)
+- [ ] `L13-05` Flux `.ics` protégé par clé secrète stable, abonnable Apple/Google, téléchargeable (`PLAN-05`)
+- [ ] `L13-06` Écart plan / réalisé par semaine + taux de respect du planning (`PLAN-06`)
+- [ ] `L13-07` UI : calendrier mensuel, prévu vs effectué, aperçu de proposition IA
+- [ ] `L13-08` Tests : flux iCal valide dans un vrai client de calendrier, clé invalide → refus
+
+**DoD** — le flux `.ics` s'abonne réellement dans Apple Calendar ; une proposition IA
+n'écrit rien avant adoption explicite.
+
+---
+
+## L14 · `v0.15.0` — Objectifs IA & bilan hebdomadaire
+
+- [ ] `L14-01` `goals/goals.csv`, `insights/weekly.csv`, repositories
+- [ ] `L14-02` Génération d'objectif : unique, chiffré, daté 4–8 semaines, justifié par les données ; données maigres → repli sur objectif de régularité (`GOAL-01`)
+- [ ] `L14-03` Résumé factuel envoyé au modèle, **jamais les fichiers entiers** (`GOAL-02`)
+- [ ] `L14-04` Adopter / régénérer / abandonner, conservation avec date et statut (`GOAL-03`)
+- [ ] `L14-05` Calcul de progression selon la métrique : poids, séances/sem, km/sem, protéines/j, hydratation/j (`GOAL-04`)
+- [ ] `L14-06` Trois états exposés : aucune proposition, en attente, actif avec échéance (`GOAL-05`)
+- [ ] `L14-07` Historique avec résultat final atteint / partiel / abandonné, réinjecté dans la génération suivante (`GOAL-06`)
+- [ ] `L14-08` Bilan hebdomadaire : ce qui progresse, ce qui décroche, une action concrète ; à la demande, historisé (`IA-08`)
+- [ ] `L14-09` UI : écran Objectif — anneau de progression, bloc IA, historique
+- [ ] `L14-10` Tests : progression sur les 5 métriques, repli sans données, objectif expiré
+
+**DoD** — un objectif se génère, s'adopte et affiche une progression réelle issue des
+données ; le résumé envoyé au modèle est vérifiable et borné.
+
+---
+
+# Jalon V — Production
+
+## L15 · `v0.16.0` — PWA & notifications push
+
+- [ ] `L15-01` Manifeste PWA, icônes, installable sur iOS et Android
+- [ ] `L15-02` Service worker : coquille applicative en cache, stratégies par type de ressource
+- [ ] `L15-03` Clés VAPID serveur + flux d'abonnement Web Push (`NOT-01`)
+- [ ] `L15-04` Ordonnanceur backend déclenchant les rappels app fermée (`NOT-02`)
+- [ ] `L15-05` Configuration des rappels par type et horaire, stockée comme les autres réglages (`NOT-03`)
+- [ ] `L15-06` Tests : rappel reçu app fermée, désabonnement, jeton expiré
+
+**DoD** — Metric s'installe depuis Safari iOS et délivre un rappel de suppléments
+application fermée. *(Dépend de HTTPS : à valider avec `L17-01`.)*
+
+---
+
+## L16 · `v0.17.0` — Export, hors-ligne, recherche, corrélations
+
+- [ ] `L16-01` Export complet : archive de tous les CSV + photos en option, indépendante de Nextcloud (`DATA-01`)
+- [ ] `L16-02` File d'attente hors-ligne côté client, rejeu à la reconnexion, résolution des `409` (`DATA-02`)
+- [ ] `L16-03` Recherche et filtres d'historique côté serveur : plage, type, texte libre (`DATA-03`)
+- [ ] `L16-04` Corrélations simples : deux séries sur une plage + coefficient, **présenté comme une lecture, sans prétention causale** (`DATA-04`, optionnel)
+- [ ] `L16-05` UI : file d'attente visible, indicateur hors-ligne, écran d'export
+- [ ] `L16-06` Tests : séance saisie en mode avion puis rejouée, conflit pendant le rejeu
+
+**DoD** — une séance saisie sans réseau apparaît sur Nextcloud après reconnexion ;
+l'archive d'export s'ouvre sans l'app.
+
+---
+
+## L17 · `v1.0.0` — Durcissement, déploiement, documentation
+
+- [ ] `L17-01` Conteneurisation backend + frontend derrière reverse-proxy à certificat automatique (`OPS-01`)
+- [ ] `L17-02` Documentation d'exploitation : installation, mise à jour, sauvegarde, restauration (`OPS-02`)
+- [ ] `L17-03` Revue de sécurité : en-têtes, CSP, expiration JWT, limitation de débit, service des photos, secrets
+- [ ] `L17-04` Passe accessibilité : focus visible, contrastes, navigation clavier, `aria-pressed` des bascules, `prefers-reduced-motion`
+- [ ] `L17-05` Passe performance : budget de chargement, découpage de code, coût réel des grilles `HEAT`
+- [ ] `L17-06` Parcours Playwright de bout en bout sur les 8 écrans principaux
+- [ ] `L17-07` Passe responsive mobile — cible d'usage principale
+- [ ] `L17-08` Journalisation et supervision minimales, `/health` branché
+- [ ] `L17-09` Sauvegarde/restauration répétée en conditions réelles
+- [ ] `L17-10` Revue de traçabilité : chaque ID du backlog est couvert ou explicitement écarté
+
+**DoD** — déploiement reproductible depuis zéro en suivant uniquement `docs/` ;
+`v1.0.0` taguée.
+
+---
+
+## 2. Traçabilité
+
+| Domaine | IDs | Lot(s) |
+|---|---|---|
+| `AUTH` | 01→08 | L02 (L03 pour 06–07 côté client) |
+| `STO` | 01→11 | L01 (07 → L07) |
+| `API` | 01→07 | L02 |
+| `BODY` | 01→10 | L04 |
+| `ACT` | 01→18 | L05 |
+| `NUT` | 01→03, 05→10 | L07 · `NUT-04` → L12 · **`NUT-11` hors périmètre v1** |
+| `HYD` | 01→05 | L06 |
+| `SUP` | 01→06 | L06 |
+| `PLAN` | 01→06 | L13 |
+| `GOAL` | 01→06 | L14 |
+| `IA` | 01→08 | L12 (08 → L14) |
+| `IMP` | 01→06 | L12 · **`IMP-07` hors périmètre v1** |
+| `AGG` | 01→04 | L08 |
+| `HEAT` v2 | 01→04, 14, 18→23 | L09 |
+| `HEAT` v2 | 05→13, 15→17, 24, 26→29, 30→32 | L10 |
+| `HEAT` v2 | 25, 33 + UI | L11 |
+| `NOT` | 01→03 | L15 |
+| `DATA` | 01→03 | L16 · `DATA-04` optionnel |
+| `OPS` | 01→02 | L17 |
+
+**Écarté de la v1**, à rouvrir ensuite : `NUT-11` (base produits / code-barres —
+dépendance externe Open Food Facts), `IMP-07` (import Apple étendu — multi-captures et
+anneaux d'activité), `DATA-04` (corrélations, marqué optionnel dans le backlog).
+
+---
+
+## 3. Points de spécification à trancher
+
+Contradictions et zones grises relevées entre les deux backlogs.
+**Les 11 décisions ont été validées le 2026-07-26** : elles sont arrêtées et
+s'appliquent aux lots indiqués. Toute remise en cause ultérieure se traite comme un
+changement de spec, pas comme une question ouverte.
+
+| # | Sujet | Constat | Décision arrêtée | Lot |
+|---|---|---|---|---|
+| **D1** | Collision d'identifiants `HEAT` | `HEAT-01→08` existent avec deux sens différents dans les deux documents | La v2 fait autorité ; corriger les renvois de `SUP-06` et `HYD-01` dans `backlogV2.md` | L09 |
+| **D2** | `settings.csv` vs `settings/` | L'annexe pose `settings.csv` à la racine, la spec `HEAT` pose `settings/heatmap_tracks.csv` | Tout regrouper sous `settings/` : `settings/settings.csv` + les 3 fichiers de pistes. Un fichier et un dossier homonymes au même niveau est légal mais piégeux | L08 |
+| **D3** | Cadence des suppléments | `HEAT-23` : la cadence vient de `schedule.frequency`. `HEAT-14` : la cadence est versionnée dans `heatmap_cadences.csv`. Deux sources de vérité | `schedule.frequency` = **valeur courante éditable** (un seul endroit décrit « whey un jour sur deux ») ; `heatmap_cadences.csv` = **journal append-only** alimenté à chaque changement. Le moteur lit le journal pour juger le passé, `schedule` pour le présent. Divergence structurellement impossible | L09 |
+| **D4** | Recalcul rétroactif des seuils | `HEAT-20` : changer un seuil réécrit tout l'historique, et « doit être annoncé à l'utilisateur » | Confirmation obligatoire avant validation, avec l'ampleur chiffrée : « 34 jours passeraient de validé à manqué » | L09 / L11 |
+| **D5** | Heatmap « suppléments complets » | L'ancien `HEAT-04` (jour complet = toutes les prises planifiées cochées) **n'est pas exprimable** avec les sources de la v2, qui ne connaît qu'un supplément à la fois | Le ratio du jour reste couvert par `SUP-06` au tableau de bord. Si la grille est voulue : ajouter une 7ᵉ source `supplement.completion` — coût faible, à décider une fois les pistes en place | L09 |
+| **D6** | Alignement des 371 jours | « 371 jours se terminant aujourd'hui, alignés sur des semaines commençant le lundi » : les deux conditions ne peuvent être vraies ensemble sauf si aujourd'hui est un dimanche | Retenir : `from` = lundi de la semaine d'il y a 52 semaines, `to` = dimanche de la semaine courante (53 colonnes pleines, la dernière partiellement dans le futur et rendue en `off`). L'alignement de grille prime sur la borne exacte | L10 |
+| **D7** | Groupe musculaire `autre` | `ACT-06` compte 9 valeurs, les 5 pistes par défaut n'en couvrent que 8 | `autre` reste délibérément non mappé : il ne doit pas polluer une piste. Le mapping étant une configuration, l'utilisateur peut le rattacher s'il le souhaite | L09 |
+| **D8** | Cache et écritures externes | `HEAT-33` suppose que l'invalidation suit nos écritures, mais Nextcloud est modifiable depuis un autre appareil ou un tableur | Clé de cache incluant l'ETag des fichiers sources ; le cache ne survit pas à une modification externe | L01 / L11 |
+| **D9** | `per_week` par défaut à 2 | 5 groupes × 2 = 10 créneaux musculaires hebdomadaires, plus la course *(décision ouverte du backlog `HEAT`)* | Amorcer les pistes **à partir de la fréquence réelle des 4 dernières semaines**, pas d'une constante. Nécessite des données : à faire au premier lancement, après L05 | L09 |
+| **D10** | Validation eau à 1 L | Plancher bas : valide des journées à la moitié de l'objectif *(décision ouverte)* | Passer à **1500 ml**. Le seuil de validation décide vert ou rouge ; à 1 L le vert ne veut rien dire. `HEAT-17` garde le gradient jusqu'à 2 L | L09 |
+| **D11** | Suppléments en binaire | Deux doses de whey = information perdue *(décision ouverte)* | Rester binaire par défaut : le mode gradué est déjà supporté (`HEAT-15`), il suffira de renseigner deux seuils si le besoin apparaît | L09 |
+
+---
+
+## 4. Risques
+
+| Risque | Impact | Parade |
+|---|---|---|
+| Latence et instabilité de Nextcloud/WebDAV comme base de données | Fort | `L01` traité en premier, testé isolément, cache + retry + `409` ; jamais de calcul qui relit N fichiers à chaque affichage |
+| Justesse du moteur de cadences (5 cadences × 4 états × versionnement) | Fort | `L10-18` transforme chaque exemple en clair de la spec en test ; `HEAT-30` interdit toute duplication de règle côté client |
+| Modèles gratuits OpenRouter indisponibles ou changeants | Moyen | Cascade `IA-03` + `IA-07` : l'app entière fonctionne sans IA |
+| Volume des CSV en croissance (`DATA-03` devient nécessaire « dès quelques centaines de lignes ») | Moyen | Filtrage serveur prévu dès `L16` ; repositories conçus pour lire par plage, pas tout le fichier |
+| Dérive visuelle par rapport aux guidelines au fil des écrans | Moyen | Aucune couleur ni police en dur (DoD transverse) ; kitchen sink maintenu comme référence |
+| Notifications iOS en PWA (restrictions Safari) | Moyen | Vérifier sur un appareil réel dès `L15-01`, avant de construire l'ordonnanceur |
+
+---
+
+## 5. Suivi
+
+| Jalon | Lots | Version cible | État |
+|---|---|---|---|
+| I — Socle | L00 → L03 | `v0.4.0` | ▣ en cours (L00) |
+| II — Domaines | L04 → L08 | `v0.9.0` | ☐ à faire |
+| III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
+| IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
+| V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
+
+Mettre à jour ce tableau et les cases des lots à chaque clôture, en même temps que le
+tag et le `CHANGELOG.md`.

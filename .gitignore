@@ -1,0 +1,39 @@
+# ── Secrets ────────────────────────────────────────
+.env
+.env.local
+*.pem
+
+# ── Python ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+*.egg-info/
+
+# ── Node ───────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/dev-dist/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+
+# ── Outils / OS ────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+playwright-report/
+test-results/
+
+# ── Données locales ────────────────────────────────
+# Les données de production vivent sur Nextcloud (STO-01),
+# jamais dans le dépôt. Ce dossier ne sert qu'aux tests locaux.
+data-local/

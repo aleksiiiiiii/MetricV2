@@ -1,0 +1,142 @@
+/* Page de référence des tokens. Elle sert de test visuel : toute dérive de la charte
+   se voit ici avant de se voir dans un écran. Promue en galerie de composants au L03. */
+
+.swatch {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.chip {
+  height: 76px;
+}
+
+.meta {
+  padding: var(--s3) 12px;
+  background: var(--surface);
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hex {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-low);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: var(--s5);
+}
+
+.specimen {
+  font-size: 40px;
+  letter-spacing: -0.035em;
+  margin-top: var(--s3);
+}
+
+.specimenDisplay {
+  font-weight: 700;
+}
+
+.specimenMono {
+  font-family: var(--mono);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  color: var(--ink-mid);
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+.weights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  margin-top: var(--s4);
+  align-items: baseline;
+}
+
+.weights > span {
+  font-size: 18px;
+}
+
+/* ── Niveaux d'intensité ──────────────────────────── */
+
+.levelRow {
+  display: grid;
+  grid-template-columns: 92px repeat(5, var(--heat-cell)) 1fr;
+  align-items: center;
+  gap: var(--heat-gap);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-mid);
+}
+
+.levelRow + .levelRow {
+  margin-top: var(--s3);
+}
+
+.levelLabel {
+  color: var(--ink-low);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cell {
+  width: var(--heat-cell);
+  height: var(--heat-cell);
+  border-radius: var(--heat-radius);
+  border: 1px solid rgb(255 255 255 / 0.02);
+}
+
+.cell0 {
+  background: var(--surface-2);
+}
+.cell1 {
+  background: rgb(var(--accent-rgb) / var(--heat-a1));
+}
+.cell2 {
+  background: rgb(var(--accent-rgb) / var(--heat-a2));
+}
+.cell3 {
+  background: rgb(var(--accent-rgb) / var(--heat-a3));
+}
+.cell4 {
+  background: rgb(var(--accent-rgb) / var(--heat-a4));
+}
+
+.levelHint {
+  padding-left: var(--s4);
+  color: var(--ink-low);
+}
+
+/* ── Échelle d'espacement ─────────────────────────── */
+
+.spaceRow {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: var(--s4);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-low);
+}
+
+.spaceRow + .spaceRow {
+  margin-top: var(--s2);
+}
+
+.spaceBar {
+  height: 7px;
+  border-radius: 4px;
+  background: rgb(var(--signal-rgb) / 0.45);
+}

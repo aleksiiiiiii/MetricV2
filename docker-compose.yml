@@ -1,0 +1,37 @@
+# Metric — pile de développement.
+#
+# Docker n'est pas installé sur la machine de développement courante : ce fichier
+# n'a donc pas encore été exécuté. Le chemin normal reste `make dev`.
+# Le déploiement de production — images de release, reverse-proxy et certificat
+# automatique — relève de `OPS-01` au lot L17 et vivra dans un compose distinct.
+
+services:
+  api:
+    image: python:3.14-slim
+    working_dir: /app/backend
+    command: >
+      sh -c "pip install -q -e '.[dev]' &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - .:/app
+    ports:
+      - '8000:8000'
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+
+  web:
+    image: node:26-slim
+    working_dir: /app/frontend
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
+    volumes:
+      - .:/app
+      - web_node_modules:/app/frontend/node_modules
+    ports:
+      - '5173:5173'
+    depends_on:
+      - api
+
+volumes:
+  web_node_modules:
