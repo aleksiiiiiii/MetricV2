@@ -405,21 +405,34 @@ cocher un supplément est instantané à l'écran et cohérent après rechargeme
 
 **Objectif** : les repas, avec photo, sans IA pour l'instant (elle arrive au L12).
 
-- [ ] `L07-01` `nutrition/meals.csv`, `favorites.csv` : schémas et repositories
-- [ ] `L07-02` Ajouter un repas : photo et/ou description, au moins l'un des deux (`NUT-01`)
-- [ ] `L07-03` Rangement `nutrition/photos/AAAA/MM/JJ/`, nom unique horodaté (`NUT-02`)
-- [ ] `L07-04` Typage du repas présélectionné selon l'heure (`NUT-03`)
-- [ ] `L07-05` Saisie / ajustement manuel des macros (`NUT-05`)
-- [ ] `L07-06` Totaux du jour : protéines vs objectif, sucres vs plafond, calories (`NUT-06`)
-- [ ] `L07-07` Liste des repas, bornée ou complète (`NUT-07`)
-- [ ] `L07-08` Service authentifié des photos, tout parcours d'arborescence bloqué, réponses cachables (`NUT-08`)
-- [ ] `L07-09` Modifier / supprimer un repas en préservant photo et source (`NUT-09`)
-- [ ] `L07-10` Repas favoris réutilisables en une action (`NUT-10`)
-- [ ] `L07-11` UI : écran Nutrition — capture/téléversement, macros éditables, totaux du jour, galerie du jour
-- [ ] `L07-12` Tests de sécurité : `../`, chemin absolu, lien symbolique, extension inattendue
+- [x] `L07-01` `nutrition/meals.csv`, `favorites.csv` : modèles et dépôts typés
+- [x] `L07-02` Photo **et/ou** description, au moins l'un des deux, espaces ne comptant pas (`NUT-01`)
+- [x] `L07-03` Rangement `nutrition/photos/AAAA/MM/JJ/`, nom horodaté + aléa contre les collisions (`NUT-02`)
+- [x] `L07-04` Type présélectionné selon l'heure, **calculé par le serveur** (`NUT-03`)
+- [x] `L07-05` Macros saisissables et corrigeables à la main, sans IA (`NUT-05`)
+- [x] `L07-06` Totaux du jour : protéines vs objectif, sucres vs plafond, calories **nuancées** par le nombre de repas renseignés (`NUT-06`)
+- [x] `L07-07` Liste du jour, bornée ou complète (`NUT-07`)
+- [x] `L07-08` Service authentifié des photos, forme de chemin imposée, réponses cachables et non reniflables (`NUT-08`)
+- [x] `L07-09` Correction préservant photo et provenance d'origine (`NUT-09`)
+- [x] `L07-10` Repas favoris rejouables en une action (`NUT-10`)
+- [x] `L07-11` UI : écran Nutrition — anneau de protéines, journal avec vignettes, saisie photo, favoris
+- [x] `L07-12` 35 tests de sécurité : huit tentatives d'évasion, six chemins mal formés, quatre contenus non-images
 
-**DoD** — un repas photo s'enregistre depuis un téléphone ; aucune requête ne sort du
-dossier photos ; les macros sont modifiables sans IA (`IA-07` par construction).
+**DoD** — `make check` vert (381 tests backend, 86 frontend) ; un repas photo s'enregistre
+depuis un téléphone ; **aucune requête ne sort du dossier photos** ; les macros sont
+modifiables sans IA (`IA-07` par construction).
+
+**Trois décisions sur la surface d'attaque :**
+
+| Sujet | Décision |
+|---|---|
+| Validation du chemin | La stratégie n'est **pas** de nettoyer ce qu'on reçoit mais de refuser tout ce qui ne correspond pas exactement à la forme que nous produisons. Une expression régulière stricte, puis une vérification de confinement en ceinture |
+| Type de fichier | Déduit de la **signature du contenu**, jamais du nom ni du `Content-Type` déclaré. Servir des octets arbitraires sous un type d'image offrirait une surface au navigateur |
+| Message d'erreur | Un chemin mal formé et un chemin absent rendent le **même** 404. Les distinguer renseignerait sur l'arborescence |
+
+**Une décision assumée** : supprimer un repas ne supprime pas sa photo. Elle est rangée
+par date et consultable hors de l'app ; l'effacer d'un clic dans une liste ferait perdre
+un souvenir qu'aucune annulation ne rendrait. La suppression du fichier reste manuelle.
 
 ---
 
@@ -716,7 +729,7 @@ changement de spec, pas comme une question ouverte.
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
-| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04, L05 et L06 livrés (`v0.7.0`)**, L07 (Nutrition) suivant |
+| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04 à L07 livrés (`v0.8.0`)**, L08 (Agrégats) ferme le jalon |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |

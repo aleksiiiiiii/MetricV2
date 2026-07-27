@@ -141,6 +141,13 @@ export interface RequestOptions {
   query?: Record<string, string | number | undefined>;
   /** En-têtes additionnels — `If-Match` pour la garde anti-conflit (`STO-05`). */
   headers?: Record<string, string>;
+  /**
+   * Corps multipart, pour un téléversement de fichier (`NUT-01`).
+   *
+   * Le `Content-Type` est laissé au navigateur : lui-même y ajoute la frontière de
+   * séparation, qu'on ne peut pas deviner.
+   */
+  form?: FormData;
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -174,7 +181,7 @@ async function readError(response: Response): Promise<ApiError> {
  * Lève `ApiError` sur refus métier, `NetworkError` si le serveur n'a pas répondu.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, signal, anonymous = false, query } = options;
+  const { method = 'GET', body, form, signal, anonymous = false, query } = options;
 
   const headers: Record<string, string> = { ...options.headers };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -187,6 +194,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     response = await fetch(buildUrl(path, query), {
       method,
       headers,
+      ...(form !== undefined ? { body: form } : {}),
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       ...(signal ? { signal } : {}),
     });

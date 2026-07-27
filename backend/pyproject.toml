@@ -1,6 +1,6 @@
 [project]
 name = "metric-backend"
-version = "0.7.0"
+version = "0.8.0"
 description = "Metric — API de suivi sportif personnel, stockage CSV sur Nextcloud"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,6 +14,8 @@ dependencies = [
   # client WebDAV (`L01-01`) doit parler la même bibliothèque que les tests.
   "httpx2>=2.9",
   "python-dateutil>=2.9",
+  # Téléversement de photos de repas (`NUT-01`) : FastAPI en dépend pour le multipart.
+  "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]

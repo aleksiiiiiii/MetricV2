@@ -50,6 +50,7 @@ export const keys = {
   nutrition: {
     all: () => ['nutrition'] as const,
     meals: (day: string) => ['nutrition', 'meals', day] as const,
+    favorites: () => ['nutrition', 'favorites'] as const,
   },
   aggregates: {
     all: () => ['aggregates'] as const,

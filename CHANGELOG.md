@@ -3,6 +3,48 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.8.0] — 2026-07-27
+
+Lot **L07 — Nutrition & fichiers binaires**. Le premier lot où un bug de chemin devient
+une faille. 381 tests backend dont **35 de sécurité**, 86 frontend.
+
+### Ajouté
+
+- **Repas** (`NUT-01` → `NUT-03`, `NUT-05` → `NUT-07`, `NUT-09`) — photo et/ou
+  description, rangement daté, type présélectionné par le serveur, macros manuelles,
+  totaux du jour, liste bornée ou complète, correction préservant photo et provenance.
+- **Repas favoris** (`NUT-10`) — ce qui revient chaque jour se rejoue en une action.
+- **Service sécurisé des photos** (`NUT-08`) — endpoint authentifié, forme de chemin
+  imposée, réponses cachables un an et non reniflables.
+- **Écran Nutrition** — anneau de protéines, journal avec vignettes chargées **avec le
+  jeton de session** (un `<img src>` naïf recevrait un 401), saisie photo avec aperçu.
+- Le client API sait désormais envoyer un formulaire multipart, en laissant au navigateur
+  le soin d'y poser la frontière de séparation.
+
+### Sécurité
+
+Trois décisions, toutes vérifiées par des tests écrits du point de vue de quelqu'un qui
+essaie de sortir du dossier :
+
+- **La forme prime sur le nettoyage.** Un chemin qui ne correspond pas exactement à
+  `AAAA/MM/JJ/horodatage-aléa.ext` est refusé, sans tentative de le réparer. Huit
+  tentatives d'évasion testées — `../`, encodage URL, chemin absolu, octet nul,
+  antislash, double encodage.
+- **Le contenu décide du type**, jamais le nom de fichier ni le `Content-Type` annoncé
+  par le client. Servir des octets arbitraires sous un type d'image offrirait une surface
+  au navigateur.
+- **Un chemin mal formé et un chemin absent rendent le même 404.** Les distinguer
+  renseignerait sur l'arborescence.
+
+### Décidé
+
+- Supprimer un repas **ne supprime pas sa photo**. Elle est rangée par date et
+  consultable hors de l'app ; l'effacer d'un clic dans une liste ferait perdre un souvenir
+  qu'aucune annulation ne rendrait. La suppression du fichier reste manuelle, et assumée.
+- Le total de calories est accompagné du **nombre de repas réellement renseignés** : un
+  total sur deux repas sur cinq ne veut pas dire grand-chose, et l'écran doit pouvoir le
+  nuancer plutôt que d'afficher un chiffre trompeur.
+
 ## [0.7.0] — 2026-07-27
 
 Lot **L06 — Hydratation & suppléments**. Les deux domaines « en un geste », et les
