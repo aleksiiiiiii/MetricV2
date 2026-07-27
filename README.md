@@ -14,6 +14,8 @@ Il n'y a pas de base de données.
 | [heat_backlog.md](heat_backlog.md) | Spec `HEAT` v2 — moteur d'assiduité multi-pistes |
 | [GuidelinesUI.html](GuidelinesUI.html) | Charte graphique, tokens et composants |
 | [ROADMAP.md](ROADMAP.md) | Lots de livraison, versioning, décisions arrêtées |
+| [docs/etat-du-projet.md](docs/etat-du-projet.md) | **Reprise à froid** — invariants, état, prochaine étape |
+| [docs/patron-domaine.md](docs/patron-domaine.md) | Patron à recopier pour ajouter un domaine |
 
 `heat_backlog.md` **remplace** la partie `HEAT` de la section 12 de `backlogV2.md`.
 En cas de contradiction, c'est lui qui fait autorité.
@@ -70,5 +72,5 @@ main — `make console status`.
 
 ## État
 
-Voir [ROADMAP.md](ROADMAP.md#5-suivi). Version courante : `v0.4.0` — jalon I (socle)
-terminé : stockage, API, authentification, design system.
+Voir [docs/etat-du-projet.md](docs/etat-du-projet.md). Version courante : `v0.8.0` —
+jalon I terminé, jalon II à un lot de la fin.
