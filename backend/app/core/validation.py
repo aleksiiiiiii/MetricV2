@@ -15,16 +15,11 @@ from typing import Annotated
 
 from pydantic import AfterValidator, Field
 
-from app.config import get_settings
+# Le découpage du temps vit dans `app.core.dates`, un seul endroit (`HEAT-32`).
+# L'import le remet à disposition des domaines qui valident une date.
+from app.core.dates import today_local
 
-
-def today_local() -> date:
-    """Date du jour dans le fuseau de l'application (`HEAT-32`).
-
-    Jamais `date.today()` en UTC : le 26 juillet à 1 h du matin à Paris est encore le
-    25 juillet en UTC, et une pesée légitime serait refusée comme « future ».
-    """
-    return datetime.now(tz=get_settings().tz).date()
+__all__ = ["today_local"]
 
 
 def reject_future_date(value: date) -> date:

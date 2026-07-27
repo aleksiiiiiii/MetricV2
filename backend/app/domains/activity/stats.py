@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, timedelta
 
+from app.core.dates import week_start
 from app.core.parsing import estimate_one_rep_max, pace_min_per_km
 from app.domains.activity.models import MuscleGroup
 from app.domains.activity.schemas import (
@@ -28,11 +29,6 @@ from app.storage.files import FileStore
 
 #: Profondeur de l'historique hebdomadaire (`ACT-12`).
 WEEKS_BACK = 8
-
-
-def week_start(day: date) -> date:
-    """Lundi de la semaine ISO contenant `day`."""
-    return day - timedelta(days=day.weekday())
 
 
 def _round(value: float | None, digits: int = 2) -> float | None:

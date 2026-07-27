@@ -3,6 +3,42 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.7.0] — 2026-07-27
+
+Lot **L06 — Hydratation & suppléments**. Les deux domaines « en un geste », et les
+dernières sources dont le moteur d'assiduité aura besoin. 311 tests backend, 72 frontend.
+
+### Ajouté
+
+- **Hydratation** (`HYD-01` → `HYD-05`) — prise horodatée avec son décalage, raccourcis
+  de volume paramétrables, total du jour face à l'objectif, série complète sur 30 jours,
+  moyennes 7 et 30 j, jours ayant atteint l'objectif.
+- **Suppléments** (`SUP-01` → `SUP-06`) — planning trié par horaire, checklist du jour qui
+  repart vierge chaque matin, série par item, ratio et booléen « journée complète ».
+  Cocher écrit une prise horodatée, décocher la supprime — et elle seule.
+- **`app/core/dates.py`** — le jour local et la semaine ISO n'ont plus qu'une
+  implémentation. Deux endroits qui découpent le temps finissent par donner deux totaux
+  pour la même journée.
+- **`app/core/cadence.py`** — grammaire des cadences, validée à la saisie et normalisée.
+  La décision **D3** lie `schedule.frequency` au futur journal d'historisation : sans
+  normalisation, deux écritures équivalentes enregistreraient un changement de cadence
+  qui n'en est pas un. Ce module ne décide pas encore si un jour est validé.
+- **Écran Routine** — anneau d'hydratation, raccourcis en un geste, checklist groupée par
+  moment de la journée, planning avec sa cadence en clair.
+- **Bascule optimiste** (`SUP-04`) — la case se coche avant la réponse du serveur et se
+  **restaure** si elle est refusée. Attendre un aller-retour vers Nextcloud pour voir une
+  case bouger condamnerait la saisie en un geste.
+
+### Vérifié
+
+- **La frontière de jour.** Une prise à 23 h 30 appartient au jour qu'affiche l'horloge ;
+  une prise à 0 h 30 au jour qui commence ; un horodatage sans fuseau — le cas d'une
+  ligne saisie dans un tableur — est lu comme local et non comme UTC (`HEAT-32`).
+- **Une valeur de réglage contenant des virgules** dans un fichier qui les utilise comme
+  séparateur : elle doit être protégée par des guillemets. Notre écrivain le fait, un
+  test le prouve — mais une ligne ajoutée à la main sans guillemets serait tronquée
+  silencieusement.
+
 ## [0.6.0] — 2026-07-26
 
 Lot **L05 — Activité sportive**. Le plus gros domaine du backlog, 18 fonctionnalités, et

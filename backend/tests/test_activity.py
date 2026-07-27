@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.dates import week_start
 from app.core.validation import today_local
-from app.domains.activity.stats import week_start
 from app.storage.files import FileStore
 from app.storage.provider import StorageProvider
 from tests.fake_webdav import FakeWebDav

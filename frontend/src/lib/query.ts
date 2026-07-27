@@ -45,6 +45,7 @@ export const keys = {
     all: () => ['supplements'] as const,
     schedule: () => ['supplements', 'schedule'] as const,
     today: () => ['supplements', 'today'] as const,
+    units: () => ['supplements', 'units'] as const,
   },
   nutrition: {
     all: () => ['nutrition'] as const,

@@ -7,6 +7,7 @@ import { Body } from '@/routes/Body';
 import { Dashboard } from '@/routes/Dashboard';
 import { KitchenSink } from '@/routes/KitchenSink';
 import { Login } from '@/routes/Login';
+import { Routine } from '@/routes/Routine';
 import { NotFound } from '@/routes/NotFound';
 
 /**
@@ -35,6 +36,7 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/corps" element={<Body />} />
         <Route path="/activite" element={<Activity />} />
+        <Route path="/routine" element={<Routine />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

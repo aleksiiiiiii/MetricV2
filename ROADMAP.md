@@ -373,23 +373,31 @@ saisit sans quitter l'écran ; les agrégats basculent bien le lundi ; un record
 **Objectif** : les deux domaines de saisie « en un geste », et les sources restantes
 des pistes d'assiduité.
 
-- [ ] `L06-01` `hydration/intake_log.csv` : volume + horodatage + type optionnel (`HYD-01`)
-- [ ] `L06-02` Raccourcis de volume paramétrables — 250 / 500 / 750 par défaut (`HYD-02`)
-- [ ] `L06-03` Total du jour vs objectif réglable, ratio d'atteinte (`HYD-03`)
-- [ ] `L06-04` Correction / suppression d'une prise du jour (`HYD-04`)
-- [ ] `L06-05` Série quotidienne, moyennes 7 et 30 jours, jours ayant atteint l'objectif (`HYD-05`)
-- [ ] `L06-06` `supplements/schedule.csv` avec **`frequency` renseignée** et **`created`** — prérequis de `HEAT-23` et `HEAT-07`
-- [ ] `L06-07` Configurer le planning : nom, dose, unité, moment, tri par horaire (`SUP-01`)
-- [ ] `L06-08` Retrait d'un supplément sans perte d'historique (`SUP-02`)
-- [ ] `L06-09` Checklist du jour : cocher écrit une prise horodatée, remise à zéro quotidienne (`SUP-03`)
-- [ ] `L06-10` Écriture optimiste avec annulation en cas d'échec (`SUP-04`)
-- [ ] `L06-11` Décocher supprime la prise du jour (`SUP-05`)
-- [ ] `L06-12` Ratio du jour + booléen « journée complète » (`SUP-06`)
-- [ ] `L06-13` UI : composant checklist des guidelines (section 08), groupé par moment, série par item ; contrôles d'hydratation en un geste
-- [ ] `L06-14` Tests : bascule optimiste annulée, frontière de jour à 23 h 30 en Europe/Paris
+- [x] `L06-01` `hydration/intake_log.csv` : horodatage **avec décalage**, volume, type facultatif (`HYD-01`)
+- [x] `L06-02` Raccourcis de volume lus dans les réglages, tolérants à une saisie bancale (`HYD-02`)
+- [x] `L06-03` Total du jour vs objectif réglable, ratio plafonné mais volume réel intact (`HYD-03`)
+- [x] `L06-04` Correction et suppression d'une prise du jour, sous garde (`HYD-04`)
+- [x] `L06-05` Série **complète** sur 30 jours, moyennes 7 et 30 j, jours ayant atteint l'objectif (`HYD-05`)
+- [x] `L06-06` `supplements/schedule.csv` avec **`frequency` renseignée** et **`created`** — prérequis de `HEAT-23` et `HEAT-07`
+- [x] `L06-07` Planning : nom, dose, unité, moment, tri par horaire (`SUP-01`)
+- [x] `L06-08` Retrait sans perte d'historique (`SUP-02`)
+- [x] `L06-09` Checklist du jour, état vierge chaque matin, prise horodatée à la coche (`SUP-03`)
+- [x] `L06-10` Bascule optimiste **restaurée** en cas d'échec serveur (`SUP-04`)
+- [x] `L06-11` Décocher supprime la prise du jour, et elle seule (`SUP-05`)
+- [x] `L06-12` Ratio du jour et booléen « journée complète » (`SUP-06`)
+- [x] `L06-13` UI : écran Routine — anneau d'hydratation, raccourcis en un geste, checklist groupée par moment avec série par item, planning avec cadence
+- [x] `L06-14` 70 tests backend + 11 tests d'écran : frontière de jour à 23 h 30, bascule annulée, grammaire des cadences
 
-**DoD** — cocher un supplément est instantané à l'écran et cohérent après
-rechargement ; une prise à 23 h 30 appartient au jour affiché par l'horloge.
+**DoD** — `make check` vert (311 tests backend, 72 frontend) ; une prise à 23 h 30
+appartient au jour affiché par l'horloge, et une prise à 0 h 30 au jour qui commence ;
+cocher un supplément est instantané à l'écran et cohérent après rechargement.
+
+**Deux pièces ajoutées au socle, parce que le moteur d'assiduité en dépendra :**
+
+| Ajout | Pourquoi |
+|---|---|
+| **`app/core/dates.py`** | Le jour local et la semaine ISO n'ont plus qu'une implémentation. `week_start` vivait dans le domaine Activité ; deux endroits qui découpent le temps finissent par donner deux totaux pour la même journée |
+| **`app/core/cadence.py`** | La décision **D3** lie `schedule.frequency` au journal d'historisation. Une seule grammaire, validée à la saisie et **normalisée** — sinon deux écritures équivalentes enregistreraient un changement de cadence qui n'en est pas un. Ce module ne décide pas encore si un jour est validé : c'est le lot L10 |
 
 ---
 
@@ -708,7 +716,7 @@ changement de spec, pas comme une question ouverte.
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
-| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04 (`v0.5.0`) et L05 (`v0.6.0`) livrés**, L06 suivant |
+| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04, L05 et L06 livrés (`v0.7.0`)**, L07 (Nutrition) suivant |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
