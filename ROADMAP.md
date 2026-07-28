@@ -540,28 +540,56 @@ s'ordonner que par son propre ordre d'écriture, et le tri est désormais stable
 
 **Objectif** : le cœur du projet. C'est le lot où la justesse compte le plus.
 
-- [ ] `L10-01` Règle de validation `agrégat ≥ seuil`, seuil toujours paramètre de piste (`HEAT-04`)
-- [ ] `L10-02` Machine à états du jour : `off` / `missed` / `done` / `bonus` (`HEAT-05`)
-- [ ] `L10-03` Priorité des règles neutralisantes : neutralisé (`HEAT-06`) > antérieur à la création (`HEAT-07`) > jour en cours (`HEAT-08`) > cadence
-- [ ] `L10-04` Cadence `daily` (`HEAT-09`)
-- [ ] `L10-05` Cadence `window` : fenêtre **glissante** `min_count` / `window_days`, `missed` si la fenêtre qui se referme sur le jour contient moins de `min_count` validations (`HEAT-10`)
-- [ ] `L10-06` Cadence `per_week` : unité = semaine ISO lundi→dimanche, **aucun `missed` au jour**, statut porté par la semaine (`HEAT-11`)
-- [ ] `L10-07` Cadence `conditional` : attendu si un déclencheur est vrai — séance existante, séance d'un groupe donné (`HEAT-12`)
-- [ ] `L10-08` Cadence `none` : purement descriptive (`HEAT-13`)
-- [ ] `L10-09` Seuils d'intensité par piste → niveau 1–4 (`HEAT-15`) et mode binaire (`HEAT-16`)
-- [ ] `L10-10` **Découplage validation / intensité** : un jour peut être validé et pâle (`HEAT-17`)
-- [ ] `L10-11` Grille complète : aucun jour omis, `date → { valeur, état, niveau }` (`HEAT-24`)
-- [ ] `L10-12` Statistiques : jours validés, jours attendus, taux de respect, plus longue série, série en cours, meilleur jour, total cumulé (`HEAT-26`)
-- [ ] `L10-13` Série cadence-consciente : `off` et neutralisés **transparents**, ils n'incrémentent ni ne cassent (`HEAT-27`)
-- [ ] `L10-14` Statuts hebdomadaires atteint / partiel / manqué, réalisé sur attendu (`HEAT-28`)
-- [ ] `L10-15` Détail d'un jour par source : exercices et séries, distance et allure, prises horodatées, volumes (`HEAT-29`)
-- [ ] `L10-16` Découpage en jours en fuseau local Europe/Paris, jamais UTC (`HEAT-32`)
-- [ ] `L10-17` Plage par défaut (**D6**) : `from` = lundi de la semaine d'il y a 52 semaines, `to` = dimanche de la semaine courante → 53 colonnes pleines ; les jours futurs de la semaine en cours sont rendus `off` (`HEAT-31`)
-- [ ] `L10-18` **Batterie de tests de règles** : la fenêtre glissante sur rythme L/M/V vs M/J/S (les deux corrects), grippe de 5 jours au milieu d'une série de 90, changement de cadence à mi-historique, piste créée hier, whey un jour sur deux pendant 3 mois → série de 3 mois
-- [ ] `L10-19` Tests de propriété : aucune grille ne contient de trou ; aucun jour `missed` sur une piste `per_week` ou `none`
+- [x] `L10-01` Règle de validation `agrégat ≥ seuil`, seuil toujours paramètre de piste (`HEAT-04`)
+- [x] `L10-02` Machine à états du jour : `off` / `missed` / `done` / `bonus` (`HEAT-05`)
+- [x] `L10-03` Priorité des règles neutralisantes : neutralisé (`HEAT-06`) > antérieur à la création (`HEAT-07`) > jour en cours (`HEAT-08`) > cadence
+- [x] `L10-04` Cadence `daily` (`HEAT-09`)
+- [x] `L10-05` Cadence `window` : fenêtre **glissante** `min_count` / `window_days`, `missed` si la fenêtre qui se referme sur le jour contient moins de `min_count` validations (`HEAT-10`)
+- [x] `L10-06` Cadence `per_week` : unité = semaine ISO lundi→dimanche, **aucun `missed` au jour**, statut porté par la semaine (`HEAT-11`)
+- [x] `L10-07` Cadence `conditional` : attendu si un déclencheur est vrai — séance existante (`HEAT-12`)
+- [x] `L10-08` Cadence `none` : purement descriptive (`HEAT-13`)
+- [x] `L10-09` Seuils d'intensité par piste → niveau 1–4 (`HEAT-15`) et mode binaire (`HEAT-16`)
+- [x] `L10-10` **Découplage validation / intensité** : un jour peut être validé et pâle (`HEAT-17`)
+- [x] `L10-11` Grille complète : aucun jour omis, `date → { valeur, état, niveau }` (`HEAT-24`)
+- [x] `L10-12` Statistiques : jours validés, jours attendus, taux de respect, plus longue série, série en cours, meilleur jour, total cumulé (`HEAT-26`)
+- [x] `L10-13` Série cadence-consciente : `off` et neutralisés **transparents**, ils n'incrémentent ni ne cassent (`HEAT-27`)
+- [x] `L10-14` Statuts hebdomadaires atteint / partiel / manqué, réalisé sur attendu (`HEAT-28`)
+- [x] `L10-15` Détail d'un jour par source : exercices et séries, distance et allure, prises horodatées, volumes (`HEAT-29`)
+- [x] `L10-16` Découpage en jours en fuseau local Europe/Paris, jamais UTC (`HEAT-32`)
+- [x] `L10-17` Plage par défaut (**D6**) : `from` = lundi de la semaine d'il y a 52 semaines, `to` = dimanche de la semaine courante → 53 colonnes pleines ; les jours futurs de la semaine en cours sont rendus `off` (`HEAT-31`)
+- [x] `L10-18` **Batterie de tests de règles** : la fenêtre glissante sur rythme L/M/V vs M/J/S (les deux corrects), grippe de 5 jours au milieu d'une série de 90, changement de cadence à mi-historique, piste créée hier, whey un jour sur deux pendant 3 mois → série de 3 mois
+- [x] `L10-19` Tests de propriété : aucune grille ne contient de trou ; aucun jour `missed` sur une piste `per_week` ou `none`
 
-**DoD** — chaque exemple cité en clair dans `heat_backlog.md` est un test qui passe ;
-tout calcul est serveur (`HEAT-30`) ; couverture de la machine à états ≥ 95 %.
+**DoD** — `make check` vert (594 tests backend, 106 frontend) ; chaque exemple cité en
+clair dans `heat_backlog.md` est un test qui passe ; tout calcul est serveur (`HEAT-30`) ;
+**couverture de la machine à états : 100 %** (exigence : ≥ 95 %).
+
+**Une architecture en trois couches, et c'est ce qui rend la justesse vérifiable :**
+
+| Couche | Fichier | Ce qu'elle sait |
+|---|---|---|
+| Moteur | `heatmap/engine.py` | Juger. **Entièrement pur** : ni fichier, ni HTTP, ni horloge. Se teste avec un dictionnaire de dates |
+| Couture | `heatmap/grids.py` | Rassembler les ingrédients — cadence résolue jour par jour, plages neutralisées, agrégat quotidien, déclencheurs — et appeler le moteur. **Aucune règle d'assiduité** n'y vit : une règle écrite là échapperait à la batterie |
+| Sources | `heatmap/sources.py` | Réduire un domaine de saisie à un nombre par jour, et expliquer ce nombre (`HEAT-29`) |
+
+**Quatre lectures que la spec laissait ouvertes, tranchées et testées :**
+
+| Question | Décision | Pourquoi |
+|---|---|---|
+| Un jour neutralisé compte-t-il dans une fenêtre glissante ? | **Oui, comme satisfait** | Sans cela une grippe ne casserait pas la série *pendant*, mais produirait un `missed` le lendemain — la fenêtre qui s'y referme ne contenant aucune validation. Punir le premier jour de convalescence est le contraire de l'intention de `HEAT-06` |
+| Une série se compte-t-elle en validations ou en jours ? | **En jours de calendrier** | `HEAT-27` l'illustre par « une whey un jour sur deux pendant trois mois donne une série de trois mois, pas de deux jours ». Compter les validations donnerait quarante-cinq, qui n'est ni l'un ni l'autre |
+| Un `bonus` prolonge-t-il la série ? | **Oui** | Une piste « un jour sur deux » tenue *tous* les jours produit un `done` puis des `bonus`. Ne compter que les `done` donnerait une série de un pour une adhérence parfaite |
+| La semaine en cours entre-t-elle dans le taux de respect ? | **Non** | Compter ses créneaux comme déjà dus ferait chuter le taux tous les lundis matin — même raison qu'un jour en cours n'est jamais `missed` |
+
+**Un état ajouté à la spec** : `WeekStatus.OFF`. `HEAT-28` en nomme trois — atteint,
+partiel, manqué — mais sur une piste `per_week` un jour non validé est `off` (`HEAT-11`),
+si bien qu'une semaine sans rien et une semaine antérieure à la piste se ressemblent trait
+pour trait. Sans quatrième valeur, `HEAT-07` serait violé au grain de la semaine.
+
+**Reporté au L11, et c'est le découpage prévu** : les endpoints `GET /api/heatmap/{id}`,
+la lecture multi-pistes et le détail d'un jour (`L11-01` → `L11-03`), le cache serveur des
+grilles (`L11-04`), et le chiffrage de `HEAT-20` (**D4**) que le moteur rend désormais
+calculable.
 
 ---
 
@@ -769,7 +797,7 @@ changement de spec, pas comme une question ouverte.
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
-| III — Assiduité | L09 → L11 | `v0.12.0` | ▣ en cours — **L09 livré (`v0.10.0`)**, L10 (moteur) puis L11 (grilles) |
+| III — Assiduité | L09 → L11 | `v0.12.0` | ▣ en cours — **L09 `v0.10.0` et L10 `v0.11.0` livrés**, reste L11 (grilles à l'écran) |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
 

@@ -3,6 +3,77 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.11.0] — 2026-07-28
+
+Lot **L10 — Moteur `HEAT` : calcul, cadences, statistiques**. Le cœur du projet, et le
+lot où la justesse comptait le plus. 594 tests backend, 106 frontend, **100 % de
+couverture sur la machine à états** (l'exigence était 95 %).
+
+### Ajouté
+
+- **Machine à états du jour** (`HEAT-05`) — `off`, `missed`, `done`, `bonus`. Quatre
+  états et non cinq niveaux, parce qu'une grille majoritairement `off` n'est pas un
+  échec : c'est ce qui rend lisible une piste non quotidienne.
+- **Les cinq cadences** (`HEAT-09` → `HEAT-13`). La fenêtre `window` est **glissante** :
+  lundi/mercredi/vendredi et mardi/jeudi/samedi sont deux rythmes également corrects, et
+  une règle « jours pairs » en punirait un arbitrairement.
+- **Intensité découplée de la validation** (`HEAT-15` → `HEAT-17`) — le seuil décide vert
+  ou rouge, les bornes décident l'intensité du vert. Un jour à 1,6 L d'eau est validé mais
+  reste pâle, l'objectif étant à 2 L.
+- **Grille complète** (`HEAT-24`) — aucun jour omis, jamais. Le client n'a aucun trou à
+  combler.
+- **Statistiques** (`HEAT-26` → `HEAT-28`) — jours validés, attendus, taux de respect,
+  plus longue série, série en cours, meilleur jour, cumul, et statuts hebdomadaires.
+- **Détail d'un jour** (`HEAT-29`) — chaque cellule est explorable : exercices et séries,
+  distance et allure, prises horodatées, volumes bus, domaines renseignés.
+- **Plage par défaut** (`HEAT-31`, décision **D6**) — 53 colonnes pleines, du lundi d'il y
+  a 52 semaines au dimanche de la semaine courante.
+
+### Décidé
+
+Quatre lectures que la spec laissait ouvertes, chacune avec son test :
+
+- **Un jour neutralisé compte comme satisfait dans une fenêtre glissante.** Sans cela une
+  grippe ne casserait pas la série *pendant*, mais produirait un `missed` le lendemain —
+  la fenêtre qui s'y referme ne contenant aucune validation. Punir le premier jour de
+  convalescence est le contraire de l'intention de `HEAT-06`.
+- **Une série se compte en jours de calendrier, pas en validations.** `HEAT-27` l'illustre
+  par « une whey un jour sur deux pendant trois mois donne une série de trois mois, pas de
+  deux jours » : compter les validations donnerait quarante-cinq, qui n'est ni l'un ni
+  l'autre.
+- **Un `bonus` prolonge la série.** Une piste « un jour sur deux » tenue *tous* les jours
+  produit un `done` puis des `bonus` ; ne compter que les `done` donnerait une série de un
+  pour une adhérence parfaite.
+- **La semaine en cours n'entre pas dans le taux de respect.** Compter ses créneaux comme
+  déjà dus ferait chuter le taux tous les lundis matin — même raison qu'un jour en cours
+  n'est jamais `missed`.
+
+Et **un état ajouté à la spec** : `WeekStatus.OFF`. `HEAT-28` en nomme trois, mais sur une
+piste `per_week` un jour non validé est `off` (`HEAT-11`) — si bien qu'une semaine sans
+rien et une semaine antérieure à la piste se ressemblent trait pour trait. Sans quatrième
+valeur, `HEAT-07` serait violé au grain de la semaine.
+
+### Architecture
+
+Trois couches, et c'est ce qui rend la justesse vérifiable :
+
+- `heatmap/engine.py` **juge**, et ne sait rien d'autre. Ni fichier, ni HTTP, ni horloge :
+  on lui passe un dictionnaire de dates et il rend une grille. C'est ce qui permet
+  d'écrire un test par exemple de la spec, sans monter une application.
+- `heatmap/grids.py` **rassemble** les ingrédients et appelle le moteur. Aucune règle
+  d'assiduité n'y vit : une règle écrite là échapperait à la batterie.
+- `heatmap/sources.py` **réduit** un domaine de saisie à un nombre par jour, et sait
+  expliquer ce nombre.
+
+### Non livré, et c'est le découpage prévu
+
+Les endpoints (`GET /api/heatmap/{id}`, lecture multi-pistes, détail d'un jour), le cache
+serveur des grilles et l'écran d'assiduité sont le lot **L11**. Le moteur rend aussi
+calculable le chiffrage de `HEAT-20` (décision **D4**) laissé en suspens au lot L09 :
+« 34 jours passeraient de validé à manqué » s'obtient désormais en évaluant deux fois.
+
+Comme les lots précédents, rien n'a été exercé contre l'instance Nextcloud réelle.
+
 ## [0.10.0] — 2026-07-28
 
 Lot **L09 — Moteur `HEAT` : modèle, configuration, pistes**. Premier lot du jalon III,

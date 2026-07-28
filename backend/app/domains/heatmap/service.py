@@ -86,7 +86,7 @@ def _levels_to_text(levels: list[float] | tuple[float, ...]) -> str:
     return SEPARATOR.join(f"{value:g}" for value in levels)
 
 
-def _levels_from_text(raw: str) -> list[float]:
+def levels_from_text(raw: str) -> list[float]:
     """Lit les bornes d'intensité, en ignorant ce qui n'est pas un nombre.
 
     Comme partout dans les fichiers de configuration : une cellule abîmée à la main coûte
@@ -159,6 +159,36 @@ class TrackService:
             if row.model.id == track_id:
                 return row
         raise StorageNotFoundError("Cette piste n'existe pas.")
+
+    async def rows(self, *, include_inactive: bool = False) -> list[Row[TrackRow]]:
+        """Lignes brutes des pistes, triées comme à l'écran.
+
+        Le moteur de grilles a besoin du modèle et non du schéma : lui faire retraverser
+        `Track` pour en réextraire un seuil serait un aller-retour pour rien.
+        """
+        rows = await self._tracks.read_all()
+        if not include_inactive:
+            rows = [row for row in rows if row.model.active]
+        return sorted(rows, key=lambda row: (row.model.position, row.model.label))
+
+    async def cadences_for(self, track_id: str, days: Iterable[date]) -> dict[date, Cadence]:
+        """Cadence applicable à chacun des jours demandés (`HEAT-14`).
+
+        Une seule lecture du journal pour toute une grille. Appeler `cadence_at` jour par
+        jour sur 371 colonnes relirait et revaliderait le fichier 371 fois — le cache
+        éviterait le réseau, pas l'analyse.
+        """
+        entries = _chronological(
+            row.model for row in await self._cadences.read_all() if row.model.track_id == track_id
+        )
+        if not entries:
+            return {day: Cadence.parse("daily") for day in days}
+
+        resolved: dict[date, Cadence] = {}
+        for day in days:
+            applicable = [entry for entry in entries if (entry.valid_from or date.min) <= day]
+            resolved[day] = self._read_cadence(applicable[-1] if applicable else entries[0])
+        return resolved
 
     async def cadence_at(self, track_id: str, day: date) -> Cadence:
         """Cadence applicable à une date donnée (`HEAT-14`).
@@ -564,7 +594,7 @@ class TrackService:
             unit=source.unit if source else "",
             filter=model.filter,
             validation_threshold=model.validation_threshold,
-            levels=[] if model.binary else _levels_from_text(model.levels),
+            levels=[] if model.binary else levels_from_text(model.levels),
             binary=model.binary,
             accent=model.accent if model.accent in ACCENTS else "signal",
             position=model.position,

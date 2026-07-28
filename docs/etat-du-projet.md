@@ -3,13 +3,14 @@
 Document d'entrée. À lire en premier pour reprendre le développement de **Metric** sans
 contexte préalable — que ce soit dans trois mois ou dans une nouvelle session.
 
-**Version courante : `v0.10.0`** · dix lots livrés sur dix-huit. Le jalon II est clos et
-le jalon III — l'assiduité, cœur du projet — a commencé.
+**Version courante : `v0.11.0`** · onze lots livrés sur dix-huit. Le moteur d'assiduité —
+le cœur du projet — calcule ; il ne lui manque que ses écrans.
 
 | Mesure | Valeur *(vérifiée le 2026-07-28)* |
 |---|---|
-| Tests backend | **492**, dont 35 de sécurité sur le service des photos |
+| Tests backend | **594**, dont 35 de sécurité sur les photos et **102 sur le moteur d'assiduité** |
 | Tests frontend | **106** |
+| Couverture du moteur | **100 %** de `heatmap/engine.py` |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
 | Build de production | 112 ko gzip |
 
@@ -40,7 +41,7 @@ contradictions connues sont **tranchées et consignées** au [§3 du ROADMAP](..
 
 ## 2. Les invariants
 
-**C'est la section qui compte.** Dix lots les ont suivis ; les casser produirait des
+**C'est la section qui compte.** Onze lots les ont suivis ; les casser produirait des
 incohérences que les tests n'attraperaient pas tous.
 
 ### Aucun calcul métier côté client
@@ -84,6 +85,16 @@ Sur historique vide, un écran affiche un tiret et ce que coûte le prochain ges
 un zéro qui passerait pour une mesure. Un groupe musculaire jamais travaillé rend `null`,
 pas un grand nombre : « jamais » et « il y a très longtemps » appellent des réponses
 différentes.
+
+### Ce qui juge ne lit rien
+
+`app/domains/heatmap/engine.py` décide de l'état d'un jour — `off`, `missed`, `done`,
+`bonus` — et **ne connaît ni fichier, ni HTTP, ni horloge**. On lui passe une
+configuration, un dictionnaire `date → nombre` et une plage ; il rend une grille.
+
+C'est ce qui rend la justesse vérifiable : chaque exemple de `heat_backlog.md` est un test
+de dix lignes, sans application à monter. Une règle d'assiduité écrite ailleurs —
+dans `grids.py`, dans un routeur — échapperait à cette batterie. Ne pas en écrire ailleurs.
 
 ### Un fichier de configuration ne fait jamais tomber un écran
 
@@ -141,6 +152,7 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 | L07 | `v0.8.0` | Nutrition : repas, photos, service sécurisé |
 | L08 | `v0.9.0` | Réglages éditables, agrégats du tableau de bord, séries génériques — **clôt le jalon II** |
 | L09 | `v0.10.0` | Moteur `HEAT` : modèle de piste, registre de sources, cadences versionnées, jours neutralisés |
+| L10 | `v0.11.0` | Moteur `HEAT` : machine à états, cinq cadences, statistiques *(100 % couvert)* |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -168,8 +180,9 @@ backend/app/
 │   └── deps.py        dépendances FastAPI
 ├── storage/           WebDAV, cache (contenu **et** absence), dépôt CSV typé
 └── domains/<nom>/     models · schemas · service · router
-                       (activity a un `stats.py` de plus, heatmap un `sources.py` ;
-                        aggregates n'a pas de `models.py` — c'est le seul domaine
+                       (activity a un `stats.py` de plus ; heatmap a `engine.py`
+                        — pur —, `grids.py` — la couture — et `sources.py` ;
+                        aggregates n'a pas de `models.py`, c'est le seul domaine
                         sans fichier à lui)
 
 frontend/src/
@@ -241,47 +254,49 @@ comptage des lectures est vérifié par test, la latence réelle ne l'est pas.
 
 ---
 
-## 7. Prochain lot — L10
+## 7. Prochain lot — L11
 
-**Moteur `HEAT` : calcul, cadences, statistiques.** C'est le lot où la justesse compte le
-plus, et le seul du projet à porter une exigence de couverture (≥ 95 % sur la machine à
-états).
+**Heatmaps & réglage des pistes.** Il ferme le jalon III : le moteur calcule, il lui
+manque ses écrans.
 
-Tout ce qui le paramètre existe déjà. Ce qui manque est le **jugement** :
+Tout le calcul existe et est couvert à 100 %. Ce qui reste est de l'exposition :
 
-- `HEAT-05` — la machine à états du jour : `off` / `missed` / `done` / `bonus`. Quatre
-  états et non cinq niveaux, parce qu'une grille majoritairement `off` n'est pas un échec.
-- `HEAT-04` — validation `agrégat ≥ seuil`, le seuil venant toujours de la piste.
-- `HEAT-09` → `HEAT-13` — les cinq cadences. La fenêtre `window` est **glissante** et non
-  une parité de calendrier : lundi/mercredi/vendredi et mardi/jeudi/samedi sont deux
-  rythmes également corrects.
-- `HEAT-27` — la série cadence-consciente, à ne pas confondre avec `AGG-03`. Les jours
-  `off` et neutralisés y sont **transparents** : une whey prise un jour sur deux pendant
-  trois mois donne une série de trois mois, pas de deux jours.
-- `L10-03` — l'ordre de priorité des règles neutralisantes, qui est la partie la plus
-  facile à se tromper : neutralisé > antérieur à la création > jour en cours > cadence.
+- `L11-01` → `L11-03` — les trois endpoints de la spec §8 : grille d'une piste, lecture
+  multi-pistes en une requête (`HEAT-25`), détail d'un jour (`HEAT-29`). Le service
+  `GridService` rend déjà exactement ces trois choses ; il n'y a qu'à les publier.
+- `L11-04` — **cache serveur des grilles** (`HEAT-33`), clé = piste + plage + version de
+  config + ETag des sources. C'est le seul vrai travail d'ingénierie du lot : neuf pistes
+  × 371 jours ne doivent pas relire Nextcloud à chaque affichage.
+- `L11-06` → `L11-09` — l'écran. La contrainte à ne pas rater : **`off` doit être
+  visuellement distinct de `missed`**. Une grille majoritairement `off` ne doit pas se
+  lire comme un échec, sans quoi tout le travail du moteur est annulé à l'affichage.
+- `L11-10` — le réglage des pistes, avec l'avertissement de recalcul rétroactif.
 
-### Ce que L09 laisse en place
+### Ce que L10 laisse en place
 
 | Pièce | Où |
 |---|---|
-| `TrackService.cadence_at(track_id, jour)` | la règle qui s'appliquait à une date passée |
-| `TrackService.neutralised(track_id)` | les plages à traiter en `off`, globales comprises |
-| `sources.daily_values(store, source, filtre)` | l'agrégat quotidien, un nombre par jour |
-| `TrackRow.created` | la borne de non-rétroactivité (`HEAT-07`) |
-| `TrackRow.levels` et `binary` | de quoi convertir l'agrégat en niveau 1–4 (`HEAT-15`) |
+| `evaluate(...)` | la machine à états, pure et testable sans stockage |
+| `GridService.grid` / `.grids` / `.day` | les trois lectures de la spec §8, prêtes à publier |
+| `default_range(today)` | 53 colonnes pleines alignées sur le lundi (**D6**) |
+| `Grid.weeks` | les statuts hebdomadaires, `None` hors `per_week` |
 
-Le moteur n'aura donc à décider que d'une chose : **l'état d'un jour**. Tout ce dont il a
-besoin pour le faire lui est servi.
+### Une dette nommée, à solder au L11
 
-### Deux pièges déjà repérés
+`HEAT-20` et la décision **D4** demandent d'annoncer l'ampleur d'un changement de seuil —
+« 34 jours passeraient de validé à manqué » — **avant** de le valider. Le lot L09 n'a
+livré que l'avertissement, faute de moteur. Le moteur existe désormais : le compte
+s'obtient en évaluant la grille deux fois, avec l'ancien seuil et le nouveau, et en
+comparant les états. `TrackSaved.recalculated_history` est déjà là pour le porter.
 
-- **`per_week` ne produit jamais de `missed` au jour** (`HEAT-11`) : c'est la semaine qui
-  porte un statut. Un rouge quotidien sur une piste hebdomadaire serait un contresens.
-- La plage par défaut (**D6**) n'est pas « 371 jours se terminant aujourd'hui » : c'est du
-  lundi d'il y a 52 semaines au dimanche de la semaine courante. Les deux conditions du
-  backlog ne peuvent être vraies ensemble sauf un dimanche, et l'alignement de grille
-  prime sur la borne exacte.
+### Deux pièges de rendu, déjà repérés
+
+- **Les jours `off` de la semaine en cours sont dans le futur.** La plage par défaut va
+  jusqu'au dimanche : les cellules après aujourd'hui existent et valent `off`. Les peindre
+  comme les autres `off` est correct ; les peindre comme des trous ne le serait pas.
+- **`per_week` ne rend jamais de `missed` au jour.** Le rouge, sur ces pistes, se pose sur
+  la **semaine** (`Grid.weeks`). Un écran qui chercherait des jours rouges y verrait un
+  sans-faute permanent.
 
 > `AGG-03` et `HEAT-27` sont **deux algorithmes distincts et le resteront** : le premier
 > mesure l'assiduité de suivi, le second le respect d'un engagement. Ne pas les fusionner.
