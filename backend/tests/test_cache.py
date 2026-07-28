@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.storage.cache import FileCache
+from app.storage.cache import DEFAULT_TTL, FileCache
 from app.storage.files import FileStore
 from app.storage.webdav import WebDavClient
 from tests.fake_webdav import FakeWebDav
@@ -129,3 +129,42 @@ async def test_a_server_without_etag_invalidates_rather_than_lies(
     await store.write("body/weight.csv", b"date\n")
 
     assert len(cache) == 0, "un cache sans ETag fiable doit être vidé, pas conservé"
+
+
+async def test_an_absence_is_remembered_too(store: FileStore, dav: FakeWebDav) -> None:
+    """Sur une installation neuve, aucun fichier n'existe.
+
+    Le tableau de bord (`AGG-01`) réclame neuf sources, dont plusieurs deux fois — le
+    poids sert à la fois les indicateurs et la série d'assiduité. Si l'absence n'était pas
+    mémorisée, chaque domaine irait redemander un 404 que le précédent venait d'obtenir,
+    et la promesse d'« une requête pour tout l'écran » se paierait en allers-retours
+    invisibles côté serveur.
+    """
+    first = await store.read("body/nowhere.csv")
+    second = await store.read("body/nowhere.csv")
+
+    assert first.exists is False
+    assert second.exists is False
+    assert second.content == b""
+    assert dav.count("GET") == 1, "le 404 a été redemandé"
+
+
+async def test_a_file_that_appears_is_seen_once_the_entry_ages(
+    webdav: WebDavClient, dav: FakeWebDav
+) -> None:
+    """La contrepartie, et elle est bornée.
+
+    Un fichier déposé depuis un autre appareil reste invisible au plus le temps du TTL —
+    la même fenêtre d'incohérence que pour un contenu déjà lu (décision **D8**). Passé ce
+    délai, la lecture repart au serveur.
+    """
+    clock = Clock()
+    store = FileStore(webdav, FileCache(clock=clock))
+
+    assert (await store.read("body/weight.csv")).exists is False
+
+    dav.seed("Metric/body/weight.csv", "date\n2026-07-28\n")
+    assert (await store.read("body/weight.csv")).exists is False, "encore dans le TTL"
+
+    clock.advance(DEFAULT_TTL + 1)
+    assert (await store.read("body/weight.csv")).exists is True

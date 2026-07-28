@@ -22,9 +22,6 @@ from app.storage.paths import HYDRATION_LOG
 #: Profondeur de la série renvoyée par défaut.
 HISTORY_DAYS = 30
 
-#: Repli si le réglage est absent ou illisible.
-DEFAULT_PRESETS = (250, 500, 750)
-
 
 class HydrationService:
     def __init__(self, store: FileStore) -> None:
@@ -41,32 +38,23 @@ class HydrationService:
             kind=row.model.kind,
         )
 
-    async def _presets(self) -> list[int]:
-        """Raccourcis de volume (`HYD-02`), tolérants à une saisie manuelle bancale."""
-        raw = await self._settings.get("hydration_presets_ml")
-        values: list[int] = []
-        for chunk in raw.split(","):
-            try:
-                value = int(chunk.strip())
-            except ValueError:
-                continue
-            if value > 0:
-                values.append(value)
-        return values or list(DEFAULT_PRESETS)
+    async def daily_volumes(self) -> dict[date, int]:
+        """Volume bu par jour, tous jours confondus.
 
-    async def view(self, today: date, *, days: int = HISTORY_DAYS) -> HydrationView:
+        Le rattachement au jour suit le fuseau local : une prise à 23 h 30 appartient au
+        jour qu'affiche l'horloge (`HEAT-32`). Public parce que les agrégats du tableau
+        de bord s'en servent — deux découpages du même journal donneraient deux totaux.
+        """
         rows = await self._repo.read_all()
-        target = int(await self._settings.number("target_hydration_ml"))
-        presets = await self._presets()
-
-        # Le rattachement au jour suit le fuseau local : une prise à 23 h 30 appartient
-        # au jour qu'affiche l'horloge (`HEAT-32`).
         per_day: defaultdict[date, int] = defaultdict(int)
         for row in rows:
             per_day[local_day_of(row.model.datetime_)] += row.model.volume_ml
+        return dict(per_day)
 
+    @staticmethod
+    def _series(per_day: dict[date, int], today: date, days: int, target: int) -> list[DayVolume]:
         start = today - timedelta(days=days - 1)
-        series = [
+        return [
             DayVolume(
                 date=day,
                 volume_ml=per_day.get(day, 0),
@@ -76,22 +64,41 @@ class HydrationService:
             for day in days_between(start, today)
         ]
 
-        today_ml = per_day.get(today, 0)
+    def _stats(self, series: list[DayVolume], today_ml: int, target: int) -> HydrationStats:
+        return HydrationStats(
+            today_ml=today_ml,
+            target_ml=target,
+            ratio=min(1.0, today_ml / target) if target > 0 else 0.0,
+            average_7d_ml=self._average(series[-7:]),
+            average_30d_ml=self._average(series),
+            days_reached=sum(1 for day in series if day.reached),
+            days_counted=len(series),
+        )
+
+    async def summary(self, today: date, *, days: int = HISTORY_DAYS) -> HydrationStats:
+        """Indicateurs seuls, sans la série ni les prises du jour (`AGG-01`)."""
+        values = await self._settings.values()
+        target = values.target_hydration_ml
+        per_day = await self.daily_volumes()
+        return self._stats(
+            self._series(per_day, today, days, target), per_day.get(today, 0), target
+        )
+
+    async def view(self, today: date, *, days: int = HISTORY_DAYS) -> HydrationView:
+        rows = await self._repo.read_all()
+        values = await self._settings.values()
+        target = values.target_hydration_ml
+
+        per_day = await self.daily_volumes()
+        series = self._series(per_day, today, days, target)
+
         return HydrationView(
-            stats=HydrationStats(
-                today_ml=today_ml,
-                target_ml=target,
-                ratio=min(1.0, today_ml / target) if target > 0 else 0.0,
-                average_7d_ml=self._average(series[-7:]),
-                average_30d_ml=self._average(series),
-                days_reached=sum(1 for day in series if day.reached),
-                days_counted=len(series),
-            ),
+            stats=self._stats(series, per_day.get(today, 0), target),
             series=series,
             today=[
                 self._to_schema(row) for row in rows if local_day_of(row.model.datetime_) == today
             ],
-            presets_ml=presets,
+            presets_ml=values.hydration_presets_ml,
             kinds=list(DRINK_KINDS),
         )
 

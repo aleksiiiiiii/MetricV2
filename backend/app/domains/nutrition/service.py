@@ -58,16 +58,44 @@ class NutritionService:
             source=model.source,
         )
 
-    async def view(self, day: date, *, limit: int | None = None) -> NutritionView:
+    async def totals(self, day: date) -> DayTotals:
+        """Totaux du jour seuls (`NUT-06`, `AGG-01`).
+
+        Le tableau de bord s'arrête là : lui servir le journal complet et les favoris
+        coûterait une lecture de fichier pour rien.
+        """
         rows = await self._meals.read_all()
         today = [row for row in rows if local_day_of(row.model.datetime_) == day]
 
-        protein_target = await self._settings.number("target_protein_g")
-        sugar_max = await self._settings.number("max_added_sugar_g")
+        values = await self._settings.values()
+        protein_target = values.target_protein_g
+        sugar_max = values.max_added_sugar_g
 
         protein = sum(row.model.protein_g or 0 for row in today)
         sugar = sum(row.model.added_sugar_g or 0 for row in today)
-        calories = sum(row.model.calories or 0 for row in today)
+
+        return DayTotals(
+            protein_g=round(protein, 1),
+            protein_target_g=protein_target,
+            protein_ratio=min(1.0, protein / protein_target) if protein_target else 0.0,
+            added_sugar_g=round(sugar, 1),
+            added_sugar_max_g=sugar_max,
+            # Un dépassement est un signal, pas une réussite : il se dit à part du ratio
+            # de protéines.
+            over_sugar=sugar > sugar_max,
+            calories=sum(row.model.calories or 0 for row in today),
+            calories_known=sum(1 for row in today if row.model.calories is not None),
+            meals=len(today),
+        )
+
+    async def meal_days(self) -> set[date]:
+        """Jours portant au moins un repas — source de la série d'assiduité (`AGG-03`)."""
+        rows = await self._meals.read_all()
+        return {local_day_of(row.model.datetime_) for row in rows}
+
+    async def view(self, day: date, *, limit: int | None = None) -> NutritionView:
+        rows = await self._meals.read_all()
+        today = [row for row in rows if local_day_of(row.model.datetime_) == day]
 
         listed = sorted(today, key=lambda row: row.model.datetime_, reverse=True)
         if limit is not None:
@@ -75,19 +103,7 @@ class NutritionService:
 
         return NutritionView(
             date=day,
-            totals=DayTotals(
-                protein_g=round(protein, 1),
-                protein_target_g=protein_target,
-                protein_ratio=min(1.0, protein / protein_target) if protein_target else 0.0,
-                added_sugar_g=round(sugar, 1),
-                added_sugar_max_g=sugar_max,
-                # Un dépassement est un signal, pas une réussite : il se dit à part du
-                # ratio de protéines.
-                over_sugar=sugar > sugar_max,
-                calories=calories,
-                calories_known=sum(1 for row in today if row.model.calories is not None),
-                meals=len(today),
-            ),
+            totals=await self.totals(day),
             meals=[self._to_schema(row) for row in listed],
             favorites=await self.favorites(),
             suggested_type=suggested_type(now_local()).value,

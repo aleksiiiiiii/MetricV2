@@ -19,6 +19,7 @@ const NAV = [
   { to: '/activite', label: 'Activité', end: false },
   { to: '/routine', label: 'Routine', end: false },
   { to: '/nutrition', label: 'Nutrition', end: false },
+  { to: '/reglages', label: 'Réglages', end: false },
   { to: '/_kitchen-sink', label: 'Charte', end: false },
 ] as const;
 

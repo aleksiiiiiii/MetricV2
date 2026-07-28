@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 from app.core.dates import week_start
 from app.core.parsing import estimate_one_rep_max, pace_min_per_km
-from app.domains.activity.models import MuscleGroup
+from app.domains.activity.models import MuscleGroup, RunRow, WorkoutRow
 from app.domains.activity.schemas import (
     ActivityItem,
     ActivityOverview,
@@ -21,10 +21,13 @@ from app.domains.activity.schemas import (
     ExerciseProgress,
     MuscleVolume,
     NeglectedGroup,
+    TrainingSplit,
+    TrainingTotals,
     WeekTotals,
     WeekVolume,
 )
 from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+from app.storage.csv_repo import Row
 from app.storage.files import FileStore
 
 #: Profondeur de l'historique hebdomadaire (`ACT-12`).
@@ -43,14 +46,11 @@ class ActivityStats:
         self._workouts = WorkoutService(store)
         self._exercises = ExerciseService(store)
 
-    async def overview(self, today: date, *, limit: int = 30) -> ActivityOverview:
-        runs = await self._runs.all()
-        workouts = await self._workouts.all()
-        entries = await self._exercises.log_entries()
-
-        current = week_start(today)
-
-        # Minutes par jour, toutes activités confondues.
+    @staticmethod
+    def _per_day(
+        runs: list[Row[RunRow]], workouts: list[Row[WorkoutRow]]
+    ) -> tuple[dict[date, float], dict[date, int]]:
+        """Minutes et nombre de séances par jour, toutes activités confondues."""
         minutes: defaultdict[date, float] = defaultdict(float)
         sessions: defaultdict[date, int] = defaultdict(int)
         for run in runs:
@@ -59,6 +59,15 @@ class ActivityStats:
         for workout in workouts:
             minutes[workout.model.date] += workout.model.duration_min
             sessions[workout.model.date] += 1
+        return minutes, sessions
+
+    async def overview(self, today: date, *, limit: int = 30) -> ActivityOverview:
+        runs = await self._runs.all()
+        workouts = await self._workouts.all()
+        entries = await self._exercises.log_entries()
+
+        current = week_start(today)
+        minutes, sessions = self._per_day(runs, workouts)
 
         return ActivityOverview(
             week=self._week_totals(runs, workouts, current),
@@ -69,6 +78,101 @@ class ActivityStats:
             history=self._history(runs, workouts)[:limit],
             total=len(runs) + len(workouts),
         )
+
+    # ── Totaux d'entraînement (`AGG-02`) ──────────────
+
+    async def training(self, today: date) -> TrainingTotals:
+        """Totaux du tableau de bord : deux fichiers lus, rien de plus.
+
+        Le journal des exercices n'est pas ouvert : `AGG-02` demande des séances et des
+        minutes, pas du tonnage. Une lecture Nextcloud évitée par affichage d'accueil.
+        """
+        runs = await self._runs.all()
+        workouts = await self._workouts.all()
+
+        current = week_start(today)
+        minutes, sessions = self._per_day(runs, workouts)
+
+        return TrainingTotals(
+            sessions_total=len(runs) + len(workouts),
+            minutes_total=_round(sum(minutes.values())) or 0,
+            week=self._week_totals(runs, workouts, current),
+            weeks=self._weeks(minutes, sessions, current),
+            split=self._split(runs, workouts),
+        )
+
+    @staticmethod
+    def _split(runs: list[Row[RunRow]], workouts: list[Row[WorkoutRow]]) -> list[TrainingSplit]:
+        """Répartition courses / musculation (`AGG-02`).
+
+        Trois parts et non deux : le champ `type` d'une séance est libre (`ACT-03`), et
+        ranger une heure de yoga sous « musculation » pour n'en afficher que deux serait
+        un chiffre faux. Ce qui n'est ni course ni musculation est nommé pour ce qu'il
+        est, et la part disparaît quand elle est vide.
+        """
+
+        def is_strength(row: Row[WorkoutRow]) -> bool:
+            return row.model.type.strip().lower() == "musculation"
+
+        strength = [row for row in workouts if is_strength(row)]
+        other = [row for row in workouts if not is_strength(row)]
+
+        total = len(runs) + len(workouts)
+        parts = (
+            ("run", "Course", runs),
+            ("strength", "Musculation", strength),
+            ("other", "Autre", other),
+        )
+
+        return [
+            TrainingSplit(
+                kind=kind,
+                label=label,
+                sessions=len(rows),
+                minutes=_round(sum(row.model.duration_min for row in rows)) or 0,
+                ratio=len(rows) / total if total else 0.0,
+            )
+            for kind, label, rows in parts
+            if rows
+        ]
+
+    # ── Séries pour `AGG-04` ──────────────────────────
+
+    async def weekly_minutes(self) -> list[tuple[date, float]]:
+        """Minutes d'activité par semaine ISO, datées au lundi."""
+        minutes, _ = self._per_day(await self._runs.all(), await self._workouts.all())
+        return self._by_week(minutes)
+
+    async def weekly_volume(self) -> list[tuple[date, float]]:
+        """Tonnage par semaine ISO : charge × séries × réps (`ACT-14`)."""
+        entries = await self._exercises.log_entries()
+        per_day: defaultdict[date, float] = defaultdict(float)
+        for row in entries:
+            model = row.model
+            per_day[model.date] += model.weight_kg * model.sets * model.reps
+        return self._by_week(per_day)
+
+    async def exercise_load(self, exercise_id: str) -> list[tuple[date, float]]:
+        """Charge maximale par jour pour un exercice (`ACT-09`).
+
+        Une séance peut contenir plusieurs lignes du même exercice : la charge du jour
+        est la plus lourde, pas la dernière consignée.
+        """
+        entries = await self._exercises.log_entries()
+        per_day: dict[date, float] = {}
+        for row in entries:
+            model = row.model
+            if model.exercise_id != exercise_id:
+                continue
+            per_day[model.date] = max(per_day.get(model.date, 0.0), model.weight_kg)
+        return sorted(per_day.items())
+
+    @staticmethod
+    def _by_week(per_day: dict[date, float]) -> list[tuple[date, float]]:
+        per_week: defaultdict[date, float] = defaultdict(float)
+        for day, value in per_day.items():
+            per_week[week_start(day)] += value
+        return sorted((day, _round(value) or 0) for day, value in per_week.items())
 
     # ── Semaine en cours (`ACT-10`, `ACT-11`) ─────────
 

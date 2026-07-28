@@ -1,0 +1,164 @@
+.split {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: var(--s4);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.note {
+  color: var(--ink-mid);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.empty {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: var(--s4);
+}
+
+.warn {
+  color: var(--recover);
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: var(--s3);
+}
+
+/* ── Graphique ────────────────────────────────────── */
+
+.graphHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+}
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+
+.metric {
+  background: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  color: var(--ink-mid);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 5px 10px;
+  text-transform: uppercase;
+  transition: var(--t);
+}
+
+.metric:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.metric[aria-pressed='true'] {
+  border-color: var(--signal);
+  color: var(--signal);
+  background: rgb(var(--signal-rgb) / var(--badge-bg-a));
+}
+
+.metric:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.seriesStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.seriesStats b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* ── Sept derniers jours ──────────────────────────── */
+
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: var(--s4);
+}
+
+.dayOn,
+.dayOff {
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 2px;
+  text-align: center;
+}
+
+.dayOn {
+  border: 1px solid rgb(var(--effort-rgb) / var(--badge-border-a));
+  background: rgb(var(--effort-rgb) / var(--badge-bg-a));
+}
+
+.dayOff {
+  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+
+.dayLabel {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.daySources {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.dayOff .daySources {
+  color: var(--ink-low);
+}
+
+/* ── Journée ──────────────────────────────────────── */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+
+.rowLabel {
+  color: var(--ink-mid);
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}

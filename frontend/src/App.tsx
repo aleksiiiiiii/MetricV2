@@ -9,6 +9,7 @@ import { KitchenSink } from '@/routes/KitchenSink';
 import { Login } from '@/routes/Login';
 import { Nutrition } from '@/routes/Nutrition';
 import { Routine } from '@/routes/Routine';
+import { Settings } from '@/routes/Settings';
 import { NotFound } from '@/routes/NotFound';
 
 /**
@@ -39,6 +40,7 @@ export function App() {
         <Route path="/activite" element={<Activity />} />
         <Route path="/routine" element={<Routine />} />
         <Route path="/nutrition" element={<Nutrition />} />
+        <Route path="/reglages" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

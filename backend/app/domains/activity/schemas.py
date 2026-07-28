@@ -248,6 +248,33 @@ class WeekVolume(BaseModel):
     sessions: int
 
 
+class TrainingSplit(BaseModel):
+    """Une part de la répartition courses / musculation (`AGG-02`)."""
+
+    kind: str = Field(description="« run », « strength » ou « other »")
+    label: str
+    sessions: int
+    minutes: float
+    #: Part des séances, entre 0 et 1.
+    ratio: float = Field(ge=0, le=1)
+
+
+class TrainingTotals(BaseModel):
+    """Totaux d'entraînement du tableau de bord (`AGG-02`).
+
+    Vit dans le domaine Activité et non dans les agrégats : c'est de l'arithmétique
+    d'activité, et la semaine en cours comme les huit dernières y sont déjà calculées
+    (`ACT-11`, `ACT-12`). Les agrégats assemblent, ils ne recalculent pas.
+    """
+
+    sessions_total: int
+    minutes_total: float
+    week: WeekTotals
+    #: Les huit dernières semaines, la plus ancienne en premier.
+    weeks: list[WeekVolume]
+    split: list[TrainingSplit]
+
+
 class MuscleVolume(BaseModel):
     """Tonnage par groupe musculaire (`ACT-14`)."""
 

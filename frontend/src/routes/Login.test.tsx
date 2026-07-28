@@ -9,6 +9,7 @@ import { AuthProvider } from '@/app/AuthProvider';
 import { Toaster } from '@/components/ui';
 import { tokenStore } from '@/lib/api';
 import { createQueryClient } from '@/lib/query';
+import { DASHBOARD } from '@/test/fixtures';
 
 function json(status: number, body: unknown): Response {
   return { ok: status < 400, status, json: () => Promise.resolve(body) } as Response;
@@ -115,6 +116,8 @@ describe('parcours de connexion', () => {
           }),
         );
       }
+      // La coquille affiche le tableau de bord, qui réclame ses agrégats (`AGG-01`).
+      if (url.includes('/aggregates/dashboard')) return Promise.resolve(json(200, DASHBOARD));
       return Promise.resolve(json(200, {}));
     });
     vi.stubGlobal('fetch', fetchMock);

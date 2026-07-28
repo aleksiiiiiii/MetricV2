@@ -1,0 +1,33 @@
+.name {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.row {
+  margin-top: var(--s3);
+}
+
+.actions {
+  display: flex;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+.empty {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.error {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--recover);
+  border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  line-height: 1.5;
+  margin-bottom: var(--s4);
+}

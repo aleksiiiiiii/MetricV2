@@ -55,7 +55,9 @@ export const keys = {
   aggregates: {
     all: () => ['aggregates'] as const,
     dashboard: () => ['aggregates', 'dashboard'] as const,
-    series: (metric: string, range: string) => ['aggregates', 'series', metric, range] as const,
+    metrics: () => ['aggregates', 'metrics'] as const,
+    series: (metric: string, range: string, subject?: string) =>
+      ['aggregates', 'series', metric, range, subject ?? ''] as const,
   },
   heatmap: {
     all: () => ['heatmap'] as const,

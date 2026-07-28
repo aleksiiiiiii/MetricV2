@@ -71,6 +71,10 @@ SugarG = Annotated[float, Field(ge=0, le=1000, description="Sucres ajoutés en g
 # ── Hydratation (`HYD`) ───────────────────────────────
 
 VolumeMl = Annotated[int, Field(gt=0, le=5000, description="Volume d'une prise en millilitres")]
+#: Objectif **quotidien**, distinct d'une prise : il se compte en litres, pas en verres.
+HydrationTargetMl = Annotated[
+    int, Field(ge=250, le=10000, description="Objectif quotidien en millilitres")
+]
 
 # ── Texte libre ───────────────────────────────────────
 

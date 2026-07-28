@@ -62,12 +62,15 @@ class FileStore:
         entry = self._cache.get(path)
 
         if entry is not None and not fresh and self._cache.is_fresh(entry):
-            return FileState(content=entry.content, etag=entry.etag, exists=True)
+            return FileState(content=entry.content, etag=entry.etag, exists=entry.exists)
 
         try:
             fetched = await self._client.get(path, etag=entry.etag if entry else None)
         except StorageNotFoundError:
-            self._cache.invalidate(path)
+            # L'absence est mémorisée comme le serait un contenu : sur une installation
+            # neuve, le tableau de bord demande neuf fichiers inexistants dont plusieurs
+            # deux fois, et chaque 404 redemandé serait un aller-retour pour rien.
+            self._cache.store_absence(path)
             return FileState(content=b"", etag=None, exists=False)
 
         if fetched.not_modified and entry is not None:

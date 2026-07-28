@@ -3,14 +3,16 @@
 Document d'entrée. À lire en premier pour reprendre le développement de **Metric** sans
 contexte préalable — que ce soit dans trois mois ou dans une nouvelle session.
 
-**Version courante : `v0.8.0`** · huit lots livrés sur dix-huit.
+**Version courante : `v0.9.0`** · neuf lots livrés sur dix-huit. **Le jalon II est
+clos** : les six domaines de saisie sont derrière nous, et le tableau de bord les
+rassemble.
 
-| Mesure | Valeur *(vérifiée le 2026-07-27)* |
+| Mesure | Valeur *(vérifiée le 2026-07-28)* |
 |---|---|
-| Tests backend | **381**, dont 35 de sécurité sur le service des photos |
-| Tests frontend | **86** |
+| Tests backend | **437**, dont 35 de sécurité sur le service des photos |
+| Tests frontend | **106** |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
-| Build de production | 109 ko gzip |
+| Build de production | 112 ko gzip |
 
 ---
 
@@ -39,7 +41,7 @@ contradictions connues sont **tranchées et consignées** au [§3 du ROADMAP](..
 
 ## 2. Les invariants
 
-**C'est la section qui compte.** Huit lots les ont suivis ; les casser produirait des
+**C'est la section qui compte.** Neuf lots les ont suivis ; les casser produirait des
 incohérences que les tests n'attraperaient pas tous.
 
 ### Aucun calcul métier côté client
@@ -67,6 +69,9 @@ jamais une permission — sinon la garde se contournerait en l'omettant.
 
 Côté dépôt : `replace_by_token`, `delete_by_token`, `remove_where` pour les cascades.
 
+Ce qui s'édite **en bloc** — un fichier de configuration — porte la même garde à
+l'échelle du fichier : `Sheet.token`, et `CsvRepository.overwrite(items, token=…)`.
+
 ### Le fichier doit se lire seul
 
 Certaines colonnes sont dupliquées à dessein : `exercise_log.csv` porte le nom et le groupe
@@ -80,6 +85,16 @@ Sur historique vide, un écran affiche un tiret et ce que coûte le prochain ges
 un zéro qui passerait pour une mesure. Un groupe musculaire jamais travaillé rend `null`,
 pas un grand nombre : « jamais » et « il y a très longtemps » appellent des réponses
 différentes.
+
+### Une valeur partagée est servie, jamais recopiée
+
+Les valeurs de repli des réglages — poids cible, objectif d'hydratation, plafond de
+sucres — vivent dans `app/domains/app_settings/service.py` et **nulle part ailleurs**.
+`GET /api/settings` rend les valeurs effectives *et* les défauts ; le frontend n'en code
+aucun.
+
+La même constante écrite dans deux langages tient jusqu'au premier oubli. Servie, elle ne
+peut pas diverger.
 
 ### Les erreurs portent un code, pas un texte
 
@@ -111,6 +126,7 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 | L05 | `v0.6.0` | Activité : courses, séances, exercices, tonnage, records, groupes négligés |
 | L06 | `v0.7.0` | Hydratation & suppléments, checklist optimiste, objet `Cadence` |
 | L07 | `v0.8.0` | Nutrition : repas, photos, service sécurisé |
+| L08 | `v0.9.0` | Réglages éditables, agrégats du tableau de bord, séries génériques — **clôt le jalon II** |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -118,9 +134,8 @@ Le détail de chaque lot — tâches cochées, écarts assumés, décisions — 
 
 ### Écrans disponibles
 
-`/connexion` · `/` tableau de bord *(encore une page d'attente, le vrai arrive au L08)* ·
-`/corps` · `/activite` · `/routine` · `/nutrition` · `/_kitchen-sink` *(référence de
-charte, publique)*
+`/connexion` · `/` tableau de bord · `/corps` · `/activite` · `/routine` · `/nutrition` ·
+`/reglages` · `/_kitchen-sink` *(référence de charte, publique)*
 
 ---
 
@@ -137,9 +152,10 @@ backend/app/
 │   ├── exceptions.py  catalogue d'erreurs (API-07)
 │   ├── security.py    Argon2id + JWT
 │   └── deps.py        dépendances FastAPI
-├── storage/           WebDAV, cache, dépôt CSV typé
+├── storage/           WebDAV, cache (contenu **et** absence), dépôt CSV typé
 └── domains/<nom>/     models · schemas · service · router
-                       (activity a un `stats.py` de plus)
+                       (activity a un `stats.py` de plus ; aggregates n'a pas de
+                        `models.py` — c'est le seul domaine sans fichier à lui)
 
 frontend/src/
 ├── components/ui/     bibliothèque de la charte
@@ -191,10 +207,18 @@ NEXTCLOUD_URL=https://nextcloud.aleksi.systems/remote.php/dav/files/MetricsApp
 
 Ensuite `make console` → `storage` confirme en trois secondes.
 
-### Trois décisions ouvertes, sans urgence
+Tant que cette ligne n'est pas corrigée, **rien n'a jamais été exercé contre l'instance
+réelle** — le lot L08 compris. Le tableau de bord ouvre neuf fichiers par affichage : le
+comptage des lectures est vérifié par test, la latence réelle ne l'est pas.
+
+### Quatre décisions ouvertes, sans urgence
 
 - **Supprimer un repas ne supprime pas sa photo** (L07). Choix assumé : l'effacer d'un clic
   ferait perdre un souvenir qu'aucune annulation ne rendrait. À inverser si vous préférez.
+- **`heatmap_metric` n'est pas contraint à une liste fermée** (L08). Les pistes
+  d'assiduité sont des données utilisateur créées au L09 ; figer aujourd'hui un
+  vocabulaire que ce lot remplacera obligerait à rejeter une piste légitime. À resserrer
+  une fois les pistes en place.
 - **`/_kitchen-sink` est publique** (L03) : aucune donnée utilisateur, consultable sans
   session, vérifiable par capture automatisée.
 - **`MIN_LENGTH` du mot de passe abaissé à 6** dans `hash_password.py`. C'est l'unique
@@ -202,24 +226,35 @@ Ensuite `make console` → `storage` confirme en trois secondes.
 
 ---
 
-## 7. Prochain lot — L08
+## 7. Prochain lot — L09
 
-**Réglages & agrégats du tableau de bord.** Il ferme le jalon II.
+**Moteur `HEAT` : modèle, configuration, pistes.** Premier lot du jalon III, le cœur du
+projet. La spec fait autorité : [`heat_backlog.md`](../heat_backlog.md).
 
-- `AGG-01` — un seul endpoint rendant tous les indicateurs de synthèse. C'est la raison
-  d'être du lot : dix appels parallèles au chargement d'un écran signifieraient dix
-  lectures Nextcloud.
-- `AGG-02` — totaux d'entraînement, série des 8 semaines, répartition courses / muscu.
-- `AGG-03` — série d'assiduité toutes sources confondues, avec la règle « hier reste
-  valide tant que la journée en cours n'est pas terminée ».
-- `AGG-04` — séries temporelles génériques : un seul contrat réutilisé pour le poids, les
-  mensurations, le volume hebdomadaire, la charge par exercice, l'hydratation.
-- Les réglages deviennent **éditables** ; `app/domains/app_settings/` est aujourd'hui en
-  lecture seule.
-- Le vrai tableau de bord remplace la page d'attente.
+- `HEAT-01` / `HEAT-02` — la **piste** comme objet unique : identifiant, libellé, source,
+  filtre, règle de validation, cadence, seuils, état actif. Il ne doit exister aucun code
+  spécifique « heatmap whey » ou « heatmap jambes ». Six sources supportées, et ajouter
+  une source est le seul cas qui demande du code.
+- `HEAT-03` — chaque source produit **une valeur numérique par jour**. C'est le seul
+  contrat entre la source et le moteur ; validation, cadence et intensité ne travaillent
+  que sur ce nombre.
+- Les trois fichiers de `settings/` : `heatmap_tracks.csv`, `heatmap_cadences.csv`
+  (journal *append-only*, décision **D3**), `heatmap_off_days.csv`.
+- `app/core/cadence.py` est déjà écrit et testé : il sait lire, normaliser et décrire une
+  cadence. Il ne sait pas encore **juger** si un jour est validé — c'est le lot L10.
+
+Les décisions **D1**, **D3**, **D5**, **D7**, **D9**, **D10** et **D11** portent sur ce
+lot et sont déjà tranchées : les lire au [§3 du ROADMAP](../ROADMAP.md#3-points-de-spécification-à-trancher)
+avant d'ouvrir la spec évitera de les rouvrir.
+
+### Ce que L08 laisse en place pour la suite
+
+- `GET /api/aggregates/series` est **générique** : brancher une nouvelle métrique tient en
+  une entrée du catalogue de `app/domains/aggregates/service.py`, sans code de calcul.
+- Le tableau de bord lit déjà `heatmap_metric` et le rend sous `highlight` : la grille
+  n'aura qu'à s'y accrocher.
+- `keys.heatmap.*` et `CROSS_CUTTING` existent côté client depuis le L03 : toute écriture
+  invalide déjà les grilles (`HEAT-33`), avant même qu'elles n'existent.
 
 > `AGG-03` et `HEAT-27` sont **deux algorithmes distincts et le resteront** : le premier
 > mesure l'assiduité de suivi, le second le respect d'un engagement. Ne pas les fusionner.
-
-Ensuite vient le jalon III — le moteur d'assiduité, cœur du projet. `app/core/cadence.py`
-est déjà en place et n'attend que son évaluateur.

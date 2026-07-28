@@ -440,22 +440,40 @@ un souvenir qu'aucune annulation ne rendrait. La suppression du fichier reste ma
 
 **Objectif** : les réglages partagés, et l'écran d'accueil en un seul appel.
 
-- [ ] `L08-01` `settings/settings.csv` clé/valeur (**D2** : tout sous `settings/`), lecture typée, **valeurs de repli identiques backend et frontend** (annexe du backlog)
-- [ ] `L08-02` Réglages exposés : poids cible, protéines cible, plafond sucres, objectif d'hydratation, raccourcis, métrique mise en avant
-- [ ] `L08-03` `GET /api/aggregates/dashboard` : tous les indicateurs de synthèse en une requête (`AGG-01`)
-- [ ] `L08-04` Totaux d'entraînement : total, semaine courante, 8 semaines, répartition courses / muscu (`AGG-02`)
-- [ ] `L08-05` Série d'assiduité toutes sources + état des 7 derniers jours, hier reste valide tant que le jour en cours n'est pas fini (`AGG-03`)
-- [ ] `L08-06` Séries temporelles génériques : contrat unique, plages 1 mois / 3 mois / tout, stats dernier / variation / moyenne / min / max (`AGG-04`)
-- [ ] `L08-07` UI : tableau de bord — rangée de stat cards, sélecteur de période, graphique croisé, état vide « aucun relevé aujourd'hui »
-- [ ] `L08-08` UI : écran Réglages (section généraliste, les pistes viendront au L11)
-- [ ] `L08-09` Tests : un seul appel réseau au chargement du tableau de bord ; streak sur données trouées
+- [x] `L08-01` `settings/settings.csv` clé/valeur (**D2** : tout sous `settings/`), lecture typée, **valeurs de repli identiques backend et frontend** (annexe du backlog)
+- [x] `L08-02` Réglages exposés **et éditables** : poids cible, protéines cible, plafond sucres, objectif d'hydratation, raccourcis, métrique mise en avant
+- [x] `L08-03` `GET /api/aggregates/dashboard` : tous les indicateurs de synthèse en une requête (`AGG-01`)
+- [x] `L08-04` Totaux d'entraînement : total, semaine courante, 8 semaines, répartition courses / muscu (`AGG-02`)
+- [x] `L08-05` Série d'assiduité toutes sources + état des 7 derniers jours, hier reste valide tant que le jour en cours n'est pas fini (`AGG-03`)
+- [x] `L08-06` Séries temporelles génériques : contrat unique, plages 1 mois / 3 mois / tout, stats dernier / variation / moyenne / min / max (`AGG-04`)
+- [x] `L08-07` UI : tableau de bord — rangée de stat cards, sélecteur de période, graphique croisé, état vide « aucun relevé aujourd'hui »
+- [x] `L08-08` UI : écran Réglages (section généraliste, les pistes viendront au L11)
+- [x] `L08-09` Tests : un seul appel réseau au chargement du tableau de bord ; streak sur données trouées
 
-**DoD** — le tableau de bord se charge en une requête ; `AGG-04` sert déjà au moins
-trois métriques différentes sans code spécifique.
+**DoD** — `make check` vert (437 tests backend, 106 frontend) ; le tableau de bord se
+charge en **une** requête, graphique compris ; `AGG-04` sert **onze** métriques — poids,
+six mensurations, hydratation, volume et tonnage hebdomadaires, charge par exercice —
+avec un seul moteur et aucune ligne de calcul spécifique.
 
 > `AGG-03` (« au moins une donnée, toutes sources ») et `HEAT-27` (série
 > cadence-consciente par piste) sont **deux algorithmes distincts** et le resteront.
 > Le premier mesure l'assiduité de suivi, le second le respect d'un engagement.
+
+**Quatre décisions de conception :**
+
+| Sujet | Décision |
+|---|---|
+| Le graphique voyage avec le tableau de bord | `AGG-01` promet « une requête pour l'écran d'accueil ». Un graphique qui demanderait sa série à part rendrait la promesse fausse au premier rendu. La réponse porte donc une série par défaut ; le sélecteur, lui, interroge `/aggregates/series` et ne recharge rien d'autre |
+| Les défauts sont **servis**, pas recopiés | L'annexe exige que backend et frontend s'accordent sur ce que vaut un objectif non renseigné. Le tenir par la même constante écrite dans deux langages durerait jusqu'au premier oubli. Le serveur envoie valeurs effectives **et** défauts, et le client n'en code aucun |
+| Le jeton anti-conflit porte sur le **fichier** | Un jeu de réglages s'édite en bloc, là où un journal s'édite ligne par ligne. `Sheet.token` étend `STO-05` à cette granularité, avec la même règle : `If-Match` absent = conflit |
+| Trois parts dans la répartition, pas deux | Le champ `type` d'une séance est libre (`ACT-03`). Ranger une heure de yoga sous « musculation » pour n'afficher que les deux parts demandées produirait un chiffre faux. Ce qui n'est ni course ni musculation est nommé « Autre », et la part disparaît quand elle est vide |
+
+**Deux corrections au socle, découvertes en construisant le lot :**
+
+| Correction | Pourquoi |
+|---|---|
+| **L'absence d'un fichier est cachée** (`app/storage/cache.py`) | Un 404 n'était pas mémorisé. Sur une installation neuve — donc au premier lancement — le tableau de bord redemandait chaque fichier inexistant à chaque domaine qui le voulait, et l'économie de `AGG-01` se payait en allers-retours invisibles côté serveur. La fenêtre d'incohérence reste le TTL, comme pour un contenu (décision **D8**) |
+| **Une cellule vide de `settings.csv` ne casse plus tout** | `SettingRow.value` était requis : vider un réglage à la main dans un tableur rendait le fichier illisible, et avec lui le poids cible, l'objectif d'hydratation et le plafond de sucres — plus un écran ne s'affichait. Un réglage abîmé doit coûter son propre repli, pas l'application |
 
 ---
 
@@ -729,8 +747,8 @@ changement de spec, pas comme une question ouverte.
 | Jalon | Lots | Version cible | État |
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
-| II — Domaines | L04 → L08 | `v0.9.0` | ▣ en cours — **L04 à L07 livrés (`v0.8.0`)**, L08 (Agrégats) ferme le jalon |
-| III — Assiduité | L09 → L11 | `v0.12.0` | ☐ à faire |
+| II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
+| III — Assiduité | L09 → L11 | `v0.12.0` | ▣ à venir — le cœur du projet, `app/core/cadence.py` déjà en place |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
 

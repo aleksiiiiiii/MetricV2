@@ -65,6 +65,27 @@ class WeightService:
             total=len(rows),
         )
 
+    async def summary(self) -> WeightStats:
+        """Indicateurs seuls, sans la série ni l'historique (`AGG-01`).
+
+        Le tableau de bord n'affiche que les chiffres : lui construire une série de trois
+        ans pour en jeter 99 % serait du travail pur perte. Les indicateurs, eux, restent
+        calculés par la même fonction que l'écran Corps — deux moyennes du même poids
+        finiraient par ne plus dire la même chose.
+        """
+        rows = await self._repo.read_all()
+        target = await self._settings.number("target_weight_kg")
+        return self._stats(sorted(rows, key=lambda row: row.model.date), target)
+
+    async def points(self) -> list[tuple[date, float]]:
+        """Pesées en couples `(jour, valeur)`, triées (`AGG-04`, `AGG-03`).
+
+        La forme la plus pauvre possible, et c'est le but : les séries temporelles
+        génériques n'ont pas à connaître le domaine dont vient le chiffre.
+        """
+        rows = await self._repo.read_all()
+        return sorted((row.model.date, row.model.weight_kg) for row in rows)
+
     @staticmethod
     def _entry(row: Row[WeightRow]) -> WeightEntry:
         return WeightEntry(
@@ -173,6 +194,23 @@ class MeasurementService:
             indicators=self._indicators(chronological),
             entries=[self._entry(row) for row in recent[offset : offset + limit]],
             total=len(rows),
+        )
+
+    async def days(self) -> set[date]:
+        """Jours portant un relevé — source de la série d'assiduité (`AGG-03`)."""
+        return {row.model.date for row in await self._repo.read_all()}
+
+    async def points(self, field: str) -> list[tuple[date, float]]:
+        """Historique d'**une** mesure (`AGG-04`).
+
+        Chaque mesure a le sien : on ne mesure pas tout à chaque fois, et une série de
+        tours de bras ne doit pas se trouer parce qu'un jour seul le poids a été relevé.
+        """
+        rows = await self._repo.read_all()
+        return sorted(
+            (row.model.date, value)
+            for row in rows
+            if (value := getattr(row.model, field, None)) is not None
         )
 
     @staticmethod

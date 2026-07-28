@@ -75,6 +75,21 @@ class Sheet[TModel: CsvModel]:
     exists: bool
     extra_columns: tuple[str, ...]
 
+    @property
+    def token(self) -> str:
+        """Empreinte de l'état complet du fichier.
+
+        Le pendant de `Row.token` à l'échelle du fichier, pour ce qui s'édite en bloc
+        plutôt que ligne par ligne — les réglages, par exemple, où un formulaire écrit
+        cinq clés d'un coup. La garde de `STO-05` reste la même règle : on annonce
+        l'état qu'on croyait trouver, et une divergence est un `409`.
+
+        Un fichier absent et un fichier vide rendent la même empreinte : dans les deux
+        cas il n'y a rien à écraser.
+        """
+        material = "\x1f".join(row.token for row in self.rows)
+        return hashlib.sha256(material.encode()).hexdigest()[:12]
+
 
 class CsvRepository[TModel: CsvModel]:
     """Accès typé à un fichier CSV du stockage."""
@@ -213,13 +228,24 @@ class CsvRepository[TModel: CsvModel]:
             await self._save(kept, sheet)
         return removed
 
-    async def overwrite(self, items: Sequence[TModel]) -> None:
+    async def overwrite(self, items: Sequence[TModel], *, token: str | None = None) -> None:
         """Réécrit le fichier entier.
 
         Réservé à l'amorçage et aux fichiers de configuration, jamais utilisé pour une
-        saisie utilisateur — qui passe toujours par `append`.
+        saisie utilisateur ligne à ligne — qui passe toujours par `append`.
+
+        `token` porte la garde anti-conflit du fichier entier (`Sheet.token`) : la même
+        lecture fraîche sert à vérifier et à écrire, si bien qu'aucune écriture
+        concurrente ne peut se glisser entre les deux.
         """
         sheet = await self.load(fresh=True)
+        if token is not None and sheet.token != token:
+            raise StorageConflictError(
+                detail=(
+                    f"{self._path} : jeton « {token} » périmé, "
+                    f"le fichier vaut désormais « {sheet.token} »"
+                )
+            )
         await self._save([item.to_csv() for item in items], sheet)
 
     # ── Interne ───────────────────────────────────────

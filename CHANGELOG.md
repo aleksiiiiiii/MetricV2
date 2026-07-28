@@ -3,6 +3,79 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.9.0] — 2026-07-28
+
+Lot **L08 — Réglages & agrégats du tableau de bord**. Il ferme le jalon II : les six
+domaines de saisie sont derrière nous, et l'écran d'accueil les rassemble enfin.
+437 tests backend, 106 frontend.
+
+### Ajouté
+
+- **Endpoint d'agrégats** (`AGG-01`) — `GET /api/aggregates/dashboard` rend poids,
+  entraînement, nutrition, hydratation, suppléments, assiduité **et** la série du
+  graphique en une requête.
+- **Totaux d'entraînement** (`AGG-02`) — total toutes catégories, semaine en cours,
+  huit dernières semaines, répartition courses / musculation / autre.
+- **Série d'assiduité** (`AGG-03`) — jours consécutifs avec au moins une donnée sur les
+  sept sources, plus longue série, état complet des sept derniers jours avec le détail
+  des domaines qui ont tenu chaque journée.
+- **Séries temporelles génériques** (`AGG-04`) — un contrat unique, onze métriques :
+  poids, six mensurations, hydratation, volume et tonnage hebdomadaires, charge par
+  exercice. Plages 1 mois / 3 mois / tout, et les cinq statistiques qui vont avec.
+  Le catalogue est **publié** (`GET /api/aggregates/metrics`) pour que le sélecteur de
+  l'écran ne code aucune liste en dur.
+- **Réglages éditables** (`L08-02`) — `PATCH /api/settings`, modification partielle sous
+  garde anti-conflit, et un écran Réglages qui dit pour chaque valeur si elle a été
+  choisie ou si c'est un repli.
+- **Vrai tableau de bord** — rangée de chiffres clés, graphique croisé avec sélecteur de
+  métrique et de période, sept derniers jours, répartition d'entraînement, écart à
+  l'objectif de poids. La page d'attente du lot L03 disparaît.
+
+### Décidé
+
+- **Le graphique voyage avec le tableau de bord.** `AGG-01` promet une requête pour
+  l'écran d'accueil ; un graphique qui demanderait sa série à part rendrait la promesse
+  fausse au premier rendu. La réponse porte donc une série par défaut, et le sélecteur
+  interroge ensuite `/aggregates/series` sans rien recharger d'autre.
+- **Les valeurs de repli sont servies, pas recopiées.** L'annexe du backlog exige que
+  backend et frontend s'accordent sur ce que vaut un objectif non renseigné. Le faire
+  tenir par la même constante écrite dans deux langages durerait jusqu'au premier oubli :
+  le serveur envoie valeurs effectives **et** défauts, et le client n'en code aucun.
+- **La garde anti-conflit d'un fichier de configuration porte sur le fichier entier.**
+  Un jeu de réglages s'édite en bloc là où un journal s'édite ligne par ligne.
+  `Sheet.token` étend `STO-05` à cette granularité, avec la même règle : un `If-Match`
+  absent est un conflit, jamais une permission.
+- **Trois parts dans la répartition, pas deux.** Le champ `type` d'une séance est libre
+  (`ACT-03`) ; ranger une heure de yoga sous « musculation » pour n'afficher que les deux
+  parts demandées produirait un chiffre faux. Ce qui n'est ni course ni musculation est
+  nommé pour ce qu'il est.
+- **La plage d'une série se compte depuis aujourd'hui**, pas depuis le dernier relevé.
+  Ancrée sur les points, une fenêtre d'un mois couvrirait un an après une pause, et
+  « rien ce mois-ci » s'afficherait comme un mois plein. Une plage vide est une
+  information.
+
+### Corrigé
+
+Deux défauts du socle, trouvés en construisant le lot :
+
+- **L'absence d'un fichier n'était pas cachée.** Un 404 invalidait l'entrée au lieu de la
+  mémoriser. Sur une installation neuve — donc au premier lancement — le tableau de bord
+  redemandait chaque fichier inexistant à chaque domaine qui le voulait. L'économie de
+  `AGG-01` se serait payée en allers-retours invisibles côté serveur. La fenêtre
+  d'incohérence reste le TTL, comme pour un contenu déjà lu (décision **D8**).
+- **Une cellule vide dans `settings.csv` rendait le fichier illisible.** `value` était une
+  colonne requise : vider un réglage à la main dans un tableur faisait tomber le poids
+  cible, l'objectif d'hydratation et le plafond de sucres d'un coup, et plus un écran ne
+  s'affichait. Un réglage abîmé doit coûter son propre repli, pas l'application.
+
+### Non vérifié
+
+Le lot n'a **pas** été exercé contre l'instance Nextcloud réelle : `NEXTCLOUD_URL`
+pointe toujours sur la racine du site au lieu du point d'accès WebDAV (voir le §6 de
+`docs/etat-du-projet.md`). Tout est vérifié contre le double WebDAV, y compris le
+comptage des lectures par fichier — mais la latence réelle d'un tableau de bord qui
+ouvre neuf fichiers reste à mesurer.
+
 ## [0.8.0] — 2026-07-27
 
 Lot **L07 — Nutrition & fichiers binaires**. Le premier lot où un bug de chemin devient
