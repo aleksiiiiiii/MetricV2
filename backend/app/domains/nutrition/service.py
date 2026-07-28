@@ -202,7 +202,9 @@ class NutritionService:
 
     async def favorites(self) -> list[Favorite]:
         rows = await self._favorites.read_all()
-        return [self._favorite_to_schema(row) for row in rows]
+        # Un favori sans identifiant ne peut pas être rejoué : on l'écarte de la liste
+        # plutôt que d'offrir un bouton qui échouerait.
+        return [self._favorite_to_schema(row) for row in rows if row.model.id]
 
     async def add_favorite(self, payload: FavoritePayload) -> Favorite:
         row = await self._favorites.append(

@@ -65,10 +65,14 @@ class MealRow(CsvModel):
 
 
 class FavoriteRow(CsvModel):
-    """Un repas récurrent, rejouable en une action (`NUT-10`)."""
+    """Un repas récurrent, rejouable en une action (`NUT-10`).
 
-    id: str
-    name: str
+    Catalogue et non mesure : une ligne incomplète est ignorée, elle ne rend pas le
+    fichier illisible (`STO-04`).
+    """
+
+    id: str = ""
+    name: str = ""
     protein_g: float | None = None
     added_sugar_g: float | None = None
     calories: int | None = None

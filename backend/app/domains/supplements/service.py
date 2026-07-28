@@ -54,9 +54,14 @@ class SupplementService:
         )
 
     async def schedule(self, *, active_only: bool = False) -> list[Supplement]:
-        """Planning trié par horaire — l'ordre de la checklist (`SUP-01`)."""
+        """Planning trié par horaire — l'ordre de la checklist (`SUP-01`).
+
+        Une ligne sans identifiant est écartée : le cochage et le journal des prises s'y
+        rattachent, et l'afficher produirait une case à cocher qui ne mène nulle part.
+        Elle survit dans le fichier — on n'efface pas ce qu'on ne comprend pas.
+        """
         rows = await self._schedule.read_all()
-        items = [self._to_schema(row) for row in rows]
+        items = [self._to_schema(row) for row in rows if row.model.id]
         if active_only:
             items = [item for item in items if item.active]
         return sorted(items, key=lambda item: (item.time, item.name))

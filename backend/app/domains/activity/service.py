@@ -145,6 +145,8 @@ class ExerciseService:
 
         catalogue: list[Exercise] = []
         for row in rows:
+            if not row.model.id:
+                continue  # ligne sans identifiant : le journal ne peut pas s'y rattacher
             last = latest.get(row.model.id)
             catalogue.append(
                 Exercise(

@@ -359,3 +359,77 @@ def test_checking_an_unknown_supplement_is_refused(
     )
 
     assert response.status_code == 404
+
+
+# ── Lignes partielles (`STO-04`) ──────────────────────
+
+
+def test_a_schedule_row_without_a_time_stays_readable(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Trouvé en production, sur le fichier réel.
+
+    Une cellule `time` vide rendait **tout** le fichier illisible, et avec lui la
+    checklist, l'écran Routine et le tableau de bord — qui lit le planning pour son ratio
+    du jour. Un `502 storage_schema_error` pour un horaire manquant.
+
+    C'était aussi une violation de `STO-04` : la promesse « ajouter une colonne
+    n'invalide aucune ligne ancienne » ne tient pas si la colonne ajoutée est obligatoire.
+    """
+    dav.seed(
+        SCHEDULE_FILE,
+        "id,name,dose,unit,time,frequency,active,created\ns1,Créatine,5,g,,daily,true,\n",
+    )
+
+    response = app_client.get("/api/supplements/schedule", headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["time"] == ""
+
+
+def test_a_barely_filled_schedule_row_does_not_break_the_file(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Aucune colonne du planning n'est obligatoire : le fichier s'ouvre dans un tableur,
+    et une ligne en chantier y est une possibilité normale."""
+    dav.seed(SCHEDULE_FILE, "id,name,dose,unit,time,frequency,active,created\ns1,,,,,,,\n")
+
+    body = app_client.get("/api/supplements/schedule", headers=auth).json()
+
+    assert len(body) == 1
+    assert body[0]["dose"] == 0
+    assert body[0]["cadence_label"] == "tous les jours", "repli de cadence"
+
+
+def test_a_schedule_row_without_an_identifier_is_skipped(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Le cochage et le journal des prises s'y rattachent : afficher une telle ligne
+    produirait une case à cocher qui ne mène nulle part. Elle survit dans le fichier."""
+    dav.seed(
+        SCHEDULE_FILE,
+        "id,name,dose,unit,time,frequency,active,created\n"
+        ",Orpheline,5,g,08:00,daily,true,\n"
+        "s2,Whey,30,g,12:30,daily,true,\n",
+    )
+
+    body = app_client.get("/api/supplements/schedule", headers=auth).json()
+
+    assert [item["name"] for item in body] == ["Whey"]
+    assert "Orpheline" in dav.content_of(SCHEDULE_FILE)
+
+
+def test_the_dashboard_survives_a_partial_schedule(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """La régression telle qu'elle s'est manifestée : l'écran d'accueil tombait en
+    entier à cause d'une cellule vide dans un fichier de planning."""
+    dav.seed(
+        SCHEDULE_FILE,
+        "id,name,dose,unit,time,frequency,active,created\ns1,Créatine,5,g,,daily,true,\n",
+    )
+
+    response = app_client.get("/api/aggregates/dashboard", headers=auth)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["supplements"]["planned"] == 1

@@ -26,12 +26,26 @@ from app.storage.model import CsvModel
 
 
 class ScheduleRow(CsvModel):
-    id: str
-    name: str
-    dose: float
-    unit: str
-    #: Moment de prise, `HH:MM`. Sert au tri de la checklist (`SUP-01`).
-    time: str
+    """Une ligne de planning. `supplements/schedule.csv`.
+
+    **Toutes les colonnes portent un défaut**, et c'est ce qui rend `STO-04` vrai ici :
+    une ligne écrite avant qu'une colonne n'existe, ou une cellule vidée dans un tableur,
+    doit rester lisible. Sans défaut, une seule cellule vide rendait le fichier entier
+    illisible — et avec lui la checklist, la routine **et le tableau de bord**, qui lit le
+    planning pour son ratio du jour.
+
+    La contrepartie est assumée : le fichier peut contenir une ligne partielle héritée,
+    une **saisie** ne le peut pas. Les bornes vivent dans `SupplementPayload`, à la
+    frontière de l'API.
+    """
+
+    id: str = ""
+    name: str = ""
+    dose: float = 0
+    unit: str = ""
+    #: Moment de prise, `HH:MM`. Sert au tri de la checklist (`SUP-01`) ; vide, la ligne
+    #: passe en tête plutôt que de faire tomber l'écran.
+    time: str = ""
     #: Cadence sérialisée — voir `app.core.cadence` (`HEAT-23`).
     frequency: str = "daily"
     active: bool = True

@@ -83,11 +83,16 @@ class WorkoutRow(CsvModel):
 
 
 class ExerciseRow(CsvModel):
-    """Un exercice du catalogue. `activity/exercises.csv`."""
+    """Un exercice du catalogue. `activity/exercises.csv`.
 
-    id: str
-    name: str
-    muscle_group: str
+    Colonnes toutes optionnelles, comme pour tout fichier que l'utilisateur peut ouvrir
+    dans un tableur : une cellule vide coûte sa ligne, jamais le fichier (`STO-04`).
+    Le journal des performances, lui, reste strict — c'est une mesure.
+    """
+
+    id: str = ""
+    name: str = ""
+    muscle_group: str = ""
 
 
 class ExerciseLogRow(CsvModel):
