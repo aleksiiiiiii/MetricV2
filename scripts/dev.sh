@@ -44,4 +44,15 @@ pids+=($!)
 pids+=($!)
 
 # Rend la main dès que l'un des deux s'arrête, pour ne pas laisser une moitié tourner.
-wait -n
+#
+# `wait -n` ferait exactement cela en une ligne, mais il n'existe qu'à partir de bash 4.3
+# et macOS livre toujours la 3.2 en 2026 — la 4.0 est sous GPLv3, qu'Apple ne distribue
+# pas. Un script de développement doit tourner sur le shell que la machine a, pas sur
+# celui qu'on aimerait qu'elle ait : on surveille donc les deux processus à la main.
+while true; do
+  for pid in "${pids[@]}"; do
+    # `kill -0` ne tue rien : il teste seulement que le processus répond encore.
+    kill -0 "$pid" 2>/dev/null || exit 0
+  done
+  sleep 1
+done
