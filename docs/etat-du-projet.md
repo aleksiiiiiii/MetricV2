@@ -98,17 +98,27 @@ dans `grids.py`, dans un routeur — échapperait à cette batterie. Ne pas en �
 
 ### Un fichier de configuration ne fait jamais tomber un écran
 
-Réglages, pistes, cadences, jours neutralisés : ces fichiers sont **destinés** à être
-ouverts dans un tableur. Une cellule vide, un nombre illisible, une source mal
-orthographiée, un accent inventé y sont des possibilités normales — pas des incidents.
+Deux familles de fichiers, deux comportements, et la frontière est la question « est-ce
+que l'utilisateur ouvre ce fichier dans un tableur ? ».
 
-Chaque lecture typée retombe donc sur son propre repli, et l'erreur reste locale : une
-piste abîmée rend une grille vide, elle n'emporte pas les huit autres. La règle est née
-d'un vrai défaut au L08, où une cellule vide de `settings.csv` faisait tomber tous les
-écrans à la fois.
+**Configuration, catalogue, planning** — `settings.csv`, les trois fichiers de pistes,
+`schedule.csv`, `exercises.csv`, `favorites.csv`. Une cellule vide, un nombre illisible,
+une source mal orthographiée y sont des possibilités **normales**. Chaque colonne porte
+donc un défaut, chaque lecture typée retombe sur son propre repli, et l'erreur reste
+locale : une piste abîmée rend une grille vide, elle n'emporte pas les huit autres. Une
+ligne sans identifiant est écartée des listes mais **survit dans le fichier** — on
+n'efface pas ce qu'on ne comprend pas.
 
-Les fichiers de **mesure**, eux, ne suivent pas cette règle : une ligne de pesée illisible
-est une erreur qu'il faut voir (`StorageSchemaError`). On ne devine pas une donnée.
+**Mesure** — pesées, courses, séances, journal d'exercices, repas, prises. Ceux-là restent
+stricts : une ligne illisible lève `StorageSchemaError`. On ne devine pas une donnée.
+
+Cette règle a coûté deux incidents avant d'être comprise. Au L08, une cellule vide de
+`settings.csv` faisait tomber tous les écrans. Au premier usage réel, une cellule `time`
+vide de `schedule.csv` faisait tomber le tableau de bord — et c'était aussi une violation
+de `STO-04`, dont la promesse « ajouter une colonne n'invalide aucune ligne ancienne » ne
+peut pas tenir si la colonne ajoutée est obligatoire.
+
+**Avant d'ajouter une colonne à un modèle, demandez-vous dans quelle famille il est.**
 
 ### Une valeur partagée est servie, jamais recopiée
 
@@ -222,35 +232,58 @@ chose n'a pas pu l'être.
 
 ## 6. Ce qui attend une action de votre part
 
-### Une ligne dans `.env`
+### La chaîne complète tourne enfin
 
-`NEXTCLOUD_URL` pointe sur la racine du site au lieu du point d'accès WebDAV.
-**L'application ne peut donc rien écrire.** La forme correcte a été vérifiée contre
-l'instance réelle — écriture, relecture identique, `304` honoré sur lecture
-conditionnelle :
+`NEXTCLOUD_URL` a été corrigé le 2026-07-28 : il pointe sur le point d'accès WebDAV et non
+plus sur la racine du site. L'API démarre avec `storage_configured: true`, et
+`make dev` sert les deux moitiés.
 
-```
-NEXTCLOUD_URL=https://nextcloud.aleksi.systems/remote.php/dav/files/MetricsApp
-```
+**Ce que cela change** : les lots L01 à L10 ont tous été validés contre un double WebDAV en
+mémoire, jamais contre l'instance réelle. Cette réserve tombe en partie — l'application
+lit et écrit vraiment — mais **la latence n'a pas été mesurée**. Le tableau de bord ouvre
+neuf fichiers par affichage, une grille d'assiduité en ouvre autant sur 371 jours. C'est
+précisément ce que le cache serveur du lot L11 doit régler, et il faudra le mesurer, pas
+le supposer.
 
-Ensuite `make console` → `storage` confirme en trois secondes.
-
-Tant que cette ligne n'est pas corrigée, **rien n'a jamais été exercé contre l'instance
-réelle** — le lot L08 compris. Le tableau de bord ouvre neuf fichiers par affichage : le
-comptage des lectures est vérifié par test, la latence réelle ne l'est pas.
+`make check-storage` écrit puis relit un fichier de diagnostic sur Nextcloud et confirme la
+chaîne de bout en bout. Il n'a pas encore été lancé.
 
 ### Quatre décisions ouvertes, sans urgence
 
 - **Supprimer un repas ne supprime pas sa photo** (L07). Choix assumé : l'effacer d'un clic
   ferait perdre un souvenir qu'aucune annulation ne rendrait. À inverser si vous préférez.
-- **`heatmap_metric` n'est pas contraint à une liste fermée** (L08). Les pistes
-  d'assiduité sont des données utilisateur créées au L09 ; figer aujourd'hui un
-  vocabulaire que ce lot remplacera obligerait à rejeter une piste légitime. À resserrer
-  une fois les pistes en place.
+- **`heatmap_metric` n'est pas contraint à une liste fermée** (L08). Les pistes existent
+  depuis le L09 : le réglage peut désormais être resserré sur leurs identifiants.
 - **`/_kitchen-sink` est publique** (L03) : aucune donnée utilisateur, consultable sans
   session, vérifiable par capture automatisée.
 - **`MIN_LENGTH` du mot de passe abaissé à 6** dans `hash_password.py`. C'est l'unique
   porte d'entrée vers un an de données personnelles, sans second facteur.
+
+### Ce que le premier usage réel a révélé
+
+Trois défauts trouvés en lançant l'application, aucun par les tests. Ils sont corrigés,
+mais ce qu'ils disent vaut d'être retenu.
+
+| Défaut | Ce qu'il enseigne |
+|---|---|
+| `make dev` échouait sur `wait: -n: invalid option` | macOS livre bash **3.2**, pas 4.3. Un script de développement doit tourner sur le shell que la machine a. Aucun autre bashisme de bash 4 dans le dépôt, vérifié |
+| Une cellule `time` vide dans `schedule.csv` faisait tomber le **tableau de bord entier** en `502` | `STO-04` promet qu'ajouter une colonne n'invalide aucune ligne ancienne — cette promesse ne tient pas si la colonne est obligatoire. Les fichiers de **catalogue et de planning** portent maintenant un défaut sur chaque colonne |
+| Le bouton « ouvrir » d'une séance semblait inerte | Le panneau s'ouvrait hors du champ de vision, et `void promesse.then(...)` avalait les refus du serveur. Le parcours n'avait **aucun test d'écran** — c'est pour cela qu'il est passé |
+
+**La leçon commune** : tout ce qui a été trouvé ici l'a été en *utilisant* l'application,
+pas en la testant. Lancer `make dev` et saisir une vraie séance après chaque lot vaut mieux
+que dix tests de plus.
+
+### Une dette d'ergonomie, à traiter au L11
+
+L'écran Activité cache son parcours principal. Le panneau de saisie des charges n'existe
+que si une séance est **active** ; le catalogue d'exercices, lui, est toujours visible avec
+son formulaire. Le regard tombe donc sur le catalogue, qui ne prend aucun chiffre, alors
+que l'ordre réel est : déclarer l'exercice → créer la séance → consigner les charges.
+
+Le lot L11 touche déjà aux écrans : c'est le moment de rendre cet ordre visible, par
+exemple avec un journal toujours affiché et un sélecteur de séance plutôt qu'un panneau
+conditionnel.
 
 ---
 
