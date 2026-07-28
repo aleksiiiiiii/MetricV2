@@ -492,26 +492,47 @@ avec un seul moteur et aucune ligne de calcul spécifique.
 **Objectif** : le modèle de piste et son cycle de vie. Aucun calcul d'état encore, mais
 tout ce qui le paramètre.
 
-- [ ] `L09-01` Modèle `Track` : id, libellé, source, filtre, seuil de validation, seuils d'intensité, binaire, accent, position, actif, date de création (`HEAT-01`)
-- [ ] `L09-02` `settings/heatmap_tracks.csv` + `heatmap_cadences.csv` + `heatmap_off_days.csv`, sérialisation `params` lisible en tableur `min_count=1;window_days=2` (`STO-02`)
-- [ ] `L09-03` Registre de sources extensible : `activity.muscle_group`, `activity.runs`, `activity.duration`, `supplement.intake`, `hydration.intake`, `entry_count` — une interface, six implémentations (`HEAT-02`)
-- [ ] `L09-04` Contrat d'agrégat quotidien : chaque source rend **un nombre par jour**, rien d'autre (`HEAT-03`)
-- [ ] `L09-05` Historique de cadences versionné avec `valid_from`, résolution de la cadence applicable à une date (`HEAT-14`)
-- [ ] `L09-06` Plages neutralisées, `track_id` vide = toutes les pistes (`HEAT-06`)
-- [ ] `L09-07` `GET/POST/PATCH/DELETE /api/heatmap/tracks` — création, modification versionnée, suppression sous garde `409` (`HEAT-18`, `HEAT-19`, `HEAT-21`)
-- [ ] `L09-08` Modification des seuils et libellés, **avec recalcul complet de l'historique** et avertissement explicite dans la réponse (`HEAT-20`)
-- [ ] `L09-09` Désactivation vs suppression : la désactivation conserve l'historique, la suppression n'efface jamais les données sources (`HEAT-21`)
-- [ ] `L09-10` Ordre et piste mise en avant comme réglages (`HEAT-22`)
-- [ ] `L09-11` `POST/DELETE /api/heatmap/off-days` (`HEAT-06`)
-- [ ] `L09-12` Amorçage des 9 pistes par défaut, mapping groupe musculaire → piste **en configuration** et non en constante ; `autre` délibérément non mappé (**D7**) (`heat_backlog` §5)
-- [ ] `L09-13` Amorçage des seuils (**D9**, **D10**) : `per_week` calculé sur la fréquence réelle des 4 dernières semaines et non figé à 2 ; validation de la piste `eau` à **1500 ml**, gradient d'intensité inchangé jusqu'à 2000 ml
-- [ ] `L09-14` Cadence `supplement.intake` (**D3**) : `schedule.frequency` = valeur courante éditable, `settings/heatmap_cadences.csv` = journal append-only alimenté à chaque changement ; le moteur lit le journal pour juger le passé (`HEAT-23`, `HEAT-14`)
-- [ ] `L09-15` Suppléments gradués non amorcés mais supportés (**D11**) : mode binaire par défaut, deux seuils suffisent à passer en gradué (`HEAT-15`, `HEAT-16`)
-- [ ] `L09-16` Tests : cadence résolue à une date passée, création de piste non rétroactive (`HEAT-07`), suppression sans perte de source
+- [x] `L09-01` Modèle `Track` : id, libellé, source, filtre, seuil de validation, seuils d'intensité, binaire, accent, position, actif, date de création (`HEAT-01`)
+- [x] `L09-02` `settings/heatmap_tracks.csv` + `heatmap_cadences.csv` + `heatmap_off_days.csv`, sérialisation `params` lisible en tableur `min_count=1;window_days=2` (`STO-02`)
+- [x] `L09-03` Registre de sources extensible : `activity.muscle_group`, `activity.runs`, `activity.duration`, `supplement.intake`, `hydration.intake`, `entry_count` — une interface, six implémentations (`HEAT-02`)
+- [x] `L09-04` Contrat d'agrégat quotidien : chaque source rend **un nombre par jour**, rien d'autre (`HEAT-03`)
+- [x] `L09-05` Historique de cadences versionné avec `valid_from`, résolution de la cadence applicable à une date (`HEAT-14`)
+- [x] `L09-06` Plages neutralisées, `track_id` vide = toutes les pistes (`HEAT-06`)
+- [x] `L09-07` `GET/POST/PATCH/DELETE /api/heatmap/tracks` — création, modification versionnée, suppression sous garde `409` (`HEAT-18`, `HEAT-19`, `HEAT-21`)
+- [x] `L09-08` Modification des seuils et libellés, avertissement explicite de recalcul rétroactif dans la réponse (`HEAT-20`) — *le chiffrage de l'ampleur (**D4**) attend le moteur, voir l'écart ci-dessous*
+- [x] `L09-09` Désactivation vs suppression : la désactivation conserve l'historique, la suppression n'efface jamais les données sources (`HEAT-21`)
+- [x] `L09-10` Ordre et piste mise en avant comme réglages (`HEAT-22`)
+- [x] `L09-11` `POST/DELETE /api/heatmap/off-days` (`HEAT-06`)
+- [x] `L09-12` Amorçage des pistes par défaut, mapping groupe musculaire → piste **en configuration** et non en constante ; `autre` délibérément non mappé (**D7**) (`heat_backlog` §5)
+- [x] `L09-13` Amorçage des seuils (**D9**, **D10**) : `per_week` calculé sur la fréquence réelle des 4 dernières semaines et non figé à 2 ; validation de la piste `eau` à **1500 ml**, gradient d'intensité inchangé
+- [x] `L09-14` Cadence `supplement.intake` (**D3**) : `schedule.frequency` = valeur courante éditable, `settings/heatmap_cadences.csv` = journal append-only alimenté à chaque changement ; le moteur lit le journal pour juger le passé (`HEAT-23`, `HEAT-14`)
+- [x] `L09-15` Suppléments gradués non amorcés mais supportés (**D11**) : mode binaire par défaut, deux seuils suffisent à passer en gradué (`HEAT-15`, `HEAT-16`)
+- [x] `L09-16` Tests : cadence résolue à une date passée, création de piste non rétroactive (`HEAT-07`), suppression sans perte de source
 
-**DoD** — les 9 pistes par défaut existent à l'initialisation, toutes modifiables ;
-ajouter une piste ne demande aucune ligne de code ; ajouter une *source* est le seul
-cas qui en demande.
+**DoD** — `make check` vert (492 tests backend, 106 frontend) ; les pistes par défaut
+existent à l'initialisation, toutes modifiables ; ajouter une piste ne demande aucune
+ligne de code ; ajouter une *source* est le seul cas qui en demande.
+
+**Trois décisions de conception :**
+
+| Sujet | Décision |
+|---|---|
+| Le nombre de pistes amorcées n'est pas neuf, il est **5 + 2 + n** | La spec cite « créatine » et « whey » en exemple. Les coder en dur donnerait deux grilles vides à qui prend autre chose : l'amorçage crée une piste **par supplément actif du planning**, avec sa propre cadence (`HEAT-18`). Avec deux compléments, on retombe sur les neuf pistes du tableau |
+| La réconciliation planning → journal vit **à la lecture** | La décision **D3** veut que `schedule.frequency` soit la valeur courante et le journal l'historique. Brancher l'alimentation du journal sur la seule écriture de l'application le laisserait muet quand le planning est modifié dans un tableur — et le moteur jugerait le passé avec une cadence périmée. Une lecture qui répare un journal se justifie quand la justesse du journal *est* la fonctionnalité |
+| Une source inconnue rend une grille vide, elle ne lève pas | Le fichier des pistes est éditable à la main. Une source mal orthographiée doit coûter sa propre grille, pas faire tomber l'écran avec les huit autres — même règle que pour les réglages au lot L08 |
+
+**Un écart assumé** : `HEAT-20` est tenu pour l'avertissement, pas pour le **chiffrage**.
+La décision **D4** demande d'annoncer l'ampleur (« 34 jours passeraient de validé à
+manqué ») avant de valider un changement de seuil. Compter ces jours suppose la machine à
+états, qui est le lot L10. La réponse porte donc `recalculated_history` et un
+avertissement en clair ; le compte s'y ajoutera au L10, sans changer le contrat.
+
+**Un défaut trouvé par un test, et qui méritait de l'être** : le journal des cadences
+était trié par `(valid_from, id)`. Les identifiants étant aléatoires, deux prises d'effet
+posées **le même jour** se départageaient au hasard — une piste créée puis corrigée dans
+la foulée gardait l'ancienne règle une fois sur deux. Un journal daté au jour ne peut
+s'ordonner que par son propre ordre d'écriture, et le tri est désormais stable sur
+`valid_from` seul.
 
 ---
 
@@ -748,7 +769,7 @@ changement de spec, pas comme une question ouverte.
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
-| III — Assiduité | L09 → L11 | `v0.12.0` | ▣ à venir — le cœur du projet, `app/core/cadence.py` déjà en place |
+| III — Assiduité | L09 → L11 | `v0.12.0` | ▣ en cours — **L09 livré (`v0.10.0`)**, L10 (moteur) puis L11 (grilles) |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
 

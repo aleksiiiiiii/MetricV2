@@ -3,6 +3,74 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.10.0] — 2026-07-28
+
+Lot **L09 — Moteur `HEAT` : modèle, configuration, pistes**. Premier lot du jalon III,
+le cœur du projet. Aucun état n'est encore calculé — c'est le lot suivant — mais tout ce
+qui les paramètre existe. 492 tests backend, 106 frontend.
+
+### Ajouté
+
+- **Modèle de piste** (`HEAT-01`) — identifiant, libellé, source, filtre, seuil de
+  validation, seuils d'intensité, mode binaire, accent, position, état actif, date de
+  création. Toutes les heatmaps de l'application sont des instances de cet objet : il
+  n'existe aucun code « heatmap whey » ou « heatmap jambes ».
+- **Registre de sources** (`HEAT-02`, `HEAT-03`) — six implémentations derrière une seule
+  interface : séries d'un groupe musculaire, distance courue, minutes d'activité, prises
+  d'un supplément, volume bu, domaines renseignés. Le contrat tient en une phrase : une
+  source rend **un nombre par jour**. Ajouter une piste ne demande aucune ligne de code ;
+  ajouter une source est le seul cas qui en demande.
+- **Cadences versionnées** (`HEAT-14`) — journal en ajout seul avec date de prise d'effet,
+  et résolution de la cadence applicable à n'importe quelle date passée.
+- **Jours neutralisés** (`HEAT-06`) — maladie, voyage, deload. `track_id` vide neutralise
+  toutes les pistes : une semaine d'arrêt ne se déclare pas neuf fois.
+- **Cycle de vie complet** (`HEAT-18` → `HEAT-22`) — créer, modifier, réordonner, mettre
+  en avant, désactiver, supprimer. La mise en avant est le réglage `heatmap_metric`,
+  celui-là même que le tableau de bord expose sous `highlight` depuis le lot L08.
+- **Amorçage** (`heat_backlog` §5) — les pistes par défaut existent au premier affichage,
+  peuplées de l'historique réel. Ouvrir l'écran ne doit pas montrer un formulaire vide.
+
+### Décidé
+
+- **L'amorçage crée une piste par supplément du planning**, et non les deux pistes
+  « créatine » et « whey » que la spec cite en exemple. Les coder en dur donnerait deux
+  grilles vides à qui prend autre chose (`HEAT-18`, `HEAT-23`).
+- **Les cadences hebdomadaires sont amorcées sur la fréquence réelle des quatre dernières
+  semaines** (décision **D9**), et à une fois par semaine faute d'historique. Amorcer les
+  cinq groupes musculaires à deux fois par semaine supposerait dix créneaux hebdomadaires,
+  ce qui est beaucoup quand on court aussi — et une grille rouge dès le premier jour est
+  une grille qu'on cesse de regarder.
+- **La piste eau valide à 1500 ml** (décision **D10**), le gradient d'intensité restant
+  inchangé. À un litre, le vert validait des journées à la moitié de l'objectif.
+- **La réconciliation planning → journal vit à la lecture.** La décision **D3** veut que
+  `schedule.frequency` porte la valeur courante et le journal l'historique. Brancher
+  l'alimentation du journal sur la seule écriture de l'application le laisserait muet
+  quand le planning est modifié dans un tableur, et le moteur jugerait le passé avec une
+  cadence périmée. Une lecture qui répare un journal se justifie quand la justesse du
+  journal *est* la fonctionnalité.
+- **Une source inconnue rend une grille vide plutôt qu'une erreur.** Le fichier des pistes
+  est éditable à la main : une source mal orthographiée doit coûter sa propre grille, pas
+  faire tomber l'écran avec les huit autres.
+
+### Corrigé
+
+Le journal des cadences était trié par `(valid_from, id)`. Les identifiants étant
+aléatoires, deux prises d'effet posées **le même jour** se départageaient au hasard : une
+piste créée puis corrigée dans la foulée gardait l'ancienne règle une fois sur deux. Un
+journal daté au jour ne peut s'ordonner que par son propre ordre d'écriture — le tri est
+désormais stable sur `valid_from` seul. Trouvé par le test de versionnement, avant tout
+usage réel.
+
+### Non vérifié
+
+- **`HEAT-20` est tenu pour l'avertissement, pas pour le chiffrage.** La décision **D4**
+  demande d'annoncer l'ampleur d'un changement de seuil (« 34 jours passeraient de validé
+  à manqué ») avant de le valider. Compter ces jours suppose la machine à états, qui est
+  le lot L10. La réponse porte `recalculated_history` et un avertissement en clair ; le
+  compte s'y ajoutera sans changer le contrat.
+- Comme les lots précédents, rien n'a été exercé contre l'instance Nextcloud réelle :
+  `NEXTCLOUD_URL` pointe toujours sur la racine du site.
+
 ## [0.9.0] — 2026-07-28
 
 Lot **L08 — Réglages & agrégats du tableau de bord**. Il ferme le jalon II : les six

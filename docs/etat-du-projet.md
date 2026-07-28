@@ -3,13 +3,12 @@
 Document d'entrée. À lire en premier pour reprendre le développement de **Metric** sans
 contexte préalable — que ce soit dans trois mois ou dans une nouvelle session.
 
-**Version courante : `v0.9.0`** · neuf lots livrés sur dix-huit. **Le jalon II est
-clos** : les six domaines de saisie sont derrière nous, et le tableau de bord les
-rassemble.
+**Version courante : `v0.10.0`** · dix lots livrés sur dix-huit. Le jalon II est clos et
+le jalon III — l'assiduité, cœur du projet — a commencé.
 
 | Mesure | Valeur *(vérifiée le 2026-07-28)* |
 |---|---|
-| Tests backend | **437**, dont 35 de sécurité sur le service des photos |
+| Tests backend | **492**, dont 35 de sécurité sur le service des photos |
 | Tests frontend | **106** |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
 | Build de production | 112 ko gzip |
@@ -41,7 +40,7 @@ contradictions connues sont **tranchées et consignées** au [§3 du ROADMAP](..
 
 ## 2. Les invariants
 
-**C'est la section qui compte.** Neuf lots les ont suivis ; les casser produirait des
+**C'est la section qui compte.** Dix lots les ont suivis ; les casser produirait des
 incohérences que les tests n'attraperaient pas tous.
 
 ### Aucun calcul métier côté client
@@ -86,6 +85,20 @@ un zéro qui passerait pour une mesure. Un groupe musculaire jamais travaillé r
 pas un grand nombre : « jamais » et « il y a très longtemps » appellent des réponses
 différentes.
 
+### Un fichier de configuration ne fait jamais tomber un écran
+
+Réglages, pistes, cadences, jours neutralisés : ces fichiers sont **destinés** à être
+ouverts dans un tableur. Une cellule vide, un nombre illisible, une source mal
+orthographiée, un accent inventé y sont des possibilités normales — pas des incidents.
+
+Chaque lecture typée retombe donc sur son propre repli, et l'erreur reste locale : une
+piste abîmée rend une grille vide, elle n'emporte pas les huit autres. La règle est née
+d'un vrai défaut au L08, où une cellule vide de `settings.csv` faisait tomber tous les
+écrans à la fois.
+
+Les fichiers de **mesure**, eux, ne suivent pas cette règle : une ligne de pesée illisible
+est une erreur qu'il faut voir (`StorageSchemaError`). On ne devine pas une donnée.
+
 ### Une valeur partagée est servie, jamais recopiée
 
 Les valeurs de repli des réglages — poids cible, objectif d'hydratation, plafond de
@@ -127,6 +140,7 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 | L06 | `v0.7.0` | Hydratation & suppléments, checklist optimiste, objet `Cadence` |
 | L07 | `v0.8.0` | Nutrition : repas, photos, service sécurisé |
 | L08 | `v0.9.0` | Réglages éditables, agrégats du tableau de bord, séries génériques — **clôt le jalon II** |
+| L09 | `v0.10.0` | Moteur `HEAT` : modèle de piste, registre de sources, cadences versionnées, jours neutralisés |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -154,8 +168,9 @@ backend/app/
 │   └── deps.py        dépendances FastAPI
 ├── storage/           WebDAV, cache (contenu **et** absence), dépôt CSV typé
 └── domains/<nom>/     models · schemas · service · router
-                       (activity a un `stats.py` de plus ; aggregates n'a pas de
-                        `models.py` — c'est le seul domaine sans fichier à lui)
+                       (activity a un `stats.py` de plus, heatmap un `sources.py` ;
+                        aggregates n'a pas de `models.py` — c'est le seul domaine
+                        sans fichier à lui)
 
 frontend/src/
 ├── components/ui/     bibliothèque de la charte
@@ -226,35 +241,47 @@ comptage des lectures est vérifié par test, la latence réelle ne l'est pas.
 
 ---
 
-## 7. Prochain lot — L09
+## 7. Prochain lot — L10
 
-**Moteur `HEAT` : modèle, configuration, pistes.** Premier lot du jalon III, le cœur du
-projet. La spec fait autorité : [`heat_backlog.md`](../heat_backlog.md).
+**Moteur `HEAT` : calcul, cadences, statistiques.** C'est le lot où la justesse compte le
+plus, et le seul du projet à porter une exigence de couverture (≥ 95 % sur la machine à
+états).
 
-- `HEAT-01` / `HEAT-02` — la **piste** comme objet unique : identifiant, libellé, source,
-  filtre, règle de validation, cadence, seuils, état actif. Il ne doit exister aucun code
-  spécifique « heatmap whey » ou « heatmap jambes ». Six sources supportées, et ajouter
-  une source est le seul cas qui demande du code.
-- `HEAT-03` — chaque source produit **une valeur numérique par jour**. C'est le seul
-  contrat entre la source et le moteur ; validation, cadence et intensité ne travaillent
-  que sur ce nombre.
-- Les trois fichiers de `settings/` : `heatmap_tracks.csv`, `heatmap_cadences.csv`
-  (journal *append-only*, décision **D3**), `heatmap_off_days.csv`.
-- `app/core/cadence.py` est déjà écrit et testé : il sait lire, normaliser et décrire une
-  cadence. Il ne sait pas encore **juger** si un jour est validé — c'est le lot L10.
+Tout ce qui le paramètre existe déjà. Ce qui manque est le **jugement** :
 
-Les décisions **D1**, **D3**, **D5**, **D7**, **D9**, **D10** et **D11** portent sur ce
-lot et sont déjà tranchées : les lire au [§3 du ROADMAP](../ROADMAP.md#3-points-de-spécification-à-trancher)
-avant d'ouvrir la spec évitera de les rouvrir.
+- `HEAT-05` — la machine à états du jour : `off` / `missed` / `done` / `bonus`. Quatre
+  états et non cinq niveaux, parce qu'une grille majoritairement `off` n'est pas un échec.
+- `HEAT-04` — validation `agrégat ≥ seuil`, le seuil venant toujours de la piste.
+- `HEAT-09` → `HEAT-13` — les cinq cadences. La fenêtre `window` est **glissante** et non
+  une parité de calendrier : lundi/mercredi/vendredi et mardi/jeudi/samedi sont deux
+  rythmes également corrects.
+- `HEAT-27` — la série cadence-consciente, à ne pas confondre avec `AGG-03`. Les jours
+  `off` et neutralisés y sont **transparents** : une whey prise un jour sur deux pendant
+  trois mois donne une série de trois mois, pas de deux jours.
+- `L10-03` — l'ordre de priorité des règles neutralisantes, qui est la partie la plus
+  facile à se tromper : neutralisé > antérieur à la création > jour en cours > cadence.
 
-### Ce que L08 laisse en place pour la suite
+### Ce que L09 laisse en place
 
-- `GET /api/aggregates/series` est **générique** : brancher une nouvelle métrique tient en
-  une entrée du catalogue de `app/domains/aggregates/service.py`, sans code de calcul.
-- Le tableau de bord lit déjà `heatmap_metric` et le rend sous `highlight` : la grille
-  n'aura qu'à s'y accrocher.
-- `keys.heatmap.*` et `CROSS_CUTTING` existent côté client depuis le L03 : toute écriture
-  invalide déjà les grilles (`HEAT-33`), avant même qu'elles n'existent.
+| Pièce | Où |
+|---|---|
+| `TrackService.cadence_at(track_id, jour)` | la règle qui s'appliquait à une date passée |
+| `TrackService.neutralised(track_id)` | les plages à traiter en `off`, globales comprises |
+| `sources.daily_values(store, source, filtre)` | l'agrégat quotidien, un nombre par jour |
+| `TrackRow.created` | la borne de non-rétroactivité (`HEAT-07`) |
+| `TrackRow.levels` et `binary` | de quoi convertir l'agrégat en niveau 1–4 (`HEAT-15`) |
+
+Le moteur n'aura donc à décider que d'une chose : **l'état d'un jour**. Tout ce dont il a
+besoin pour le faire lui est servi.
+
+### Deux pièges déjà repérés
+
+- **`per_week` ne produit jamais de `missed` au jour** (`HEAT-11`) : c'est la semaine qui
+  porte un statut. Un rouge quotidien sur une piste hebdomadaire serait un contresens.
+- La plage par défaut (**D6**) n'est pas « 371 jours se terminant aujourd'hui » : c'est du
+  lundi d'il y a 52 semaines au dimanche de la semaine courante. Les deux conditions du
+  backlog ne peuvent être vraies ensemble sauf un dimanche, et l'alignement de grille
+  prime sur la borne exacte.
 
 > `AGG-03` et `HEAT-27` sont **deux algorithmes distincts et le resteront** : le premier
 > mesure l'assiduité de suivi, le second le respect d'un engagement. Ne pas les fusionner.

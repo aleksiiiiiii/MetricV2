@@ -157,10 +157,13 @@ class SupplementService:
             ),
         )
 
+    async def intakes(self) -> list[Row[SupplementIntakeRow]]:
+        """Journal complet des prises — source de la piste `supplement.intake`."""
+        return await self._log.read_all()
+
     async def intake_days(self) -> set[date]:
         """Jours portant au moins une prise — source de la série d'assiduité (`AGG-03`)."""
-        entries = await self._log.read_all()
-        return {local_day_of(row.model.datetime_) for row in entries}
+        return {local_day_of(row.model.datetime_) for row in await self.intakes()}
 
     @staticmethod
     def _streaks(entries: list[Row[SupplementIntakeRow]], day: date) -> dict[str, int]:
