@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
 
 import { Badge, Bars, Button, Card, Empty, Field, Rule, Stat, Table } from '@/components/ui';
@@ -274,7 +274,7 @@ function WorkoutForm({ onCreated }: { onCreated: (workout: Workout) => void }) {
 
 // ── Journal d'exercices ───────────────────────────────
 
-function ExerciseLog({ workout }: { workout: Workout }) {
+function ExerciseLog({ workout, onClose }: { workout: Workout; onClose: () => void }) {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
   const { data: catalogue } = useQuery({
@@ -324,7 +324,17 @@ function ExerciseLog({ workout }: { workout: Workout }) {
             {detail.volume_kg > 0 && ` · ${num(detail.volume_kg, 0)} kg de tonnage`}
           </p>
         </div>
-        {detail.rpe !== null && <Badge tone="load">RPE {detail.rpe}</Badge>}
+        <div className="row">
+          {detail.rpe !== null && <Badge tone="load">RPE {detail.rpe}</Badge>}
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="Fermer le journal de cette séance"
+            onClick={onClose}
+          >
+            fermer
+          </button>
+        </div>
       </div>
 
       {entries.length > 0 && (
@@ -507,6 +517,15 @@ export function Activity() {
   const { notify } = useToast();
   const [active, setActive] = useState<Workout | null>(null);
 
+  // Ouvrir une séance depuis l'historique doit **se voir**. Le tableau est à gauche, le
+  // journal à droite : sans ce défilement, ouvrir une séance après avoir descendu la
+  // page ne montrait rien du tout.
+  const logRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (active === null) return;
+    logRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+  }, [active]);
+
   const { data, isPending } = useQuery({
     queryKey: keys.activity.overview(),
     queryFn: activityApi.overview,
@@ -587,7 +606,17 @@ export function Activity() {
                 className={styles.iconButton}
                 aria-label={`Ouvrir la séance du ${shortDate(row.date)}`}
                 onClick={() => {
-                  void activityApi.readWorkout(row.id).then(setActive);
+                  // Le `.catch` n'est pas décoratif : sans lui, un refus du serveur était
+                  // avalé en silence et le bouton semblait simplement ne rien faire.
+                  activityApi
+                    .readWorkout(row.id)
+                    .then(setActive)
+                    .catch((caught: unknown) => {
+                      notify(
+                        caught instanceof ApiError ? caught.message : 'Séance introuvable.',
+                        'recover',
+                      );
+                    });
                 }}
               >
                 ouvrir
@@ -783,6 +812,21 @@ export function Activity() {
         </Card>
 
         <div className="stack">
+          {/* En **tête** de colonne, et non entre deux formulaires : le bouton « ouvrir »
+              vit dans le tableau de gauche, et un panneau qui s'insérait au milieu de la
+              colonne de droite apparaissait hors du champ de vision. Cliquer semblait
+              alors ne rien faire. */}
+          {active !== null && (
+            <div ref={logRef}>
+              <ExerciseLog
+                workout={active}
+                onClose={() => {
+                  setActive(null);
+                }}
+              />
+            </div>
+          )}
+
           <Card>
             <h3>Nouvelle course</h3>
             <RunForm />
@@ -792,8 +836,6 @@ export function Activity() {
             <h3>Nouvelle séance</h3>
             <WorkoutForm onCreated={setActive} />
           </Card>
-
-          {active !== null && <ExerciseLog workout={active} />}
 
           <ExerciseCatalogue />
         </div>

@@ -321,4 +321,65 @@ describe('écran Activité', () => {
     expect(screen.getByText('aucun exercice consigné cette semaine')).toBeInTheDocument();
     expect(screen.getByText('aucune course')).toBeInTheDocument();
   });
+  // ── Ouvrir une séance pour y consigner des charges ──
+
+  it('ouvre le journal d’une séance depuis l’historique', async () => {
+    // Signalé en usage réel : le bouton « ouvrir » semblait ne rien faire. Le panneau
+    // s'insérait au milieu de la colonne de droite, hors du champ de vision de qui
+    // venait de cliquer dans le tableau de gauche.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
+
+    expect(await screen.findByText('Journal — musculation')).toBeInTheDocument();
+    expect(screen.getByLabelText('Charge (kg)')).toBeInTheDocument();
+  });
+
+  it('consigne une charge sur l’exercice choisi', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
+    await screen.findByText('Journal — musculation');
+
+    await userEvent.selectOptions(screen.getByLabelText('Exercice'), 'e1');
+    await userEvent.type(screen.getByLabelText('Charge (kg)'), '80');
+    await userEvent.click(screen.getByRole('button', { name: 'Consigner' }));
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) => call.init?.method === 'POST' && call.url.includes('/workouts/0/exercises'),
+      );
+      expect(JSON.parse(post?.init?.body as string)).toMatchObject({
+        exercise_id: 'e1',
+        weight_kg: '80',
+      });
+    });
+  });
+
+  it('rappelle la dernière charge de l’exercice', async () => {
+    // `ACT-08` : choisir sa charge sans consulter l'historique.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
+    await userEvent.selectOptions(await screen.findByLabelText('Exercice'), 'e1');
+
+    expect(screen.getByText(/dernière fois : 90 kg · 3×8/)).toBeInTheDocument();
+  });
+
+  it('dit pourquoi quand la séance ne peut pas être ouverte', async () => {
+    // Sans `.catch`, le refus du serveur était avalé et le bouton paraissait inerte.
+    stub((url) =>
+      url.includes('/workouts/0')
+        ? json(404, { code: 'storage_not_found', message: "Cette séance n'existe pas." })
+        : undefined,
+    );
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
+
+    expect(await screen.findByText("Cette séance n'existe pas.")).toBeInTheDocument();
+  });
 });
