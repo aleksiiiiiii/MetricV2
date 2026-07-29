@@ -120,6 +120,8 @@ papier.
 | L09 | `v0.10.0` | Moteur `HEAT` — modèle, config, pistes | L08 |
 | L10 | `v0.11.0` | Moteur `HEAT` — calcul, cadences, statistiques | L09 |
 | L11 | `v0.12.0` | Heatmaps & réglage des pistes (UI) — **livré** | L10 |
+| L11b | `v0.12.1` | Refonte de l'écran Activité — **dette soldée** | L05 |
+| L11c | `v0.12.2` | Passe tactile : charte + écran Activité — *avance `L17-07`* | L11b |
 | **Jalon IV — Intelligence** | | | |
 | L12 | `v0.13.0` | Couche IA OpenRouter + analyse de repas + import Apple | L07 |
 | L13 | `v0.14.0` | Planning sport & export iCal | L12 |
@@ -645,6 +647,68 @@ d'écran — ceux qui manquaient quand le bouton « ouvrir » est resté inerte.
 
 ---
 
+## L11b · `v0.12.1` — Refonte de l'écran Activité *(dette, pas un lot)*
+
+**Objectif** : que le parcours principal de l'écran soit celui qu'on voit en arrivant.
+
+Soldée **avant** d'ouvrir le jalon IV, et le raisonnement du L11 est ce qui l'impose :
+`IMP-02` pré-remplit une course et une séance, donc l'import Apple du lot L12 se greffe
+exactement sur le parcours à refondre. « Aucune ligne partagée » écartait la dette du L11 ;
+la même règle appliquée au L12 la fait passer devant.
+
+- [x] `L11b-01` Journal de séance **toujours affiché**, pleine largeur, en tête de la zone de saisie
+- [x] `L11b-02` Sélecteur de séance, la plus récente ouverte d'office ; une séance à peine créée y figure avant relecture de l'historique
+- [x] `L11b-03` Ordre des cartes aligné sur l'ordre du geste : journal → séance → course → catalogue
+- [x] `L11b-04` « Ouvrir » désigne au lieu de charger ; le refus du serveur s'affiche **dans** le journal, plus en toast
+- [x] `L11b-05` Supprimer la séance ouverte ramène le journal sur la précédente
+- [x] `L11b-06` États explicites : aucune séance, catalogue vide, séance illisible
+- [x] `L11b-07` Treize tests d'écran sur ce parcours — ceux qui manquaient quand « ouvrir » est resté inerte deux lots
+- [x] `L11b-08` Parcours conduit dans un navigateur, pas seulement testé
+
+**DoD** — au chargement de `/activite`, le champ « Charge » est à l'écran sans avoir rien
+cliqué, et le catalogue n'est plus le premier formulaire que l'œil rencontre.
+✅ **Vérifiée**, en test et à l'écran.
+
+> Deux défauts sont sortis du navigateur et d'aucun test : la date répétée entre le
+> sélecteur et la ligne de détail, et « la séance la plus récente est ouverte d'office »
+> affiché alors qu'il n'y en avait aucune. La leçon du premier usage réel tient toujours.
+
+
+---
+
+## L11c · `v0.12.2` — Passe tactile *(avance `L17-07`, ne le clôt pas)*
+
+**Objectif** : que l'écran le plus saisi s'utilise au pouce, et que les contrôles qu'il
+demande servent aux sept autres.
+
+`L17-07` désigne le mobile comme « cible d'usage principale » depuis le début, tout en
+plaçant la passe au dernier lot. L'application vivait donc avec **une seule media query**
+et des cibles d'action à 19 px. Ce lot ne referme pas `L17-07` : il en fait la part qui
+touche l'écran refondu au `v0.12.1`, et pose dans la charte ce dont le reste aura besoin.
+
+- [x] `L11c-01` Tokens `--tap` (44 px), `--tap-lg` (56 px), `--swipe-threshold`
+- [x] `L11c-02` `useHorizontalSwipe` — une seule implémentation du geste, avec garde verticale
+- [x] `L11c-03` `Stepper`, `Chip`, `ChipStrip`, `SwipeRow` dans `primitives.tsx`
+- [x] `L11c-04` Plancher tactile sur boutons, champs, segments et navigation du shell
+- [x] `L11c-05` Sélection rapide de l'exercice, pastilles de charge tirées de `max_series`
+- [x] `L11c-06` Bande de séances glissante, balayage du journal entre séances
+- [x] `L11c-07` Historique en fiches glissables, colonnes alignées dès qu'il y a la place
+- [x] `L11c-08` Feuille de style de l'écran retournée en **mobile d'abord**
+- [x] `L11c-09` Section « 03b — Au doigt » du kitchen sink
+- [x] `L11c-10` Mesure à 390 × 844, en évènements tactiles réels
+
+**DoD** — à 390 px, aucune cible sous 44 px sur l'écran Activité, aucun débordement
+horizontal, et une charge se consigne entièrement au doigt. ✅ **Vérifiée** en émulation.
+
+> **Reste ouvert** : les sept autres écrans, et l'essai sur un vrai téléphone. L'émulation
+> reproduit la taille et les évènements, pas l'imprécision du pouce ni le clavier système.
+
+> **Décision de périmètre** : pas de curseurs à glisser pour les valeurs. Viser 82,5 kg sur
+> un curseur est difficile, et une mesure fausse coûte plus cher qu'un appui de plus. Le
+> glissement navigue, il ne mesure pas.
+
+---
+
 # Jalon IV — Intelligence
 
 ## L12 · `v0.13.0` — Couche IA + analyse de repas + import Apple
@@ -744,7 +808,7 @@ l'archive d'export s'ouvre sans l'app.
 - [ ] `L17-04` Passe accessibilité : focus visible, contrastes, navigation clavier, `aria-pressed` des bascules, `prefers-reduced-motion`
 - [ ] `L17-05` Passe performance : budget de chargement, découpage de code, coût réel des grilles `HEAT`
 - [ ] `L17-06` Parcours Playwright de bout en bout sur les 8 écrans principaux
-- [ ] `L17-07` Passe responsive mobile — cible d'usage principale
+- [~] `L17-07` Passe responsive mobile — cible d'usage principale · **entamée en `v0.12.2`** : tokens de cible tactile, `Stepper` / `Chip` / `ChipStrip` / `SwipeRow` dans la charte, écran Activité et navigation du shell traités. Restent les sept autres écrans
 - [ ] `L17-08` Journalisation et supervision minimales, `/health` branché
 - [ ] `L17-09` Sauvegarde/restauration répétée en conditions réelles
 - [ ] `L17-10` Revue de traçabilité : chaque ID du backlog est couvert ou explicitement écarté
@@ -826,7 +890,7 @@ changement de spec, pas comme une question ouverte.
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
-| III — Assiduité | L09 → L11 | `v0.12.0` | ✅ **clos** — L09 `v0.10.0`, L10 `v0.11.0`, L11 `v0.12.0` |
+| III — Assiduité | L09 → L11 | `v0.12.0` | ✅ **clos** — L09 `v0.10.0`, L10 `v0.11.0`, L11 `v0.12.0` ; dette d'ergonomie soldée en `v0.12.1` |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
 

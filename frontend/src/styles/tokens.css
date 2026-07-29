@@ -85,6 +85,22 @@
   --r-btn: 10px;
   --r-badge: 5px;
 
+  /* ── Cible tactile (`L17-07`) ───────────────────
+     Le mobile est la cible d'usage principale du projet, et la charte n'avait
+     qu'une seule media query. Ces deux tailles sont le plancher : `--tap` est le
+     plus petit carré qu'un doigt vise sans rater, `--tap-lg` est réservé à
+     l'action qui **termine** un geste — celle qu'on doit pouvoir toucher entre
+     deux séries, sans regarder l'écran.
+
+     Elles s'appliquent partout, pas seulement sous 760 px : une cible de 19 px
+     ne devient pas correcte parce que la fenêtre est large. */
+  --tap: 44px;
+  --tap-lg: 56px;
+
+  /* Distance à parcourir pour qu'un glissement compte. En deçà, c'est un appui
+     qui a bougé — pas une intention. */
+  --swipe-threshold: 56px;
+
   /* Transitions. `.16s ease` pour les contrôles, `.1s` pour les cellules. */
   --t: 0.16s ease;
   --t-fast: 0.1s ease;

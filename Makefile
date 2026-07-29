@@ -31,6 +31,9 @@ console: ## Console interactive : start / stop / logs / status
 dev: ## Lance API + frontend ensemble (au premier plan, Ctrl-C arrête tout)
 	@bash scripts/dev.sh
 
+dev-lan: ## Comme « dev », mais le frontend est joignable depuis un téléphone du réseau
+	@METRIC_LAN=1 bash scripts/dev.sh
+
 dev-api: ## Lance l'API seule sur :8000
 	cd backend && ../$(UVICORN) app.main:app --reload --port 8000
 

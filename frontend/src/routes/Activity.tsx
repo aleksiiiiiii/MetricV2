@@ -2,8 +2,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
 
-import { Badge, Bars, Button, Card, Empty, Field, Rule, Stat, Table } from '@/components/ui';
-import type { Column, Tone } from '@/components/ui';
+import {
+  Badge,
+  Bars,
+  Button,
+  Card,
+  CardHead,
+  Chip,
+  ChipStrip,
+  Empty,
+  Field,
+  LogButton,
+  Rule,
+  Stat,
+  Stepper,
+  SwipeRow,
+} from '@/components/ui';
+import type { Tone } from '@/components/ui';
 import {
   activityApi,
   type ActivityItem,
@@ -15,6 +30,7 @@ import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
 import { delta, duration, hoursMinutes, isoDay, km, num, pace, shortDate } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
+import { useHorizontalSwipe } from '@/lib/swipe';
 import { useToast } from '@/lib/toast';
 
 import styles from './Activity.module.css';
@@ -272,41 +288,84 @@ function WorkoutForm({ onCreated }: { onCreated: (workout: Workout) => void }) {
   );
 }
 
-// ── Journal d'exercices ───────────────────────────────
+// ── Journal de séance ─────────────────────────────────
 
-function ExerciseLog({ workout, onClose }: { workout: Workout; onClose: () => void }) {
+/** Ce qu'il faut d'une séance pour la proposer au choix, sans avoir à la relire. */
+interface Session {
+  id: number;
+  date: string;
+  label: string;
+}
+
+function toSession(workout: Workout): Session {
+  return { id: workout.id, date: workout.date, label: workout.type };
+}
+
+/**
+ * Écrit un nombre pour le champ *et* pour le serveur.
+ *
+ * Volontairement sans séparateur de milliers, contrairement à `num` : ce texte part dans
+ * la charge utile, et `1 000` y serait une valeur que le serveur devrait deviner. La
+ * virgule, elle, fait partie du contrat `ACT-01`.
+ */
+function kgText(value: number): string {
+  return String(Math.round(value * 100) / 100).replace('.', ',');
+}
+
+/** Contenu du journal : ce qui est déjà consigné, et de quoi consigner la suite. */
+function SessionLog({ workoutId }: { workoutId: number }) {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
   const { data: catalogue } = useQuery({
     queryKey: keys.activity.exercises(),
     queryFn: activityApi.exercises,
   });
+  // Même clé que l'écran : la requête est mutualisée, pas dupliquée.
+  const { data: progress } = useQuery({
+    queryKey: keys.activity.progress(),
+    queryFn: activityApi.progress,
+  });
 
-  const [entry, setEntry] = useState<ExerciseEntryPayload>({
+  // Séries et réps restent du **texte** tant qu'on saisit : les convertir à chaque frappe
+  // ramenait le champ à 1 dès qu'on l'effaçait pour retaper.
+  const [form, setForm] = useState({
     exercise_id: '',
     weight_kg: '',
-    sets: 3,
-    reps: 8,
+    sets: '3',
+    reps: '8',
   });
   const [error, setError] = useState<ApiError | null>(null);
 
-  const { data: detail } = useQuery({
-    queryKey: keys.activity.workout(workout.id),
-    queryFn: () => activityApi.readWorkout(workout.id),
-    initialData: workout,
+  const set = (name: keyof typeof form) => (value: string) => {
+    setForm((current) => ({ ...current, [name]: value }));
+  };
+
+  // La séance est relue **ici**. Un refus du serveur s'affiche donc à la place du
+  // journal, là où le regard est déjà : porté par un toast depuis le bouton « ouvrir »,
+  // il passait avant d'avoir été lu — quand il n'était pas simplement avalé.
+  const {
+    data: detail,
+    isPending,
+    error: unreadable,
+  } = useQuery({
+    queryKey: keys.activity.workout(workoutId),
+    queryFn: () => activityApi.readWorkout(workoutId),
   });
 
-  // Une réponse partielle ne doit pas produire un écran blanc.
-  const entries = detail.exercises ?? [];
-
-  const selected = (catalogue ?? []).find((item) => item.exercise_id === entry.exercise_id);
-
   const log = useMutation({
-    mutationFn: () => activityApi.logExercise(workout.id, entry),
+    mutationFn: () => {
+      const payload: ExerciseEntryPayload = {
+        exercise_id: form.exercise_id,
+        weight_kg: form.weight_kg,
+        sets: Number(form.sets.replace(',', '.')) || 1,
+        reps: Number(form.reps.replace(',', '.')) || 1,
+      };
+      return activityApi.logExercise(workoutId, payload);
+    },
     onSuccess: () => {
       invalidate();
       notify('Performance consignée.', 'effort');
-      setEntry((current) => ({ ...current, weight_kg: '' }));
+      setForm((current) => ({ ...current, weight_kg: '' }));
       setError(null);
     },
     onError: (caught: unknown) => {
@@ -314,27 +373,39 @@ function ExerciseLog({ workout, onClose }: { workout: Workout; onClose: () => vo
     },
   });
 
+  if (unreadable !== null) {
+    return (
+      <p className={cx(styles.error, styles.spaced)} role="alert">
+        {unreadable instanceof ApiError ? unreadable.message : 'Séance illisible.'}
+      </p>
+    );
+  }
+
+  if (isPending) {
+    return <p className={cx(styles.empty, styles.spaced)}>chargement…</p>;
+  }
+
+  // Une réponse partielle ne doit pas produire un écran blanc.
+  const entries = detail.exercises ?? [];
+  const selected = (catalogue ?? []).find((item) => item.exercise_id === form.exercise_id);
+  const empty = catalogue !== undefined && catalogue.length === 0;
+
+  // Charges rapides : les dernières valeurs **réellement soulevées**, telles que le
+  // serveur les a calculées (`max_series`). Aucune n'est suggérée par arrondi ni par
+  // progression supposée — une pastille propose ce qui a existé, pas ce qui devrait.
+  const history = progress?.find((item) => item.exercise_id === form.exercise_id);
+  const quick = [...new Set(history?.max_series ?? [])].slice(-3).reverse();
+
   return (
-    <Card>
-      <div className="spread">
-        <div>
-          <h3>Journal — {detail.type}</h3>
-          <p className={styles.note}>
-            {shortDate(detail.date)} · {hoursMinutes(detail.duration_min)}
-            {detail.volume_kg > 0 && ` · ${num(detail.volume_kg, 0)} kg de tonnage`}
-          </p>
-        </div>
-        <div className="row">
-          {detail.rpe !== null && <Badge tone="load">RPE {detail.rpe}</Badge>}
-          <button
-            type="button"
-            className={styles.iconButton}
-            aria-label="Fermer le journal de cette séance"
-            onClick={onClose}
-          >
-            fermer
-          </button>
-        </div>
+    <>
+      <div className={styles.meta}>
+        {/* Pas de date ici : le sélecteur juste au-dessus la porte déjà, et la lire
+            deux fois de suite ne dit rien de plus. Cette ligne le complète. */}
+        <p className={styles.note}>
+          {hoursMinutes(detail.duration_min)}
+          {detail.volume_kg > 0 && ` · ${num(detail.volume_kg, 0)} kg de tonnage`}
+        </p>
+        {detail.rpe !== null && <Badge tone="load">RPE {detail.rpe}</Badge>}
       </div>
 
       {entries.length > 0 && (
@@ -369,70 +440,190 @@ function ExerciseLog({ workout, onClose }: { workout: Workout; onClose: () => vo
           </p>
         )}
 
-        <div className={styles.field}>
-          <label htmlFor="exercise-pick">Exercice</label>
-          <select
-            id="exercise-pick"
-            className={styles.select}
-            value={entry.exercise_id}
-            onChange={(event) => {
-              setEntry((current) => ({ ...current, exercise_id: event.target.value }));
-            }}
-          >
-            <option value="">— choisir —</option>
-            {(catalogue ?? []).map((item) => (
-              <option value={item.exercise_id} key={item.exercise_id}>
-                {item.name} ({item.muscle_group})
-              </option>
-            ))}
-          </select>
-          {/* `ACT-08` : choisir sa charge sans consulter l'historique. */}
-          {selected?.last_weight_kg != null && (
+        {/* Sélection rapide : un appui par exercice, avec sa dernière charge en regard.
+            La liste déroulante native demandait un appui, un panneau système, un
+            défilement et un second appui — pour le geste le plus répété de l'écran. */}
+        <div className={styles.pickField}>
+          <span className={styles.pickLabel} id="exercise-label">
+            Exercice
+          </span>
+          {empty ? (
             <span className={styles.empty}>
-              dernière fois : {num(selected.last_weight_kg, 1)} kg · {selected.last_sets}×
-              {selected.last_reps}
+              catalogue vide — déclare un exercice pour pouvoir consigner une charge
             </span>
+          ) : (
+            <div className={styles.pickGrid} role="group" aria-labelledby="exercise-label">
+              {(catalogue ?? []).map((item) => (
+                <LogButton
+                  key={item.exercise_id}
+                  label={item.name}
+                  // « 0 kg » se lirait comme une mesure manquante. Le reste de l'écran
+                  // dit « poids du corps » ; il n'y a pas de raison d'un second mot ici.
+                  hint={
+                    item.last_weight_kg == null
+                      ? item.muscle_group
+                      : item.last_weight_kg === 0
+                        ? 'poids du corps'
+                        : `${num(item.last_weight_kg, 1)} kg`
+                  }
+                  aria-pressed={form.exercise_id === item.exercise_id}
+                  className={cx(form.exercise_id === item.exercise_id && styles.pickOn)}
+                  onClick={() => {
+                    set('exercise_id')(item.exercise_id);
+                  }}
+                />
+              ))}
+            </div>
           )}
         </div>
 
-        <div className={styles.triple}>
-          <Field
+        {/* `ACT-08` : choisir sa charge sans consulter l'historique. */}
+        {selected?.last_weight_kg != null && (
+          <span className={styles.empty}>
+            dernière fois : {num(selected.last_weight_kg, 1)} kg · {selected.last_sets}×
+            {selected.last_reps}
+          </span>
+        )}
+
+        {quick.length > 0 && (
+          <ChipStrip label="Charges récentes">
+            {quick.map((weight) => (
+              <Chip
+                key={weight}
+                selected={form.weight_kg === kgText(weight)}
+                onClick={() => {
+                  set('weight_kg')(kgText(weight));
+                }}
+              >
+                {num(weight, 1)} kg
+              </Chip>
+            ))}
+          </ChipStrip>
+        )}
+
+        <div className={styles.logGrid}>
+          <Stepper
             label="Charge (kg)"
-            inputMode="decimal"
+            value={form.weight_kg}
+            onChange={set('weight_kg')}
+            // 2,5 kg est le plus petit disque de la plupart des salles : c'est le pas
+            // réel d'une progression, pas un pas décidé à la calculette.
+            step={2.5}
+            min={0}
             placeholder="0 = poids du corps"
-            value={entry.weight_kg}
             error={error?.messageFor('weight_kg')}
-            onChange={(event) => {
-              setEntry((current) => ({ ...current, weight_kg: event.target.value }));
-            }}
           />
-          <Field
+          <Stepper
             label="Séries"
             inputMode="numeric"
-            value={String(entry.sets)}
-            onChange={(event) => {
-              setEntry((current) => ({ ...current, sets: Number(event.target.value) || 1 }));
-            }}
+            value={form.sets}
+            onChange={set('sets')}
+            min={1}
+            max={20}
           />
-          <Field
+          <Stepper
             label="Réps"
             inputMode="numeric"
-            value={String(entry.reps)}
-            onChange={(event) => {
-              setEntry((current) => ({ ...current, reps: Number(event.target.value) || 1 }));
-            }}
+            value={form.reps}
+            onChange={set('reps')}
+            min={1}
+            max={50}
           />
         </div>
 
         <Button
           type="submit"
-          variant="ghost"
+          variant="primary"
+          className={styles.commit}
           busy={log.isPending}
-          disabled={entry.exercise_id === ''}
+          disabled={form.exercise_id === ''}
         >
           Consigner
         </Button>
       </form>
+    </>
+  );
+}
+
+/**
+ * Le parcours principal de l'écran, et il est **toujours affiché**.
+ *
+ * Il n'existait auparavant que pendant qu'une séance était ouverte depuis l'historique.
+ * Un écran qui n'ouvre rien de lui-même laissait donc le regard tomber sur le catalogue
+ * d'exercices — le seul formulaire visible d'emblée, et le seul qui ne prend aucun
+ * chiffre. L'ordre affiché contredisait l'ordre réel du geste.
+ *
+ * Le sélecteur remplace ce panneau conditionnel : la séance la plus récente est ouverte
+ * d'office, les autres restent à un choix dans la liste.
+ */
+function WorkoutJournal({
+  sessions,
+  currentId,
+  onPick,
+}: {
+  sessions: Session[];
+  currentId: number | null;
+  onPick: (session: Session) => void;
+}) {
+  // Balayer le journal passe d'une séance à l'autre. L'ordre est celui de la bande —
+  // vers la gauche on remonte le temps, vers la droite on revient au récent.
+  const rank = sessions.findIndex((item) => item.id === currentId);
+  const swipe = useHorizontalSwipe({
+    touchOnly: true,
+    onLeft: () => {
+      const older = sessions[rank + 1];
+      if (older !== undefined) onPick(older);
+    },
+    onRight: () => {
+      const newer = sessions[rank - 1];
+      if (newer !== undefined) onPick(newer);
+    },
+  });
+
+  return (
+    <Card>
+      <CardHead>
+        <div>
+          <h3>Journal de séance</h3>
+          {/* La promesse ne vaut que s'il y a une séance à ouvrir : l'annoncer quand il
+              n'y en a aucune décrirait un écran que l'utilisateur n'a pas sous les yeux. */}
+          <p className={styles.note}>
+            Les charges se consignent ici.
+            {currentId !== null && ' La séance la plus récente est ouverte d’office.'}
+          </p>
+        </div>
+      </CardHead>
+
+      {currentId === null ? (
+        <div className={styles.spaced}>
+          <Empty title="Aucune séance">
+            Enregistre une séance — sa date et sa durée suffisent. Ses exercices et leurs charges se
+            consignent ensuite ici, un par un.
+          </Empty>
+        </div>
+      ) : (
+        <>
+          <ChipStrip label="Séance">
+            {sessions.map((item) => (
+              <Chip
+                key={item.id}
+                selected={item.id === currentId}
+                onClick={() => {
+                  onPick(item);
+                }}
+              >
+                {shortDate(item.date)} · {item.label}
+              </Chip>
+            ))}
+          </ChipStrip>
+
+          {/* Remonter le journal à chaque changement de séance : une charge tapée pour
+              l'une ne doit pas se retrouver pré-remplie sur l'autre. */}
+          <div className={styles.swipeArea} {...swipe.handlers}>
+            <SessionLog workoutId={currentId} key={currentId} />
+          </div>
+        </>
+      )}
     </Card>
   );
 }
@@ -466,8 +657,8 @@ function ExerciseCatalogue() {
     <Card>
       <h3>Catalogue d'exercices</h3>
       <p className={styles.note}>
-        Retirer un exercice conserve tout l'historique : les performances passées restent lisibles
-        sans lui.
+        À déclarer une fois : l'exercice devient ensuite proposé dans le journal. Le retirer
+        conserve tout l'historique — les performances passées restent lisibles sans lui.
       </p>
       <form
         className={styles.form}
@@ -515,16 +706,16 @@ function ExerciseCatalogue() {
 export function Activity() {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
-  const [active, setActive] = useState<Workout | null>(null);
+  const [picked, setPicked] = useState<Session | null>(null);
 
-  // Ouvrir une séance depuis l'historique doit **se voir**. Le tableau est à gauche, le
-  // journal à droite : sans ce défilement, ouvrir une séance après avoir descendu la
-  // page ne montrait rien du tout.
+  // Choisir une séance depuis l'historique doit **se voir**. Le tableau est sous le
+  // journal : sans ce défilement, cliquer « ouvrir » après avoir descendu la page ne
+  // montrait rien du tout.
   const logRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (active === null) return;
+    if (picked === null) return;
     logRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-  }, [active]);
+  }, [picked]);
 
   const { data, isPending } = useQuery({
     queryKey: keys.activity.overview(),
@@ -540,7 +731,10 @@ export function Activity() {
       item.kind === 'run'
         ? activityApi.deleteRun(item.id, item.token)
         : activityApi.deleteWorkout(item.id, item.token),
-    onSuccess: () => {
+    onSuccess: (_removed, item) => {
+      // Le journal ne doit pas rester ouvert sur une séance qui n'existe plus : sans
+      // cela il afficherait le refus du serveur au lieu de retomber sur la précédente.
+      if (item.kind === 'workout' && picked?.id === item.id) setPicked(null);
       invalidate();
       notify('Activité supprimée.', 'signal');
     },
@@ -554,7 +748,7 @@ export function Activity() {
     mutationFn: (item: ActivityItem) => activityApi.duplicateWorkout(item.id, isoDay(new Date())),
     onSuccess: (workout) => {
       invalidate();
-      setActive(workout);
+      setPicked(toSession(workout));
       notify('Séance dupliquée avec ses exercices.', 'effort');
     },
     onError: (caught: unknown) => {
@@ -562,94 +756,91 @@ export function Activity() {
     },
   });
 
-  const columns: Column<ActivityItem>[] = [
-    { key: 'date', header: 'Date', numeric: true, render: (row) => shortDate(row.date) },
-    {
-      key: 'label',
-      header: 'Type',
-      render: (row) => (
-        <>
-          {row.label}
-          {row.kind === 'run' && <span className={styles.entryDetail}> · course</span>}
-        </>
-      ),
-    },
-    {
-      key: 'distance',
-      header: 'Dist.',
-      numeric: true,
-      render: (row) =>
-        row.distance_km !== null ? km(row.distance_km) : <span className={styles.empty}>—</span>,
-    },
-    {
-      key: 'duration',
-      header: 'Durée',
-      numeric: true,
-      render: (row) => duration(row.duration_min),
-    },
-    {
-      key: 'pace',
-      header: 'Allure',
-      numeric: true,
-      render: (row) =>
-        row.pace_min_km !== null ? pace(row.pace_min_km) : <span className={styles.empty}>—</span>,
-    },
-    {
-      key: 'actions',
-      header: '',
-      render: (row) => (
-        <div className={styles.actions}>
+  /**
+   * Une activité de l'historique.
+   *
+   * Ce n'était pas une liste mais un tableau de six colonnes — illisible à 390 px, et une
+   * ligne de tableau ne se tire pas au doigt. Les colonnes reviennent en grille dès qu'il
+   * y a la place : c'est la même structure qui s'aligne, pas un second rendu.
+   */
+  function HistoryRow({ row }: { row: ActivityItem }) {
+    return (
+      <SwipeRow
+        actionLabel={`Supprimer l'activité du ${shortDate(row.date)}`}
+        busy={remove.isPending}
+        onAction={() => {
+          remove.mutate(row);
+        }}
+      >
+        <div className={styles.histRow}>
+          <span className={styles.histDate}>{shortDate(row.date)}</span>
+          <span className={styles.histLabel}>
+            {row.label}
+            {/* Le serveur nomme déjà une course « Course » : répéter le mot faisait
+                lire « Course · course ». Le suffixe ne sert que si le libellé se tait. */}
+            {row.kind === 'run' && row.label.toLowerCase() !== 'course' && (
+              <span className={styles.entryDetail}> · course</span>
+            )}
+          </span>
+
+          {/* Le tiret est une **colonne vide**, pas une information. Il tient sa place
+              tant qu'il y a des colonnes à aligner ; sur une fiche à 390 px, il ne
+              laisserait qu'un trait orphelin sous la date. */}
+          {row.distance_km !== null ? (
+            <span className={styles.histNum}>{km(row.distance_km)}</span>
+          ) : (
+            <span className={cx(styles.histNum, styles.histNone)}>—</span>
+          )}
+          <span className={styles.histNum}>{duration(row.duration_min)}</span>
+          {row.pace_min_km !== null ? (
+            <span className={styles.histNum}>{pace(row.pace_min_km)}</span>
+          ) : (
+            <span className={cx(styles.histNum, styles.histNone)}>—</span>
+          )}
+
           {row.kind === 'workout' && (
-            <>
-              <button
-                type="button"
-                className={styles.iconButton}
+            <div className={styles.histActions}>
+              <Chip
                 aria-label={`Ouvrir la séance du ${shortDate(row.date)}`}
                 onClick={() => {
-                  // Le `.catch` n'est pas décoratif : sans lui, un refus du serveur était
-                  // avalé en silence et le bouton semblait simplement ne rien faire.
-                  activityApi
-                    .readWorkout(row.id)
-                    .then(setActive)
-                    .catch((caught: unknown) => {
-                      notify(
-                        caught instanceof ApiError ? caught.message : 'Séance introuvable.',
-                        'recover',
-                      );
-                    });
+                  // Choisir, pas charger. Le journal relit la séance lui-même et affiche
+                  // en place ce que le serveur refuse ; ce bouton n'a plus de promesse à
+                  // tenir, donc plus de refus à avaler.
+                  setPicked({ id: row.id, date: row.date, label: row.label });
                 }}
               >
                 ouvrir
-              </button>
-              <button
-                type="button"
-                className={styles.iconButton}
+              </Chip>
+              <Chip
                 aria-label={`Dupliquer la séance du ${shortDate(row.date)}`}
                 onClick={() => {
                   duplicate.mutate(row);
                 }}
               >
                 dupliquer
-              </button>
-            </>
+              </Chip>
+            </div>
           )}
-          <button
-            type="button"
-            className={cx(styles.iconButton, styles.danger)}
-            aria-label={`Supprimer l'activité du ${shortDate(row.date)}`}
-            onClick={() => {
-              remove.mutate(row);
-            }}
-          >
-            supprimer
-          </button>
         </div>
-      ),
-    },
-  ];
+      </SwipeRow>
+    );
+  }
 
   const week = data?.week;
   const today = isoDay(new Date());
+
+  const sessions: Session[] = (data?.history ?? [])
+    .filter((row) => row.kind === 'workout')
+    .map((row) => ({ id: row.id, date: row.date, label: row.label }));
+
+  // Une séance tout juste créée n'est pas encore dans l'historique relu : le temps d'un
+  // aller-retour, le sélecteur afficherait la précédente pendant que le journal montre
+  // déjà la nouvelle. On la place en tête jusqu'à ce que l'historique la rattrape.
+  if (picked !== null && !sessions.some((item) => item.id === picked.id)) {
+    sessions.unshift(picked);
+  }
+
+  const currentId = picked?.id ?? sessions[0]?.id ?? null;
 
   return (
     <div className="wrap">
@@ -785,6 +976,11 @@ export function Activity() {
         </>
       )}
 
+      <Rule>Journal</Rule>
+      <div ref={logRef}>
+        <WorkoutJournal sessions={sessions} currentId={currentId} onPick={setPicked} />
+      </div>
+
       <Rule>Saisie</Rule>
       <div className={styles.split}>
         <Card flush>
@@ -796,12 +992,13 @@ export function Activity() {
               chargement…
             </p>
           ) : data && data.history.length > 0 ? (
-            <Table
-              columns={columns}
-              rows={data.history}
-              rowKey={(row) => `${row.kind}-${row.id}-${row.token}`}
-              caption="Historique des activités"
-            />
+            <ul className={styles.history} aria-label="Historique des activités">
+              {data.history.map((row) => (
+                <li key={`${row.kind}-${row.id}-${row.token}`}>
+                  <HistoryRow row={row} />
+                </li>
+              ))}
+            </ul>
           ) : (
             <div style={{ padding: '0 12px 12px' }}>
               <Empty title="Aucune activité">
@@ -811,30 +1008,21 @@ export function Activity() {
           )}
         </Card>
 
+        {/* Ordre du geste réel : créer la séance que le journal ci-dessus attend, puis
+            la course, puis — rarement, une fois pour toutes — le catalogue. */}
         <div className="stack">
-          {/* En **tête** de colonne, et non entre deux formulaires : le bouton « ouvrir »
-              vit dans le tableau de gauche, et un panneau qui s'insérait au milieu de la
-              colonne de droite apparaissait hors du champ de vision. Cliquer semblait
-              alors ne rien faire. */}
-          {active !== null && (
-            <div ref={logRef}>
-              <ExerciseLog
-                workout={active}
-                onClose={() => {
-                  setActive(null);
-                }}
-              />
-            </div>
-          )}
+          <Card>
+            <h3>Nouvelle séance</h3>
+            <WorkoutForm
+              onCreated={(workout) => {
+                setPicked(toSession(workout));
+              }}
+            />
+          </Card>
 
           <Card>
             <h3>Nouvelle course</h3>
             <RunForm />
-          </Card>
-
-          <Card>
-            <h3>Nouvelle séance</h3>
-            <WorkoutForm onCreated={setActive} />
           </Card>
 
           <ExerciseCatalogue />

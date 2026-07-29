@@ -1,14 +1,16 @@
+/*
+ * Écran Activité — écrit **mobile d'abord** (`L17-07`).
+ *
+ * Les règles de base décrivent le téléphone : une colonne, des cibles au doigt, rien qui
+ * dépasse à 360 px. Les `min-width` ajoutent ensuite ce que la place permet. L'inverse —
+ * partir du bureau et retirer — laisse toujours une règle de trop qui ne se voit que sur
+ * l'appareil qu'on n'a pas sous la main.
+ */
+
 .split {
   display: grid;
-  grid-template-columns: 1fr 360px;
   gap: var(--s4);
   align-items: start;
-}
-
-@media (max-width: 960px) {
-  .split {
-    grid-template-columns: 1fr;
-  }
 }
 
 .form {
@@ -20,13 +22,6 @@
 
 .pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--s3);
-}
-
-.triple {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
   gap: var(--s3);
 }
 
@@ -57,7 +52,9 @@
 
 .week {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* Sept colonnes à 360 px feraient 44 px chacune : la valeur n'y tiendrait pas. La
+     semaine se lit alors sur deux rangées de quatre, ce qui reste une semaine. */
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--s2);
   margin-top: var(--s4);
 }
@@ -93,37 +90,6 @@
   border-color: var(--signal);
 }
 
-/* ── Actions de ligne ─────────────────────────────── */
-
-.actions {
-  display: flex;
-  gap: 4px;
-  justify-content: flex-end;
-}
-
-.iconButton {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--ink-low);
-  cursor: pointer;
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 4px 8px;
-  transition: var(--t);
-  white-space: nowrap;
-}
-
-.iconButton:hover {
-  color: var(--ink);
-  border-color: var(--line);
-}
-
-.danger:hover {
-  color: var(--recover);
-  border-color: rgb(var(--recover-rgb) / 0.4);
-}
-
 /* ── Groupes négligés ─────────────────────────────── */
 
 .groups {
@@ -133,7 +99,67 @@
   margin-top: var(--s4);
 }
 
-/* ── Journal d'exercices ──────────────────────────── */
+/* ── Journal de séance ────────────────────────────── */
+
+.meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.spaced {
+  margin-top: var(--s4);
+}
+
+/* La zone qui accepte le balayage entre séances. `pan-y` laisse la page défiler
+   verticalement : sans cela, le journal capturerait le geste de lecture. */
+.swipeArea {
+  touch-action: pan-y;
+}
+
+.pickField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pickLabel {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+/* Sélection rapide : deux colonnes au pouce, plus dès qu'il y a la place. */
+.pickGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2);
+}
+
+.pickOn {
+  border-color: rgb(var(--effort-rgb) / 0.6);
+  background: rgb(var(--effort-rgb) / var(--badge-bg-a));
+  color: var(--effort);
+}
+
+/* Une colonne par champ au téléphone : trois pas-à-pas côte à côte tiendraient sur
+   la largeur, mais leurs touches tomberaient sous le plancher de 44 px. */
+.logGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s4);
+}
+
+/* L'action qui termine le geste : pleine largeur et plus haute que le reste, pour
+   être touchée entre deux séries sans regarder. */
+.commit {
+  width: 100%;
+  min-height: var(--tap-lg);
+}
 
 .entries {
   display: flex;
@@ -144,9 +170,7 @@
 
 .entry {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--s3);
-  align-items: baseline;
+  gap: 2px;
   border: 1px solid var(--line-soft);
   border-radius: var(--r-sm);
   padding: 8px 10px;
@@ -165,9 +189,11 @@
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 11px 13px;
+  min-height: var(--tap);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 14px;
+  /* 16 px : en deçà, iOS zoome à la mise au point et décale la page. */
+  font-size: 16px;
   width: 100%;
   transition: var(--t);
 }
@@ -190,4 +216,129 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-low);
+}
+
+/* ── Historique ───────────────────────────────────── */
+
+.history {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: 0 12px 12px;
+  margin: 0;
+}
+
+/* Au téléphone, une activité est une fiche : date et type en tête, les chiffres
+   dessous. Les colonnes n'arrivent qu'avec la largeur. */
+.histRow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--s3);
+  align-items: baseline;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: var(--s3);
+}
+
+.histDate {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-mid);
+  font-variant-numeric: tabular-nums;
+}
+
+.histLabel {
+  font-size: 14px;
+}
+
+.histNum {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-mid);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Un tiret n'a de sens qu'en face d'un en-tête de colonne. Sur la fiche, il disparaît. */
+.histNone {
+  display: none;
+}
+
+.histActions {
+  display: flex;
+  gap: var(--s2);
+  grid-column: 1 / -1;
+  margin-top: var(--s2);
+}
+
+/* ── À partir de la tablette ──────────────────────── */
+
+@media (min-width: 560px) {
+  .pair {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .week {
+    grid-template-columns: repeat(7, 1fr);
+  }
+
+  .pickGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .logGrid {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s3);
+    align-items: start;
+  }
+
+  .commit {
+    width: auto;
+    min-width: 200px;
+  }
+
+  .entry {
+    grid-template-columns: 1fr auto;
+    gap: var(--s3);
+  }
+
+  /*
+   * Les chiffres retrouvent leurs colonnes, sans revenir à un tableau.
+   *
+   * **Toutes les pistes sont fixes sauf le libellé.** Chaque fiche est sa propre grille —
+   * une ligne qui se glisse ne peut pas partager celle de sa voisine —, donc une piste
+   * `auto` s'y résout selon *son* contenu : une activité portant « ouvrir » et
+   * « dupliquer » n'alignait pas ses chiffres sur une course qui n'en porte pas.
+   *
+   * Les actions gardent leur propre ligne, y compris ici. Les faire entrer dans la
+   * rangée demandait 184 px de plus, et l'historique n'en fait que 560 au plus large :
+   * le libellé y tombait à 78 px, où « musculation » ne tient pas.
+   */
+  .histRow {
+    grid-template-columns: 5rem minmax(0, 1fr) 3.5rem 4rem 3.25rem;
+    gap: var(--s2) var(--s3);
+  }
+
+  .histNum {
+    text-align: right;
+  }
+
+  .histNone {
+    display: inline;
+    color: var(--ink-low);
+  }
+
+  .histActions {
+    justify-content: flex-end;
+  }
+}
+
+@media (min-width: 960px) {
+  .split {
+    grid-template-columns: 1fr 360px;
+  }
+
+  .pickGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }

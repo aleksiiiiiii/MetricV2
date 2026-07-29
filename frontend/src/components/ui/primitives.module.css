@@ -8,13 +8,23 @@
   font-size: 14px;
   font-weight: 500;
   padding: 10px 18px;
+  /* Plancher tactile (`L17-07`) : la charte donnait ~40 px de haut, soit une cible qu'un
+     pouce rate une fois sur cinq. `min-height` plutôt qu'une hauteur fixe, pour qu'un
+     libellé qui passe à la ligne reste lisible. */
+  min-height: var(--tap);
   border-radius: var(--r-btn);
   border: 1px solid transparent;
   cursor: pointer;
   transition: var(--t);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  /* Un appui maintenu sur un bouton ne doit pas sélectionner son libellé ni ouvrir le
+     menu contextuel du navigateur : sur mobile, c'est le geste d'un doigt qui hésite. */
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .btn:focus-visible {
@@ -161,9 +171,12 @@
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 11px 13px;
+  min-height: var(--tap);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 14px;
+  /* 16 px : en deçà, iOS zoome à la mise au point du champ et l'utilisateur se retrouve
+     avec une page décalée qu'il doit repousser à la main. */
+  font-size: 16px;
   transition: var(--t);
   width: 100%;
 }
@@ -199,6 +212,242 @@
   color: var(--ink-low);
 }
 
+/* ── Pas-à-pas ────────────────────────────────────── */
+
+.stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stepper label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+.stepperRow {
+  display: grid;
+  /* Les deux touches gardent leur taille ; c'est la valeur qui absorbe la place. */
+  grid-template-columns: var(--tap) minmax(0, 1fr) var(--tap);
+  gap: var(--s2);
+  align-items: stretch;
+}
+
+.stepperKey {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 20px;
+  line-height: 1;
+  min-height: var(--tap);
+  cursor: pointer;
+  transition: var(--t);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.stepperKey:hover:not(:disabled) {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+/* Le retour d'appui remplace le survol, qui n'existe pas au doigt. */
+.stepperKey:active:not(:disabled) {
+  background: var(--bg);
+  transform: scale(0.94);
+}
+
+.stepperKey:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.stepperKey:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
+.stepperInput {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 11px 8px;
+  min-height: var(--tap);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  width: 100%;
+  min-width: 0;
+  transition: var(--t);
+}
+
+.stepperInput:focus {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px rgb(var(--signal-rgb) / 0.13);
+}
+
+.stepperInput::placeholder {
+  color: var(--ink-low);
+  font-size: 13px;
+}
+
+.stepperHint {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-low);
+}
+
+/* ── Pastilles ────────────────────────────────────── */
+
+.chip {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  color: var(--ink-mid);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 10px 14px;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--t);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chip:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--signal);
+}
+
+.chip:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.chipOn {
+  background: rgb(var(--signal-rgb) / var(--badge-bg-a));
+  border-color: rgb(var(--signal-rgb) / 0.55);
+  color: var(--signal);
+}
+
+.strip {
+  display: flex;
+  gap: var(--s2);
+  overflow-x: auto;
+  /* L'accroche fait qu'une pastille se pose entière, jamais coupée en deux. */
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  /* Les pastilles touchent les bords de la carte plutôt que de s'arrêter avant :
+     une bande qui déborde se lit comme une bande qu'on peut tirer. */
+  margin-inline: calc(-1 * var(--s5));
+  padding-inline: var(--s5);
+  padding-block: 2px;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.strip > * {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+/* ── Ligne à glisser ──────────────────────────────── */
+
+.swipeRow {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+}
+
+.swipeContent {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  transition: transform var(--t);
+  touch-action: pan-y;
+}
+
+.swipeAction {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 96px;
+  display: flex;
+}
+
+.swipeKey {
+  flex: 1;
+  background: rgb(var(--recover-rgb) / 0.16);
+  border: 1px solid rgb(var(--recover-rgb) / 0.4);
+  border-radius: var(--r-sm);
+  color: var(--recover);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: var(--t);
+  touch-action: manipulation;
+  min-height: var(--tap);
+}
+
+.swipeKeyArmed {
+  background: var(--recover);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.swipeKey:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+/*
+ * Là où il y a un pointeur fin, l'action est montrée d'emblée : sans geste tactile pour
+ * la découvrir, elle serait introuvable. Le glissement reste actif — il est un
+ * raccourci, pas la seule porte.
+ */
+@media (hover: hover) and (pointer: fine) {
+  .swipeRow {
+    padding-right: 104px;
+  }
+
+  .swipeContent {
+    transform: none !important;
+  }
+
+  .swipeAction {
+    right: 0;
+    width: 96px;
+    align-items: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swipeContent {
+    transition: none;
+  }
+}
+
 /* ── Sélecteur segmenté ───────────────────────────── */
 
 .seg {
@@ -218,6 +467,8 @@
   padding: 7px 12px;
   cursor: pointer;
   transition: var(--t);
+  min-height: var(--tap);
+  touch-action: manipulation;
 }
 
 .seg button:hover {

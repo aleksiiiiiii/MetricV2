@@ -19,12 +19,16 @@ export {
   Button,
   Card,
   CardHead,
+  Chip,
+  ChipStrip,
   Empty,
   Eyebrow,
   Field,
   LogButton,
   Rule,
   Segmented,
+  Stepper,
+  SwipeRow,
 } from './primitives';
 export type { ButtonVariant, SegmentedOption, Tone } from './primitives';
 

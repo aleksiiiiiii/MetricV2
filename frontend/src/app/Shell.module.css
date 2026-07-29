@@ -30,6 +30,11 @@
   color: var(--ink);
   text-decoration: none;
   flex: none;
+  /* C'est aussi le lien vers le tableau de bord : il obéit au même plancher. */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  touch-action: manipulation;
 }
 
 .nav {
@@ -37,6 +42,14 @@
   gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
+  /* La barre déborde à 390 px : elle se parcourt au pouce, avec accroche, plutôt que
+     d'entasser neuf entrées sur une largeur qui n'en tient pas cinq. */
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nav > * {
+  scroll-snap-align: center;
 }
 
 .nav::-webkit-scrollbar {
@@ -54,6 +67,13 @@
   border-radius: var(--r-sm);
   white-space: nowrap;
   transition: var(--t);
+  /* La navigation est le contrôle le plus touché de l'application, et c'était le seul
+     à rester sous le plancher tactile — 33 px de haut (`L17-07`). Le libellé garde sa
+     taille : c'est la zone sensible qui grandit, pas la typographie. */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  touch-action: manipulation;
 }
 
 .navLink:hover {

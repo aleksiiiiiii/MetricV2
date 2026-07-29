@@ -3,6 +3,142 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.12.2] — 2026-07-29
+
+**Passe tactile de l'écran Activité**, et les contrôles qu'elle demandait versés dans la
+charte. `L17-07` nommait le mobile « cible d'usage principale » tout en repoussant la
+passe au dernier lot ; l'application n'avait donc **qu'une seule media query** et des
+cibles à 19 px. Ce qui suit avance ce travail, sans clore `L17-07` — sept écrans sur huit
+restent à traiter.
+
+149 tests frontend. Build : 118 → **120 ko gzip**.
+
+### Ajouté — dans la charte, pas dans l'écran
+
+- **`Stepper`** — champ numérique entre deux grosses touches. Le geste du projet sur
+  mobile : ajuster une charge d'un pouce entre deux séries, sans ouvrir un clavier qui
+  masque la moitié de l'écran. Le champ reste saisissable ; le pas-à-pas est un raccourci.
+- **`Chip` et `ChipStrip`** — choix en un appui, sur une bande qui se parcourt au doigt
+  avec accroche.
+- **`SwipeRow`** — ligne dont un glissement vers la gauche découvre une action
+  destructrice.
+- **`useHorizontalSwipe`** (`lib/swipe.ts`) — une seule implémentation du geste pour toute
+  l'application.
+- **Tokens `--tap` (44 px), `--tap-lg` (56 px), `--swipe-threshold`.**
+- **Section « 03b — Au doigt » du kitchen sink**, où les quatre se manipulent.
+
+### Modifié — écran Activité
+
+- **Choix de l'exercice en un appui** : une carte par exercice avec sa dernière charge, au
+  lieu d'une liste déroulante native qui coûtait un appui, un panneau système, un
+  défilement et un second appui — pour le geste le plus répété de l'écran.
+- **Charge, séries et réps en pas-à-pas**, la charge par pas de **2,5 kg** — le plus petit
+  disque d'une salle, pas un pas décidé à la calculette.
+- **Pastilles de charge rapide**, tirées de `max_series` : ce qui a **réellement** été
+  soulevé, jamais un arrondi ni une progression supposée.
+- **Bande de séances glissante** à la place du sélecteur, et **balayage du journal** pour
+  passer d'une séance à l'autre.
+- **L'historique n'est plus un tableau** mais une liste de fiches glissables. Six colonnes
+  ne se lisent pas à 390 px, et une ligne de tableau ne se tire pas au doigt.
+- **Feuille de style retournée en mobile d'abord** : les règles de base décrivent le
+  téléphone, les `min-width` ajoutent ce que la place permet.
+- **Plancher tactile appliqué à la charte** : boutons, champs, segments — et la navigation
+  du shell, qui était à 33 px alors que c'est le contrôle le plus touché de l'application.
+
+### Décidé
+
+- **Pas de curseurs à glisser pour les valeurs.** Viser 82,5 kg sur un curseur est
+  difficile, et une mesure fausse entrée sans s'en apercevoir coûte plus qu'un appui de
+  plus. Le glissement sert à **naviguer** — entre séances, vers une action — pas à mesurer.
+- **Un geste n'est jamais la seule porte.** L'action de suppression existe toujours dans le
+  document : révélée par le glissement au doigt, affichée d'emblée là où il y a un pointeur
+  fin. On ne découvre pas ce qu'on ne voit pas.
+- **Deux appuis pour détruire.** Un glissement part tout seul dans une poche ou en faisant
+  défiler ; le projet n'a pas d'annulation.
+- **Le pas-à-pas n'est pas un second analyseur de saisie.** Il ne relit que le format
+  qu'il écrit lui-même ; `5mi`, `44:12`, `1h30` restent l'affaire du serveur (`ACT-01`).
+  Sur ce qu'il ne reconnaît pas, il se désactive au lieu d'écraser la saisie.
+- **Un geste plus vertical qu'horizontal appartient à la page.** Sans cette garde, faire
+  défiler l'historique au pouce déclencherait une suppression.
+
+### Vérifié
+
+Mesuré dans un Chrome émulant un iPhone 14 (390 × 844, tactile activé), et **conduit en
+vrais évènements tactiles** : aucune cible sous 44 px sur tout l'écran, aucun débordement
+horizontal, le balayage du journal passe bien de la séance du 28/07 à celle du 25/07, et
+tirer une ligne d'historique découvre son bouton (96 px de recouvrement → 0).
+
+Trois défauts en sont sortis, qu'aucun test n'a signalés : « 0 kg » affiché pour un
+exercice au poids du corps, des tirets de colonne orphelins sous la date d'une fiche, et
+des colonnes qui ne s'alignaient pas d'une ligne à l'autre — chaque fiche étant sa propre
+grille, une piste `auto` s'y résolvait selon son seul contenu.
+
+### Non vérifié
+
+**Sur un vrai téléphone, avec un vrai doigt.** L'émulation reproduit la taille, la densité
+et les évènements tactiles ; elle ne reproduit ni l'imprécision du pouce, ni le clavier
+système qui remonte, ni la latence. C'est le prochain test réel de cette passe.
+
+Les sept autres écrans n'ont pas été traités : `L17-07` reste ouvert.
+
+---
+
+## [0.12.1] — 2026-07-29
+
+**Refonte de l'écran Activité.** Pas un lot : la dette d'ergonomie nommée au lot L11, et
+la seule des trois qu'un usage réel avait fait remonter. Soldée avant d'ouvrir le jalon IV
+parce que l'import Apple du lot L12 (`IMP-02`) pré-remplit une course et une séance — donc
+se greffe exactement sur le parcours à refondre. L'argument qui l'avait écartée du L11
+(« aucune ligne partagée ») s'inverse pour le L12.
+
+141 tests frontend, dont **treize sur ce seul parcours**. Build inchangé : 118 ko gzip.
+
+### Modifié
+
+- **Le journal de séance est toujours affiché**, en pleine largeur, avec un sélecteur de
+  séance. Il n'existait que pendant qu'une séance était ouverte depuis l'historique : au
+  chargement, le seul formulaire visible d'emblée était donc le catalogue d'exercices — le
+  seul qui ne prend aucun chiffre.
+- **La séance la plus récente est ouverte d'office** ; les autres restent à un choix dans
+  la liste. Une séance tout juste créée y figure avant même que l'historique ne soit relu.
+- **L'ordre affiché suit l'ordre du geste** : journal, puis création de séance et de
+  course, puis catalogue — qui se déclare une fois, pas à chaque séance.
+- **« Ouvrir » ne charge plus rien**, il désigne. La séance est relue par le journal
+  lui-même, qui affiche le refus du serveur **à sa place** plutôt qu'en toast fugace.
+- **Supprimer la séance ouverte** ramène le journal sur la précédente au lieu d'y laisser
+  un message d'erreur.
+
+### Décidé
+
+- **Le journal reste dans la zone de saisie, il ne remonte pas en tête d'écran.** Les cinq
+  écrans du projet posent d'abord les indicateurs, la saisie ensuite ; déplacer celui-ci
+  aurait réglé un écran en désalignant les quatre autres. Il est en revanche le **premier
+  et le plus large** de sa zone, ce qui suffit à ce que le regard y tombe.
+- **Le catalogue n'est pas replié derrière un dépliant.** `GuidelinesUI.html` n'en a pas,
+  et inventer un composant hors charte pour reculer une carte d'un cran ne se justifiait
+  pas. Le repositionner et dire à quoi il sert suffit.
+- **La date ne s'écrit qu'une fois.** Le sélecteur la porte ; la ligne de détail juste en
+  dessous la répétait. Trouvé en regardant l'écran, pas en le testant.
+
+### Vérifié
+
+Le parcours a été **conduit dans un navigateur**, pas seulement testé : session ouverte,
+`/activite` chargé, exercice choisi — rappel de la dernière charge affiché (`ACT-08`) —,
+charge saisie, `POST` émis avec le bon corps, champ vidé, aucune erreur console. Les états
+« aucune séance » et « catalogue vide » ont été rendus et relus à l'écran.
+
+Deux défauts en sont sortis, qu'aucun test n'aurait signalés : la date en double, et
+« la séance la plus récente est ouverte d'office » qui s'affichait alors qu'il n'y en avait
+aucune. C'est la leçon du premier usage réel, appliquée dans l'autre sens.
+
+### Non vérifié
+
+L'écran n'a pas été rejoué contre Nextcloud : la session de développement s'est appuyée sur
+une doublure d'API locale, pour ne pas écrire dans les données réelles. Les chemins
+serveur, eux, sont inchangés — aucune ligne de backend n'a bougé.
+
+---
+
 ## [0.12.0] — 2026-07-28
 
 Lot **L11 — Heatmaps & réglage des pistes**. Il clôt le jalon III : le moteur du lot L10

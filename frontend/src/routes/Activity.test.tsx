@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,7 +56,7 @@ const OVERVIEW = {
       token: 'jeton-seance',
       date: '2026-07-21',
       label: 'musculation',
-      duration_min: 75,
+      duration_min: 78,
       distance_km: null,
       pace_min_km: null,
       rpe: 8,
@@ -74,8 +74,20 @@ const OVERVIEW = {
       rpe: null,
       source: 'manual',
     },
+    {
+      kind: 'workout',
+      id: 1,
+      token: 'jeton-velo',
+      date: '2026-07-18',
+      label: 'vélo',
+      duration_min: 45,
+      distance_km: null,
+      pace_min_km: null,
+      rpe: null,
+      source: 'manual',
+    },
   ],
-  total: 2,
+  total: 3,
 };
 
 const PROGRESS = [
@@ -99,13 +111,25 @@ const WORKOUT_DETAIL = {
   workout_id: 'w1',
   date: '2026-07-21',
   type: 'musculation',
-  duration_min: 75,
+  duration_min: 78,
   calories: null,
   rpe: 8,
   note: null,
   source: 'manual',
   exercises: [],
   volume_kg: 0,
+};
+
+/** Une seconde séance : sans elle, le sélecteur du journal n'a rien à sélectionner. */
+const VELO_DETAIL = {
+  ...WORKOUT_DETAIL,
+  id: 1,
+  token: 'jeton-velo',
+  workout_id: 'w2',
+  date: '2026-07-18',
+  type: 'vélo',
+  duration_min: 45,
+  rpe: null,
 };
 
 const CATALOGUE = [
@@ -137,12 +161,20 @@ function stub(custom?: (url: string, init?: RequestInit) => Response | undefined
     if (url.includes('/activity/muscle-groups'))
       return Promise.resolve(json(200, ['pectoraux', 'dos', 'jambes']));
     if (url.includes('/duplicate')) return Promise.resolve(json(201, WORKOUT_DETAIL));
+    if (/\/activity\/workouts\/1$/.test(url)) return Promise.resolve(json(200, VELO_DETAIL));
     if (/\/activity\/workouts\/\d+$/.test(url)) return Promise.resolve(json(200, WORKOUT_DETAIL));
     if (url.endsWith('/api/activity')) return Promise.resolve(json(200, OVERVIEW));
     return Promise.resolve(json(200, {}));
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
+}
+
+/** Une pastille de la bande de séances, désignée par sa date. */
+function seance(label: RegExp): HTMLElement {
+  return within(screen.getByRole('group', { name: 'Séance' })).getByRole('button', {
+    name: label,
+  });
 }
 
 function renderActivity() {
@@ -240,24 +272,16 @@ describe('écran Activité', () => {
     expect(await screen.findByText(/n'est pas une durée/)).toBeInTheDocument();
   });
 
-  it('rappelle la dernière performance à la sélection d’un exercice', async () => {
-    // `ACT-08` : choisir sa charge sans consulter l'historique.
-    stub();
-    renderActivity();
-
-    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance du 21/ }));
-    await userEvent.selectOptions(await screen.findByLabelText('Exercice'), 'e1');
-
-    expect(await screen.findByText(/dernière fois : 90 kg · 3×8/)).toBeInTheDocument();
-  });
-
   it('renvoie le jeton de la ligne pour supprimer une activité', async () => {
     stub();
     renderActivity();
 
+    // Deux appuis : le premier arme, le second exécute. Sans annulation dans le projet,
+    // une suppression au doigt ne doit pas partir d'un geste unique.
     await userEvent.click(
-      await screen.findByRole('button', { name: /Supprimer l'activité du 20/ }),
+      await screen.findByRole('button', { name: /^Supprimer l'activité du 20/ }),
     );
+    await userEvent.click(screen.getByRole('button', { name: /du 20.*confirmer/ }));
 
     await waitFor(() => {
       const remove = calls.find((call) => call.init?.method === 'DELETE');
@@ -321,29 +345,125 @@ describe('écran Activité', () => {
     expect(screen.getByText('aucun exercice consigné cette semaine')).toBeInTheDocument();
     expect(screen.getByText('aucune course')).toBeInTheDocument();
   });
-  // ── Ouvrir une séance pour y consigner des charges ──
+  // ── Le journal, toujours affiché ────────────────────
 
-  it('ouvre le journal d’une séance depuis l’historique', async () => {
-    // Signalé en usage réel : le bouton « ouvrir » semblait ne rien faire. Le panneau
-    // s'insérait au milieu de la colonne de droite, hors du champ de vision de qui
-    // venait de cliquer dans le tableau de gauche.
+  it('affiche le journal sans qu’aucune séance ait été ouverte', async () => {
+    // La dette relevée en usage réel : le panneau de saisie des charges n'existait que
+    // pendant qu'une séance était active. Au chargement, le seul formulaire visible
+    // était donc le catalogue — le seul qui ne prend aucun chiffre.
     stub();
     renderActivity();
 
-    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
+    expect(await screen.findByLabelText('Séance')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Charge (kg)')).toBeInTheDocument();
+  });
 
-    expect(await screen.findByText('Journal — musculation')).toBeInTheDocument();
-    expect(screen.getByLabelText('Charge (kg)')).toBeInTheDocument();
+  it('présente le journal avant le catalogue', async () => {
+    // L'ordre affiché doit suivre l'ordre du geste : consigner une charge est quotidien,
+    // déclarer un exercice se fait une fois.
+    stub();
+    renderActivity();
+
+    const journal = await screen.findByRole('heading', { name: 'Journal de séance' });
+    const catalogue = screen.getByRole('heading', { name: "Catalogue d'exercices" });
+
+    expect(
+      journal.compareDocumentPosition(catalogue) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('ouvre d’office la séance la plus récente', async () => {
+    stub();
+    renderActivity();
+
+    expect(await screen.findByText(/1 h 18/)).toBeInTheDocument();
+    expect(seance(/21\/07/)).toHaveAttribute('aria-pressed', 'true');
+    expect(seance(/18\/07/)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('bascule d’une séance à l’autre par le sélecteur', async () => {
+    stub();
+    renderActivity();
+
+    await screen.findByText(/1 h 18/);
+    await userEvent.click(seance(/18\/07/));
+
+    expect(await screen.findByText(/45 min/)).toBeInTheDocument();
+    expect(seance(/18\/07/)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('n’emporte pas la charge tapée d’une séance à la suivante', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.type(await screen.findByLabelText('Charge (kg)'), '80');
+    await userEvent.click(seance(/18\/07/));
+    await screen.findByText(/45 min/);
+
+    expect(screen.getByLabelText('Charge (kg)')).toHaveValue('');
+  });
+
+  it('dit quel est le prochain geste quand aucune séance n’existe', async () => {
+    // Pas de formulaire de charge sans séance où la consigner : un champ inerte vaut
+    // moins qu'une phrase qui dit ce que coûte le prochain geste.
+    stub((url) =>
+      url.endsWith('/api/activity')
+        ? json(200, { ...OVERVIEW, history: [OVERVIEW.history[1]], total: 1 })
+        : undefined,
+    );
+    renderActivity();
+
+    expect(await screen.findByText('Aucune séance')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Séance' })).toBeNull();
+    expect(screen.queryByLabelText('Charge (kg)')).toBeNull();
+    // Et le journal ne promet pas d'ouvrir une séance qu'il n'a pas.
+    expect(screen.queryByText(/ouverte d’office/)).toBeNull();
+  });
+
+  it('ouvre le journal sur la séance choisie depuis l’historique', async () => {
+    // Signalé en usage réel : le bouton « ouvrir » semblait ne rien faire. Il ne charge
+    // plus rien — il désigne, et le journal déjà à l'écran suit.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance du 18/ }));
+
+    expect(await screen.findByText(/45 min/)).toBeInTheDocument();
+    expect(seance(/18\/07/)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('ouvre le journal sur une séance qui vient d’être créée', async () => {
+    // Le sélecteur liste l'historique, que le serveur n'a pas encore relu à cet instant.
+    // Sans le rattrapage, il afficherait la séance précédente pendant un aller-retour.
+    const CREATED = {
+      ...WORKOUT_DETAIL,
+      id: 7,
+      workout_id: 'w7',
+      date: '2026-07-26',
+      type: 'yoga',
+      duration_min: 30,
+      rpe: null,
+    };
+    stub((url, init) => {
+      if (init?.method === 'POST' && url.endsWith('/api/activity/workouts')) {
+        return json(201, CREATED);
+      }
+      return /\/activity\/workouts\/7$/.test(url) ? json(200, CREATED) : undefined;
+    });
+    renderActivity();
+
+    await userEvent.type(await screen.findByLabelText('Durée de séance'), '30');
+    await userEvent.click(screen.getByRole('button', { name: 'Enregistrer la séance' }));
+
+    expect(await screen.findByText(/30 min/)).toBeInTheDocument();
+    expect(seance(/26\/07/)).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('consigne une charge sur l’exercice choisi', async () => {
     stub();
     renderActivity();
 
-    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
-    await screen.findByText('Journal — musculation');
-
-    await userEvent.selectOptions(screen.getByLabelText('Exercice'), 'e1');
+    await userEvent.click(await screen.findByRole('button', { name: /Développé couché/ }));
     await userEvent.type(screen.getByLabelText('Charge (kg)'), '80');
     await userEvent.click(screen.getByRole('button', { name: 'Consigner' }));
 
@@ -363,23 +483,185 @@ describe('écran Activité', () => {
     stub();
     renderActivity();
 
-    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
-    await userEvent.selectOptions(await screen.findByLabelText('Exercice'), 'e1');
+    await userEvent.click(await screen.findByRole('button', { name: /Développé couché/ }));
 
     expect(screen.getByText(/dernière fois : 90 kg · 3×8/)).toBeInTheDocument();
   });
 
-  it('dit pourquoi quand la séance ne peut pas être ouverte', async () => {
-    // Sans `.catch`, le refus du serveur était avalé et le bouton paraissait inerte.
+  it('dit quoi faire quand le catalogue est vide', async () => {
+    stub((url) => (url.includes('/activity/exercises') ? json(200, []) : undefined));
+    renderActivity();
+
+    expect(await screen.findByText(/déclare un exercice/)).toBeInTheDocument();
+  });
+
+  // ── Au doigt (`L17-07`) ─────────────────────────────
+
+  it('ajuste la charge par pas de 2,5 kg sans clavier', async () => {
+    // Le pas d'un disque réel. Entre deux séries, on corrige d'un pouce.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Développé couché/ }));
+    const charge = screen.getByLabelText('Charge (kg)');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Charge (kg) : augmenter' }));
+    expect(charge).toHaveValue('0');
+
+    await userEvent.clear(charge);
+    await userEvent.type(charge, '82,5');
+    await userEvent.click(screen.getByRole('button', { name: 'Charge (kg) : augmenter' }));
+    expect(charge).toHaveValue('85');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Charge (kg) : diminuer' }));
+    expect(charge).toHaveValue('82,5');
+  });
+
+  it('laisse le champ tranquille quand il ne reconnaît pas ce qui est écrit', async () => {
+    // Le pas-à-pas n'est pas un second analyseur de saisie : « poids du corps » ne se
+    // convertit pas ici, et il ne doit surtout pas être écrasé par un 0.
+    stub();
+    renderActivity();
+
+    const charge = await screen.findByLabelText('Charge (kg)');
+    await userEvent.type(charge, 'poids du corps');
+    await userEvent.click(screen.getByRole('button', { name: 'Charge (kg) : augmenter' }));
+
+    expect(charge).toHaveValue('0');
+  });
+
+  it('borne les séries au lieu de descendre sous une', async () => {
+    stub();
+    renderActivity();
+
+    const moins = await screen.findByRole('button', { name: 'Séries : diminuer' });
+    expect(screen.getByLabelText('Séries')).toHaveValue('3');
+
+    await userEvent.click(moins);
+    await userEvent.click(moins);
+    await userEvent.click(moins);
+
+    expect(screen.getByLabelText('Séries')).toHaveValue('1');
+    expect(moins).toBeDisabled();
+  });
+
+  it('propose les charges réellement soulevées, pas des valeurs devinées', async () => {
+    // `max_series` vient du serveur. Une pastille propose ce qui a existé — jamais un
+    // arrondi ni une progression supposée.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Développé couché/ }));
+    const recentes = within(screen.getByRole('group', { name: 'Charges récentes' }));
+
+    expect(recentes.getByRole('button', { name: '90 kg' })).toBeInTheDocument();
+    expect(recentes.getByRole('button', { name: '85 kg' })).toBeInTheDocument();
+
+    await userEvent.click(recentes.getByRole('button', { name: '85 kg' }));
+    expect(screen.getByLabelText('Charge (kg)')).toHaveValue('85');
+  });
+
+  it('consigne une charge choisie entièrement au doigt', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Développé couché/ }));
+    await userEvent.click(
+      within(screen.getByRole('group', { name: 'Charges récentes' })).getByRole('button', {
+        name: '90 kg',
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Réps : augmenter' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Consigner' }));
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) => call.init?.method === 'POST' && call.url.includes('/workouts/0/exercises'),
+      );
+      expect(JSON.parse(post?.init?.body as string)).toMatchObject({
+        exercise_id: 'e1',
+        weight_kg: '90',
+        sets: 3,
+        reps: 9,
+      });
+    });
+  });
+
+  it('passe d’une séance à l’autre en balayant le journal', async () => {
+    stub();
+    renderActivity();
+
+    await screen.findByText(/1 h 18/);
+    const journal = screen.getByLabelText('Charge (kg)').closest('form') as HTMLElement;
+
+    // Vers la gauche : on remonte le temps, comme la bande au-dessus.
+    await userEvent.pointer([
+      { keys: '[TouchA>]', target: journal, coords: { x: 260, y: 120 } },
+      { pointerName: 'TouchA', coords: { x: 120, y: 124 } },
+      { keys: '[/TouchA]', target: journal, coords: { x: 120, y: 124 } },
+    ]);
+
+    expect(await screen.findByText(/45 min/)).toBeInTheDocument();
+    expect(seance(/18\/07/)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('ne balaye pas quand le doigt descend la page', async () => {
+    // Sans cette garde, faire défiler la page déclencherait une navigation à chaque
+    // écart latéral — et sur l'historique, cette navigation est une suppression.
+    stub();
+    renderActivity();
+
+    await screen.findByText(/1 h 18/);
+    const journal = screen.getByLabelText('Charge (kg)').closest('form') as HTMLElement;
+
+    await userEvent.pointer([
+      { keys: '[TouchA>]', target: journal, coords: { x: 260, y: 60 } },
+      { pointerName: 'TouchA', coords: { x: 180, y: 300 } },
+      { keys: '[/TouchA]', target: journal, coords: { x: 180, y: 300 } },
+    ]);
+
+    expect(screen.getByText(/1 h 18/)).toBeInTheDocument();
+  });
+
+  it('demande confirmation avant de supprimer une ligne glissée', async () => {
+    stub();
+    renderActivity();
+
+    const supprimer = await screen.findByRole('button', { name: /^Supprimer l'activité du 20/ });
+    await userEvent.click(supprimer);
+
+    // Premier appui : rien n'est parti.
+    expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(false);
+    expect(screen.getByText('Confirmer ?')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /du 20.*confirmer/ }));
+    await waitFor(() => {
+      expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(true);
+    });
+  });
+
+  it('dit pourquoi quand la séance ne peut pas être lue', async () => {
+    // Le refus s'affiche à la place du journal, là où le regard est déjà. Porté par un
+    // toast depuis le bouton « ouvrir », il passait avant d'avoir été lu.
     stub((url) =>
-      url.includes('/workouts/0')
+      /\/activity\/workouts\/0$/.test(url)
         ? json(404, { code: 'storage_not_found', message: "Cette séance n'existe pas." })
         : undefined,
     );
     renderActivity();
 
-    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance/ }));
-
     expect(await screen.findByText("Cette séance n'existe pas.")).toBeInTheDocument();
+  });
+
+  it('referme le journal sur la séance précédente quand celle ouverte est supprimée', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance du 18/ }));
+    await screen.findByText(/45 min/);
+    await userEvent.click(screen.getByRole('button', { name: /^Supprimer l'activité du 18/ }));
+    await userEvent.click(screen.getByRole('button', { name: /du 18.*confirmer/ }));
+
+    expect(await screen.findByText(/1 h 18/)).toBeInTheDocument();
   });
 });

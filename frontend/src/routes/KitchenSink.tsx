@@ -9,6 +9,8 @@ import {
   Chart,
   Check,
   CheckGroup,
+  Chip,
+  ChipStrip,
   Empty,
   Field,
   Heatmap,
@@ -19,6 +21,8 @@ import {
   Segmented,
   Sparkline,
   Stat,
+  Stepper,
+  SwipeRow,
   Table,
 } from '@/components/ui';
 import type { Column, HeatDay, HeatWeek, Tone } from '@/components/ui';
@@ -42,6 +46,8 @@ const SURFACES = [
 ] as const;
 
 const SPACES = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const;
+
+const SEANCES = ['28/07 · musculation', '25/07 · musculation', '22/07 · vélo', '19/07 · yoga'];
 
 const PERIODS = [
   { value: '7j', label: '7J' },
@@ -230,6 +236,9 @@ const ROUTINE: { group: string; items: RoutineItem[] }[] = [
  */
 export function KitchenSink() {
   const [period, setPeriod] = useState<Period>('30j');
+  const [charge, setCharge] = useState('82,5');
+  const [reps, setReps] = useState('8');
+  const [seance, setSeance] = useState(SEANCES[0]);
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       ROUTINE.flatMap((group) => group.items.map((item) => [item.label, item.done])),
@@ -360,6 +369,100 @@ export function KitchenSink() {
           <h3 style={{ marginTop: 24 }}>Période</h3>
           <div className="row mt">
             <Segmented label="Période" value={period} onChange={setPeriod} options={PERIODS} />
+          </div>
+        </Card>
+      </div>
+
+      {/* ══ 03b TACTILE ══ */}
+      <Rule>03b — Au doigt</Rule>
+      <p className="eyebrow" style={{ marginBottom: 14 }}>
+        Cible minimale 44 px, 56 px pour l'action qui termine un geste. Tout ce qui suit s'utilise
+        sans clavier et sans viser.
+      </p>
+      <div className="grid g2">
+        <Card>
+          <h3>Pas-à-pas</h3>
+          <p className={styles.note}>
+            Deux grosses touches autour de la valeur. Le champ reste saisissable : le pas-à-pas est
+            un raccourci, jamais la seule porte. Sur ce qu'il ne reconnaît pas, il se désactive
+            plutôt que d'écraser la saisie.
+          </p>
+          <div className="stack mt">
+            <Stepper label="Charge (kg)" value={charge} onChange={setCharge} step={2.5} min={0} />
+            <Stepper
+              label="Réps"
+              inputMode="numeric"
+              value={reps}
+              onChange={setReps}
+              min={1}
+              max={50}
+            />
+          </div>
+        </Card>
+
+        <Card>
+          <h3>Pastilles et bande glissante</h3>
+          <p className={styles.note}>
+            Un choix court et fréquent se montre, il ne se cache pas derrière un panneau système. La
+            bande se parcourt d'un pouce et s'accroche.
+          </p>
+          <div className="stack mt">
+            <ChipStrip label="Séance">
+              {SEANCES.map((item) => (
+                <Chip
+                  key={item}
+                  selected={item === seance}
+                  onClick={() => {
+                    setSeance(item);
+                  }}
+                >
+                  {item}
+                </Chip>
+              ))}
+            </ChipStrip>
+            <ChipStrip label="Charges récentes">
+              <Chip
+                onClick={() => {
+                  setCharge('80');
+                }}
+              >
+                80 kg
+              </Chip>
+              <Chip
+                onClick={() => {
+                  setCharge('82,5');
+                }}
+              >
+                82,5 kg
+              </Chip>
+              <Chip
+                onClick={() => {
+                  setCharge('85');
+                }}
+              >
+                85 kg
+              </Chip>
+            </ChipStrip>
+          </div>
+
+          <h3 style={{ marginTop: 24 }}>Ligne à glisser</h3>
+          <p className={styles.note}>
+            Tirer vers la gauche découvre l'action. Elle reste visible là où il y a un pointeur fin
+            — un geste ne peut pas être la seule façon d'atteindre une commande. Deux appuis pour
+            détruire : le projet n'a pas d'annulation.
+          </p>
+          <div className="stack mt">
+            {['Course · 20/07', 'Séance · 21/07'].map((item) => (
+              <SwipeRow
+                key={item}
+                actionLabel={`Supprimer ${item}`}
+                onAction={() => {
+                  notify(`${item} — supprimé.`, 'signal');
+                }}
+              >
+                <div className={styles.swipeDemo}>{item}</div>
+              </SwipeRow>
+            ))}
           </div>
         </Card>
       </div>

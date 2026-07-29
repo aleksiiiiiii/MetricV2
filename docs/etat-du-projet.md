@@ -3,16 +3,17 @@
 Document d'entrée. À lire en premier pour reprendre le développement de **Metric** sans
 contexte préalable — que ce soit dans trois mois ou dans une nouvelle session.
 
-**Version courante : `v0.12.0`** · douze lots livrés sur dix-huit. **Le jalon III est
-clos** : le moteur d'assiduité calcule, et il a désormais ses écrans.
+**Version courante : `v0.12.2`** · douze lots livrés sur dix-huit. **Le jalon III est
+clos** : le moteur d'assiduité calcule, et il a désormais ses écrans. La dette
+d'ergonomie qu'il laissait derrière lui est soldée ; **le prochain travail est le lot L12**.
 
 | Mesure | Valeur *(vérifiée le 2026-07-28)* |
 |---|---|
 | Tests backend | **655**, dont 35 de sécurité sur les photos et **135 sur le moteur d'assiduité** |
-| Tests frontend | **133** |
+| Tests frontend | **149**, dont 21 sur le seul parcours de saisie d'une séance |
 | Couverture du moteur | **100 %** de `heatmap/engine.py` |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
-| Build de production | 118 ko gzip |
+| Build de production | 120 ko gzip |
 | Affichage d'assiduité, Nextcloud réel | 751 ms à froid, **6 ms ensuite** |
 
 ---
@@ -146,6 +147,29 @@ possible : une grille qui refuse de changer après une saisie.
 Corollaire : une réponse servie **sans ETag** n'est pas mémorisée du tout. Un cache qu'on
 ne sait pas invalider vaut moins que pas de cache.
 
+### Le doigt est la cible, et il ne vise pas au pixel
+
+`L17-07` désigne le mobile comme **cible d'usage principale**. Depuis la `v0.12.2`, cela
+se traduit par des règles, plus par une intention : `--tap` (44 px) est le plancher de
+toute chose qu'on touche, `--tap-lg` (56 px) celui de l'action qui **termine** un geste ;
+les feuilles de style s'écrivent **mobile d'abord**, les `min-width` ajoutant ce que la
+place permet ; un champ numérique descend à 16 px minimum, sinon iOS zoome et décale la
+page.
+
+Trois règles encadrent le glissement, et elles ont chacune coûté quelque chose ailleurs :
+
+- **Un geste n'est jamais la seule porte.** L'action qu'un glissement découvre existe
+  toujours dans le document, et s'affiche d'emblée là où il y a un pointeur fin. On ne
+  découvre pas ce qu'on ne voit pas.
+- **Un geste plus vertical qu'horizontal appartient à la page.** Sans cette garde, faire
+  défiler une liste au pouce déclencherait son action — qui, sur l'historique, est une
+  suppression.
+- **Le glissement navigue, il ne mesure pas.** Pas de curseur pour une charge : viser
+  82,5 kg au pouce est difficile, et une mesure fausse entrée sans s'en apercevoir coûte
+  plus qu'un appui de plus. C'est « aucune valeur inventée à l'écran », appliqué au geste.
+
+Le geste a **une seule implémentation**, `lib/swipe.ts`. Deux en donneraient deux seuils.
+
 ### Les erreurs portent un code, pas un texte
 
 Le client décide sur `code` (`API-07`), jamais sur le message. Le message vient du serveur,
@@ -180,6 +204,8 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 | L09 | `v0.10.0` | Moteur `HEAT` : modèle de piste, registre de sources, cadences versionnées, jours neutralisés |
 | L10 | `v0.11.0` | Moteur `HEAT` : machine à états, cinq cadences, statistiques *(100 % couvert)* |
 | L11 | `v0.12.0` | Heatmaps à l'écran, cache de grilles mesuré, réglage des pistes — **clôt le jalon III** |
+| L11b | `v0.12.1` | Refonte de l'écran Activité — *dette soldée, pas un lot* |
+| L11c | `v0.12.2` | Passe tactile : charte + écran Activité — *avance `L17-07`* |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -320,27 +346,51 @@ mais ce qu'ils disent vaut d'être retenu.
 pas en la testant. Lancer `make dev` et saisir une vraie séance après chaque lot vaut mieux
 que dix tests de plus.
 
-### Une dette d'ergonomie, non traitée au L11 — et pourquoi
+**Et elle s'est confirmée deux fois de suite.** La refonte de l'écran Activité (`v0.12.1`)
+est partie avec vingt-quatre tests d'écran verts ; deux défauts n'en sont sortis qu'en
+regardant la page — une date écrite deux fois, et une phrase promettant d'ouvrir « la
+séance la plus récente » sur un écran qui n'en avait aucune. La passe tactile (`v0.12.2`)
+en a produit trois de plus, dont un qu'aucun test ne pouvait voir : **les colonnes de
+l'historique ne s'alignaient pas d'une ligne à l'autre**, chaque fiche étant sa propre
+grille où une piste `auto` se résout selon son seul contenu.
 
-L'écran Activité cache son parcours principal. Le panneau de saisie des charges n'existe
-que si une séance est **active** ; le catalogue d'exercices, lui, est toujours visible avec
-son formulaire. Le regard tombe donc sur le catalogue, qui ne prend aucun chiffre, alors
-que l'ordre réel est : déclarer l'exercice → créer la séance → consigner les charges.
+Un test vérifie ce qu'on a pensé à vérifier ; l'œil voit ce qu'on n'avait pas prévu. Une
+mesure automatisée voit encore autre chose : c'est en interrogeant le DOM sur la hauteur
+de chaque contrôle qu'on a trouvé la navigation à 33 px, que personne n'avait remarquée en
+onze lots.
 
-Le remède connu : un journal toujours affiché et un sélecteur de séance, plutôt qu'un
-panneau conditionnel.
+### La dette d'ergonomie de l'écran Activité — soldée en `v0.12.1`
 
-**Écartée du lot L11 délibérément.** L'argument « le lot touche déjà aux écrans » ne tenait
-pas : L11 touche Assiduité et Réglages, et ne partage aucune ligne avec le sélecteur de
-séance. Le bundler aurait été le seul point commun. Elle mérite son propre lot, avec ses
-**propres tests d'écran** — ceux-là mêmes qui manquaient quand le bouton « ouvrir » est
-resté inerte pendant deux lots.
+Le panneau de saisie des charges n'existait que si une séance était **active**, alors que
+le catalogue d'exercices, lui, était toujours visible avec son formulaire. Le regard
+tombait donc sur le seul formulaire qui ne prend aucun chiffre.
+
+Le journal est désormais **toujours affiché**, en pleine largeur et en tête de la zone de
+saisie, avec un sélecteur de séance ; la plus récente s'ouvre d'office. Le catalogue passe
+en dernier et dit qu'il se déclare une fois. Treize tests d'écran couvrent ce parcours.
+
+**Pourquoi avant le lot L12 et pas après** : `IMP-02` pré-remplit une course et une séance
+depuis une capture Apple — l'import se greffe donc exactement sur ce parcours. L'argument
+« aucune ligne partagée » avait écarté la dette du L11 ; le même argument, appliqué au L12,
+la faisait passer devant.
+
+**Ce qui n'a pas été fait, et pourquoi.** Le journal n'a pas été remonté en tête d'écran :
+les cinq écrans du projet posent les indicateurs d'abord, la saisie ensuite, et régler
+celui-ci en désalignant les quatre autres aurait coûté plus que la gêne. Le catalogue n'a
+pas été replié derrière un dépliant : `GuidelinesUI.html` n'en a pas, et la charte est la
+référence exclusive.
 
 ---
 
 ## 7. Prochain lot — L12
 
 **Couche IA + analyse de repas + import Apple.** Il ouvre le jalon IV.
+
+Son UI se greffe sur un écran désormais tactile : le bloc IA, l'aperçu d'import et le
+bouton « Pas d'accord » suivent les règles du §2 — plancher de 44 px, mobile d'abord, et
+les contrôles de `primitives.tsx` (`Stepper`, `Chip`, `ChipStrip`, `SwipeRow`) plutôt que
+de nouveaux. Une valeur **proposée** par l'IA se corrige au doigt, sinon elle sera adoptée
+telle quelle faute de pouvoir la retoucher — ce qui viderait `NUT-04` de son sens.
 
 Le contrat structurant est `IA-07` : **sans clé API, aucune fonctionnalité n'est bloquée.**
 L'application reste pleinement utilisable en saisie manuelle, et le manque de clé se dit
@@ -359,6 +409,15 @@ Trois points à ne pas manquer, tous déjà écrits dans le backlog :
   (`IMP-03`). Une valeur absente reste absente ; la deviner ferait entrer une mesure
   fausse dans un fichier qui est censé rester exploitable dans dix ans.
 
+**La clé OpenRouter est configurée** (`ai_enabled` vrai au démarrage). La conduite arrêtée
+le 2026-07-29 : **développement et tests intégralement sur réponses simulées** — `L12-16`
+l'exige de toute façon (JSON bavard, JSON tronqué, `429` en cascade, aucune clé). Le vrai
+service n'est appelé que pour les deux choses qui ne se simulent pas — la découverte des
+modèles gratuits (`IA-02`, dont le catalogue réel change en permanence) et une passe de
+bout en bout sur un vrai screenshot à la DoD — **et jamais sans accord préalable**. Tout
+test qui appellerait réellement OpenRouter reste hors de `make check` : il ne serait pas
+déterministe.
+
 ### Ce que L11 laisse en place
 
 | Pièce | Où |
@@ -369,17 +428,27 @@ Trois points à ne pas manquer, tous déjà écrits dans le backlog :
 | `FileStore.prefetch` | lecture parallèle — à réutiliser dans tout écran multi-fichiers |
 | `Source.paths` | chemins déclarés par source, pour le préchargement uniquement |
 
-### Trois dettes nommées, par ordre de valeur
+### Deux dettes nommées, par ordre de valeur
 
-1. **Refonte de l'écran Activité** — voir §6. C'est la seule des trois qu'un usage réel a
-   fait remonter, et donc la seule dont on sait qu'elle gêne.
-2. **Navigation par plage sur l'écran Assiduité.** L'API accepte `from`/`to` et les valide ;
+La troisième — la refonte de l'écran Activité — est **soldée en `v0.12.1`** (voir §6).
+C'était la seule qu'un usage réel avait fait remonter. Ce qui reste n'a été relevé que par
+lecture du code, ce qui est une raison de les traiter plus tard, pas plus tôt.
+
+1. **Navigation par plage sur l'écran Assiduité.** L'API accepte `from`/`to` et les valide ;
    l'écran s'en tient aux 53 semaines par défaut. Une année précédente n'est pas
    consultable.
-3. **Réordonnancement par glisser-déposer.** « Monter » / « Descendre » fonctionne et coûte
+2. **Réordonnancement par glisser-déposer.** « Monter » / « Descendre » fonctionne et coûte
    un appel par cran.
 
 ### Ce qui n'a pas pu être éprouvé
+
+**Rien n'a jamais été touché sur un vrai téléphone.** La passe tactile est mesurée dans un
+Chrome émulant un iPhone 14, en évènements tactiles réels : cibles, débordement,
+glissements, tout est vérifié. Mais l'émulation ne reproduit ni l'imprécision du pouce, ni
+le clavier système qui remonte sur le champ actif, ni la latence. **Ouvrir `/activite` sur
+le téléphone et consigner une vraie série est le test qui manque.**
+
+Et `L17-07` n'est pas clos : sept écrans sur huit n'ont pas eu la passe.
 
 **Aucune grille n'a encore un an d'historique réel derrière elle.** Les pistes ayant été
 amorcées le jour de la livraison, `HEAT-07` les rend `off` sur tout le passé et le taux de
