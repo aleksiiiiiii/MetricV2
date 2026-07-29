@@ -8,6 +8,7 @@
  */
 
 import type { DashboardView } from '@/features/aggregates/api';
+import type { DayInspection, GridsView, HeatDay, TracksView } from '@/features/heatmap/api';
 import type { SettingsView } from '@/features/settings/api';
 
 export const DASHBOARD: DashboardView = {
@@ -124,4 +125,230 @@ export const SETTINGS: SettingsView = {
   defaults: DEFAULT_VALUES,
   stored: ['target_weight_kg'],
   token: 'jeton-reglages',
+};
+
+// ── Assiduité (`HEAT` v2 §8) ──────────────────────────
+
+/**
+ * Deux pistes, choisies pour ce qu'elles opposent : une quotidienne, qui peut être
+ * `missed` au jour, et une hebdomadaire, qui ne l'est **jamais** (`HEAT-11`).
+ *
+ * La plage est volontairement courte — sept jours au lieu de 371. Ce que les tests
+ * d'écran vérifient est le rendu de chaque état, pas la géométrie de la grille, qui a sa
+ * propre batterie côté composant.
+ */
+function heatDay(
+  date: string,
+  state: HeatDay['state'],
+  level = 0,
+  value = 0,
+  reason: HeatDay['reason'] = null,
+): HeatDay {
+  return { date, value, state, level, reason };
+}
+
+const WATER_GRID: GridsView['grids'][number] = {
+  track: {
+    id: 'eau',
+    label: 'Eau',
+    unit: 'ml',
+    binary: false,
+    accent: 'signal',
+    source: 'hydration.intake',
+    levels: [1000, 1500, 2000, 2500],
+    validation_threshold: 1500,
+    created: '2026-01-01',
+  },
+  cadence: {
+    type: 'daily',
+    params: {},
+    label: 'tous les jours',
+    serialized: 'daily',
+    valid_from: null,
+  },
+  range: { from: '2026-07-20', to: '2026-07-26' },
+  days: [
+    heatDay('2026-07-20', 'done', 2, 1800),
+    heatDay('2026-07-21', 'missed'),
+    heatDay('2026-07-22', 'done', 4, 2600),
+    heatDay('2026-07-23', 'off', 0, 0, 'neutralised'),
+    heatDay('2026-07-24', 'done', 1, 1500),
+    heatDay('2026-07-25', 'off', 0, 700, 'pending'),
+    heatDay('2026-07-26', 'off', 0, 0, 'future'),
+  ],
+  weeks: null,
+  stats: {
+    validated_days: 3,
+    expected_days: 4,
+    compliance: 0.75,
+    longest_streak: 3,
+    current_streak: 3,
+    best_day: '2026-07-22',
+    best_value: 2600,
+    total: 6600,
+  },
+};
+
+const TORSO_GRID: GridsView['grids'][number] = {
+  track: {
+    id: 'torse',
+    label: 'Torse',
+    unit: 'série',
+    binary: false,
+    accent: 'effort',
+    source: 'activity.muscle_group',
+    levels: [1, 3, 6, 10],
+    validation_threshold: 1,
+    created: '2026-01-01',
+  },
+  cadence: {
+    type: 'per_week',
+    params: { count: 2 },
+    label: '2 fois par semaine',
+    serialized: 'per_week:count=2',
+    valid_from: null,
+  },
+  range: { from: '2026-07-20', to: '2026-07-26' },
+  days: [
+    heatDay('2026-07-20', 'done', 3, 8),
+    heatDay('2026-07-21', 'off'),
+    heatDay('2026-07-22', 'off'),
+    heatDay('2026-07-23', 'off'),
+    heatDay('2026-07-24', 'off'),
+    heatDay('2026-07-25', 'off', 0, 0, 'pending'),
+    heatDay('2026-07-26', 'off', 0, 0, 'future'),
+  ],
+  weeks: [{ start: '2026-07-20', status: 'partial', done: 1, expected: 2 }],
+  stats: {
+    validated_days: 1,
+    expected_days: 2,
+    compliance: 0.5,
+    longest_streak: 1,
+    current_streak: 1,
+    best_day: '2026-07-20',
+    best_value: 8,
+    total: 8,
+  },
+};
+
+export const GRIDS: GridsView = {
+  range: { from: '2026-07-20', to: '2026-07-26' },
+  grids: [WATER_GRID, TORSO_GRID],
+};
+
+export const DAY_DETAIL: DayInspection = {
+  track: TORSO_GRID.track,
+  day: heatDay('2026-07-20', 'done', 3, 8),
+  entries: [
+    {
+      label: 'Développé couché',
+      value: 4,
+      unit: 'série',
+      time: null,
+      sets: 4,
+      reps: 8,
+      weight_kg: 80,
+      muscle_group: 'pectoraux',
+      distance_km: null,
+      duration_min: null,
+      pace_min_km: null,
+      dose: null,
+      dose_unit: null,
+      note: null,
+    },
+    {
+      label: 'Écarté poulie',
+      value: 4,
+      unit: 'série',
+      time: null,
+      sets: 4,
+      reps: 12,
+      weight_kg: 20,
+      muscle_group: 'pectoraux',
+      distance_km: null,
+      duration_min: null,
+      pace_min_km: null,
+      dose: null,
+      dose_unit: null,
+      note: 'dernière série en dégressif',
+    },
+  ],
+};
+
+export const TRACKS: TracksView = {
+  tracks: [
+    {
+      id: 0,
+      token: 'jeton-eau',
+      track_id: 'eau',
+      label: 'Eau',
+      source: 'hydration.intake',
+      source_label: 'Volume bu',
+      unit: 'ml',
+      filter: '',
+      validation_threshold: 1500,
+      levels: [1000, 1500, 2000, 2500],
+      binary: false,
+      accent: 'signal',
+      position: 0,
+      active: true,
+      created: '2026-01-01',
+      cadence: {
+        type: 'daily',
+        params: {},
+        label: 'tous les jours',
+        serialized: 'daily',
+        valid_from: null,
+      },
+      cadence_history: [],
+    },
+    {
+      id: 1,
+      token: 'jeton-torse',
+      track_id: 'torse',
+      label: 'Torse',
+      source: 'activity.muscle_group',
+      source_label: "Séries d'un groupe musculaire",
+      unit: 'série',
+      filter: 'pectoraux;épaules',
+      validation_threshold: 1,
+      levels: [1, 3, 6, 10],
+      binary: false,
+      accent: 'effort',
+      position: 1,
+      active: true,
+      created: '2026-01-01',
+      cadence: {
+        type: 'per_week',
+        params: { count: 2 },
+        label: '2 fois par semaine',
+        serialized: 'per_week:count=2',
+        valid_from: '2026-01-01',
+      },
+      cadence_history: [],
+    },
+  ],
+  sources: [
+    { key: 'hydration.intake', label: 'Volume bu', unit: 'ml', filter_label: null },
+    {
+      key: 'activity.muscle_group',
+      label: "Séries d'un groupe musculaire",
+      unit: 'série',
+      filter_label: 'Groupes musculaires',
+    },
+  ],
+  off_days: [
+    {
+      id: 0,
+      token: 'jeton-off',
+      off_id: 'o1',
+      track_id: 'eau',
+      date_from: '2026-07-23',
+      date_to: '2026-07-23',
+      reason: 'grippe',
+      days: 1,
+    },
+  ],
+  highlight: 'eau',
+  accents: ['signal', 'effort', 'load', 'recover'],
 };

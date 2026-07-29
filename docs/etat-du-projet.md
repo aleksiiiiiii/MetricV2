@@ -3,16 +3,17 @@
 Document d'entrée. À lire en premier pour reprendre le développement de **Metric** sans
 contexte préalable — que ce soit dans trois mois ou dans une nouvelle session.
 
-**Version courante : `v0.11.0`** · onze lots livrés sur dix-huit. Le moteur d'assiduité —
-le cœur du projet — calcule ; il ne lui manque que ses écrans.
+**Version courante : `v0.12.0`** · douze lots livrés sur dix-huit. **Le jalon III est
+clos** : le moteur d'assiduité calcule, et il a désormais ses écrans.
 
 | Mesure | Valeur *(vérifiée le 2026-07-28)* |
 |---|---|
-| Tests backend | **594**, dont 35 de sécurité sur les photos et **102 sur le moteur d'assiduité** |
-| Tests frontend | **106** |
+| Tests backend | **655**, dont 35 de sécurité sur les photos et **135 sur le moteur d'assiduité** |
+| Tests frontend | **133** |
 | Couverture du moteur | **100 %** de `heatmap/engine.py` |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
-| Build de production | 112 ko gzip |
+| Build de production | 118 ko gzip |
+| Affichage d'assiduité, Nextcloud réel | 751 ms à froid, **6 ms ensuite** |
 
 ---
 
@@ -130,6 +131,21 @@ aucun.
 La même constante écrite dans deux langages tient jusqu'au premier oubli. Servie, elle ne
 peut pas diverger.
 
+### Un cache s'invalide sur ce qu'il a lu, pas sur ce qu'il a déclaré
+
+Les grilles d'assiduité sont mémorisées côté serveur. Une grille mémorisée n'est valable
+que tant que **tous les fichiers qui l'ont produite** portent le même ETag qu'au moment du
+calcul — et cette liste de fichiers est **relevée pendant le calcul** (`FileStore.observe`),
+jamais écrite à la main.
+
+La raison est que Nextcloud se modifie derrière notre dos — téléphone, client de synchro,
+tableur (décision **D8**). Une liste déclarée aurait l'air juste et cesserait de l'être au
+premier fichier lu en plus, sans que rien ne le signale. Le symptôme serait le pire
+possible : une grille qui refuse de changer après une saisie.
+
+Corollaire : une réponse servie **sans ETag** n'est pas mémorisée du tout. Un cache qu'on
+ne sait pas invalider vaut moins que pas de cache.
+
 ### Les erreurs portent un code, pas un texte
 
 Le client décide sur `code` (`API-07`), jamais sur le message. Le message vient du serveur,
@@ -163,6 +179,7 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 | L08 | `v0.9.0` | Réglages éditables, agrégats du tableau de bord, séries génériques — **clôt le jalon II** |
 | L09 | `v0.10.0` | Moteur `HEAT` : modèle de piste, registre de sources, cadences versionnées, jours neutralisés |
 | L10 | `v0.11.0` | Moteur `HEAT` : machine à états, cinq cadences, statistiques *(100 % couvert)* |
+| L11 | `v0.12.0` | Heatmaps à l'écran, cache de grilles mesuré, réglage des pistes — **clôt le jalon III** |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -171,7 +188,11 @@ Le détail de chaque lot — tâches cochées, écarts assumés, décisions — 
 ### Écrans disponibles
 
 `/connexion` · `/` tableau de bord · `/corps` · `/activite` · `/routine` · `/nutrition` ·
-`/reglages` · `/_kitchen-sink` *(référence de charte, publique)*
+`/assiduite` · `/reglages` · `/_kitchen-sink` *(référence de charte, publique)*
+
+Le **réglage des pistes** vit dans `/reglages` et non dans `/assiduite` : la piste mise en
+avant *est* le réglage `heatmap_metric`, et les séparer aurait obligé à expliquer deux fois
+où se règle la même chose.
 
 ---
 
@@ -232,28 +253,44 @@ chose n'a pas pu l'être.
 
 ## 6. Ce qui attend une action de votre part
 
-### La chaîne complète tourne enfin
+### La chaîne réelle est vérifiée, et mesurée
 
-`NEXTCLOUD_URL` a été corrigé le 2026-07-28 : il pointe sur le point d'accès WebDAV et non
-plus sur la racine du site. L'API démarre avec `storage_configured: true`, et
-`make dev` sert les deux moitiés.
+`make check-storage` a été lancé le 2026-07-28 : connexion, écriture, relecture,
+nettoyage — et surtout **`If-None-Match` honoré avec un `304`**. C'était la prémisse de
+toute la conception du cache (décision **D8**) ; elle est vérifiée et non plus supposée.
 
-**Ce que cela change** : les lots L01 à L10 ont tous été validés contre un double WebDAV en
-mémoire, jamais contre l'instance réelle. Cette réserve tombe en partie — l'application
-lit et écrit vraiment — mais **la latence n'a pas été mesurée**. Le tableau de bord ouvre
-neuf fichiers par affichage, une grille d'assiduité en ouvre autant sur 371 jours. C'est
-précisément ce que le cache serveur du lot L11 doit régler, et il faudra le mesurer, pas
-le supposer.
+**La latence est chiffrée**, et c'est le chiffre à connaître avant d'optimiser quoi que ce
+soit dans ce projet :
 
-`make check-storage` écrit puis relit un fichier de diagnostic sur Nextcloud et confirme la
-chaîne de bout en bout. Il n'a pas encore été lancé.
+| | Durée |
+|---|---|
+| Aller-retour WebDAV unitaire | **~180 ms** |
+| Écran d'assiduité, cache froid | 751 ms |
+| Écran d'assiduité, affichage suivant | 6 ms |
+| Après expiration du TTL, 7 revalidations `304` | 448 ms |
+
+Deux conséquences valent d'être retenues.
+
+**Le réseau était déjà réglé** par le cache de `FileStore` (`STO-06`) avant le lot L11. Le
+profilage d'un affichage l'a montré : les 50 ms restantes étaient du calcul refait à
+l'identique, dont 70 % d'analyse CSV — six mille lignes revalidées par affichage parce que
+neuf pistes rouvrent les mêmes cinq fichiers. Un cache qui aurait visé le réseau aurait
+doublé un mécanisme existant sans rien gagner. **Profiler avant d'optimiser a changé la
+conception, pas seulement son réglage.**
+
+**À 180 ms l'aller-retour, l'ordre des lectures compte plus que leur nombre.** Sept
+fichiers lus l'un après l'autre font plus d'une seconde ; lus en parallèle
+(`FileStore.prefetch`), ils en font un peu plus d'un. Tout écran qui ouvre plusieurs
+fichiers devrait les précharger ensemble.
 
 ### Quatre décisions ouvertes, sans urgence
 
 - **Supprimer un repas ne supprime pas sa photo** (L07). Choix assumé : l'effacer d'un clic
   ferait perdre un souvenir qu'aucune annulation ne rendrait. À inverser si vous préférez.
 - **`heatmap_metric` n'est pas contraint à une liste fermée** (L08). Les pistes existent
-  depuis le L09 : le réglage peut désormais être resserré sur leurs identifiants.
+  depuis le L09, et l'écran Réglages les met en avant d'un clic depuis le L11 : le champ
+  libre ne sert plus qu'à saisir un identifiant qui n'existe pas. Bon candidat au
+  resserrement.
 - **`/_kitchen-sink` est publique** (L03) : aucune donnée utilisateur, consultable sans
   session, vérifiable par capture automatisée.
 - **`MIN_LENGTH` du mot de passe abaissé à 6** dans `hash_password.py`. C'est l'unique
@@ -274,62 +311,72 @@ mais ce qu'ils disent vaut d'être retenu.
 pas en la testant. Lancer `make dev` et saisir une vraie séance après chaque lot vaut mieux
 que dix tests de plus.
 
-### Une dette d'ergonomie, à traiter au L11
+### Une dette d'ergonomie, non traitée au L11 — et pourquoi
 
 L'écran Activité cache son parcours principal. Le panneau de saisie des charges n'existe
 que si une séance est **active** ; le catalogue d'exercices, lui, est toujours visible avec
 son formulaire. Le regard tombe donc sur le catalogue, qui ne prend aucun chiffre, alors
 que l'ordre réel est : déclarer l'exercice → créer la séance → consigner les charges.
 
-Le lot L11 touche déjà aux écrans : c'est le moment de rendre cet ordre visible, par
-exemple avec un journal toujours affiché et un sélecteur de séance plutôt qu'un panneau
-conditionnel.
+Le remède connu : un journal toujours affiché et un sélecteur de séance, plutôt qu'un
+panneau conditionnel.
+
+**Écartée du lot L11 délibérément.** L'argument « le lot touche déjà aux écrans » ne tenait
+pas : L11 touche Assiduité et Réglages, et ne partage aucune ligne avec le sélecteur de
+séance. Le bundler aurait été le seul point commun. Elle mérite son propre lot, avec ses
+**propres tests d'écran** — ceux-là mêmes qui manquaient quand le bouton « ouvrir » est
+resté inerte pendant deux lots.
 
 ---
 
-## 7. Prochain lot — L11
+## 7. Prochain lot — L12
 
-**Heatmaps & réglage des pistes.** Il ferme le jalon III : le moteur calcule, il lui
-manque ses écrans.
+**Couche IA + analyse de repas + import Apple.** Il ouvre le jalon IV.
 
-Tout le calcul existe et est couvert à 100 %. Ce qui reste est de l'exposition :
+Le contrat structurant est `IA-07` : **sans clé API, aucune fonctionnalité n'est bloquée.**
+L'application reste pleinement utilisable en saisie manuelle, et le manque de clé se dit
+en clair plutôt que de faire échouer un écran. C'est la même règle que « un fichier de
+configuration ne fait jamais tomber un écran », appliquée à une dépendance externe.
 
-- `L11-01` → `L11-03` — les trois endpoints de la spec §8 : grille d'une piste, lecture
-  multi-pistes en une requête (`HEAT-25`), détail d'un jour (`HEAT-29`). Le service
-  `GridService` rend déjà exactement ces trois choses ; il n'y a qu'à les publier.
-- `L11-04` — **cache serveur des grilles** (`HEAT-33`), clé = piste + plage + version de
-  config + ETag des sources. C'est le seul vrai travail d'ingénierie du lot : neuf pistes
-  × 371 jours ne doivent pas relire Nextcloud à chaque affichage.
-- `L11-06` → `L11-09` — l'écran. La contrainte à ne pas rater : **`off` doit être
-  visuellement distinct de `missed`**. Une grille majoritairement `off` ne doit pas se
-  lire comme un échec, sans quoi tout le travail du moteur est annulé à l'affichage.
-- `L11-10` — le réglage des pistes, avec l'avertissement de recalcul rétroactif.
+Trois points à ne pas manquer, tous déjà écrits dans le backlog :
 
-### Ce que L10 laisse en place
+- **La cascade multi-modèles** (`IA-03`) doit distinguer « quota saturé » de « autre
+  erreur ». Les deux mènent à un échec, mais l'un se résout en attendant et l'autre non —
+  et l'utilisateur n'a pas la même conduite à tenir.
+- **Ce que l'IA propose n'est jamais imposé** (`NUT-04`, `IMP-02`). Les valeurs proposées
+  doivent être visuellement distinctes des valeurs saisies, et rien ne s'écrit sans
+  validation. C'est le pendant de « aucune valeur inventée à l'écran ».
+- **Les conversions de l'import Apple laissent vide ce qu'elles ne savent pas**
+  (`IMP-03`). Une valeur absente reste absente ; la deviner ferait entrer une mesure
+  fausse dans un fichier qui est censé rester exploitable dans dix ans.
+
+### Ce que L11 laisse en place
 
 | Pièce | Où |
 |---|---|
-| `evaluate(...)` | la machine à états, pure et testable sans stockage |
-| `GridService.grid` / `.grids` / `.day` | les trois lectures de la spec §8, prêtes à publier |
-| `default_range(today)` | 53 colonnes pleines alignées sur le lundi (**D6**) |
-| `Grid.weeks` | les statuts hebdomadaires, `None` hors `per_week` |
+| `GridService.view` / `.multi_view` / `.inspect` | les trois lectures de la spec §8, publiées |
+| `GridService.impact` | simulation d'une modification, sans rien écrire (**D4**) |
+| `GridCache` + `FileStore.observe` | mémorisation invalidée par les fichiers réellement lus |
+| `FileStore.prefetch` | lecture parallèle — à réutiliser dans tout écran multi-fichiers |
+| `Source.paths` | chemins déclarés par source, pour le préchargement uniquement |
 
-### Une dette nommée, à solder au L11
+### Trois dettes nommées, par ordre de valeur
 
-`HEAT-20` et la décision **D4** demandent d'annoncer l'ampleur d'un changement de seuil —
-« 34 jours passeraient de validé à manqué » — **avant** de le valider. Le lot L09 n'a
-livré que l'avertissement, faute de moteur. Le moteur existe désormais : le compte
-s'obtient en évaluant la grille deux fois, avec l'ancien seuil et le nouveau, et en
-comparant les états. `TrackSaved.recalculated_history` est déjà là pour le porter.
+1. **Refonte de l'écran Activité** — voir §6. C'est la seule des trois qu'un usage réel a
+   fait remonter, et donc la seule dont on sait qu'elle gêne.
+2. **Navigation par plage sur l'écran Assiduité.** L'API accepte `from`/`to` et les valide ;
+   l'écran s'en tient aux 53 semaines par défaut. Une année précédente n'est pas
+   consultable.
+3. **Réordonnancement par glisser-déposer.** « Monter » / « Descendre » fonctionne et coûte
+   un appel par cran.
 
-### Deux pièges de rendu, déjà repérés
+### Ce qui n'a pas pu être éprouvé
 
-- **Les jours `off` de la semaine en cours sont dans le futur.** La plage par défaut va
-  jusqu'au dimanche : les cellules après aujourd'hui existent et valent `off`. Les peindre
-  comme les autres `off` est correct ; les peindre comme des trous ne le serait pas.
-- **`per_week` ne rend jamais de `missed` au jour.** Le rouge, sur ces pistes, se pose sur
-  la **semaine** (`Grid.weeks`). Un écran qui chercherait des jours rouges y verrait un
-  sans-faute permanent.
+**Aucune grille n'a encore un an d'historique réel derrière elle.** Les pistes ayant été
+amorcées le jour de la livraison, `HEAT-07` les rend `off` sur tout le passé et le taux de
+respect vaut `null` — comportement correct, mais qui laisse le rendu d'une grille dense et
+le calcul des longues séries vérifiés sur données simulées uniquement. **Rouvrir
+`/assiduite` dans un mois est le vrai test de ce lot.**
 
 > `AGG-03` et `HEAT-27` sont **deux algorithmes distincts et le resteront** : le premier
 > mesure l'assiduité de suivi, le second le respect d'un engagement. Ne pas les fusionner.

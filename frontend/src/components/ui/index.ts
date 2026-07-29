@@ -9,7 +9,7 @@ export { Chart } from './Chart';
 export type { BandSeries, ChartProps, Series } from './Chart';
 
 export { Heatmap } from './Heatmap';
-export type { DayState, HeatDay, HeatWeek, HeatmapProps, WeekStatus } from './Heatmap';
+export type { DayReason, DayState, HeatDay, HeatWeek, HeatmapProps, WeekStatus } from './Heatmap';
 
 export { Toaster } from './Toaster';
 

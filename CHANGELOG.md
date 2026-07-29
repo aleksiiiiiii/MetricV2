@@ -3,6 +3,108 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.12.0] — 2026-07-28
+
+Lot **L11 — Heatmaps & réglage des pistes**. Il clôt le jalon III : le moteur du lot L10
+calculait sans que rien ne l'affiche. 655 tests backend, 133 frontend, **100 % de
+couverture toujours tenue sur la machine à états**.
+
+### Ajouté
+
+- **Les trois lectures de la spec §8** (`HEAT-24`, `HEAT-25`, `HEAT-29`) —
+  `GET /api/heatmap/{id}`, `GET /api/heatmap?tracks=…`, `GET /api/heatmap/{id}/day/{date}`.
+  La forme de réponse suit le §8 au mot près, `from`/`to` compris — un mot réservé de
+  Python n'est pas une raison de renommer une clé publique.
+- **Cache serveur des grilles** (`HEAT-33`) — clé « piste + plage + jour courant »,
+  validité prouvée par l'**empreinte des fichiers réellement lus**.
+- **Préchargement parallèle des sources.** Neuf pistes ouvrent sept fichiers ; les lire
+  l'un après l'autre coûtait plus d'une seconde sur l'instance réelle.
+- **Chiffrage du recalcul rétroactif** (`HEAT-20`, décision **D4**) —
+  `POST /api/heatmap/tracks/{id}/preview` rend « 34 journées passeraient de validée à
+  manquée » **avant** que rien ne soit écrit. C'est la dette que le lot L09 avait laissée,
+  faute de moteur pour la calculer.
+- **Écran Assiduité** (`/assiduite`) — toutes les grilles en **un appel**, taux de respect,
+  série en cours, record et cumul par piste, tiroir de détail au clic sur une cellule.
+- **Réglage des pistes**, dans l'écran Réglages — créer, réordonner, mettre en avant,
+  changer la cadence, éditer les seuils avec confirmation chiffrée, neutraliser une plage
+  et la rétablir.
+- **Nuance d'affichage sur les jours `off`** — le moteur dit désormais *pourquoi* un jour
+  n'attendait rien : `neutralised`, `before_track`, `future`, `pending`.
+
+### Décidé
+
+- **La nuance d'un `off` est un champ à part, pas un cinquième état.** Les quatre états de
+  `HEAT-05` restent les seuls sur lesquels se décide une couleur, une série ou un taux. Un
+  cinquième état aurait contaminé les statistiques ; un champ d'affichage se contente de
+  répondre à « pourquoi cette cellule est-elle grise ? ».
+- **Les jours à venir se peignent comme les autres `off`, ceux d'avant la piste sont des
+  trous.** La plage va jusqu'au dimanche de la semaine en cours : en faire des trous
+  donnerait à chaque grille une entaille hebdomadaire qui ne veut rien dire. Avant la
+  création de la piste, en revanche, il n'y avait rien à tenir (`HEAT-07`).
+- **Le cache s'invalide sur les fichiers observés, pas sur une liste déclarée.** Une liste
+  écrite à la main aurait l'air juste et cesserait de l'être au premier fichier lu en plus
+  — sans rien signaler, et avec pour symptôme une grille qui refuse de changer après une
+  saisie. Les chemins déclarés par chaque source ne servent qu'au préchargement, et un
+  test les confronte aux lectures réelles.
+- **Une grille servie sans ETag n'est pas mémorisée.** On ne saurait pas l'invalider, et
+  un cache qu'on ne peut pas invalider vaut moins que pas de cache.
+- **Changer la source ou le filtre d'une piste est rétroactif.** Les deux manquaient à la
+  liste du lot L09 : rebrancher « pectoraux » sur « jambes » réécrivait toute la grille en
+  passant pour une modification anodine.
+- **La refonte de l'écran Activité n'entre pas dans ce lot.** Elle est réelle et reste à
+  faire, mais elle ne partage aucun code avec les heatmaps ; l'inclure aurait allongé un
+  lot déjà large sans rien mutualiser.
+
+### Mesuré
+
+La question « où passe le temps d'un affichage ? » a été tranchée par un profilage avant
+d'écrire la moindre ligne de cache, et la réponse a changé la conception. Sur un an de
+saisie simulée — 98 ko, neuf pistes, 371 jours :
+
+| | Avant | Après |
+|---|---|---|
+| Requêtes WebDAV, cache fichier chaud | 0 | 0 |
+| Temps CPU par affichage | ~50 ms | ~5 ms |
+
+**Le réseau était déjà réglé** par le cache de `FileStore` (`STO-06`). Ce qui restait était
+du calcul refait à l'identique : 70 % d'analyse CSV et de validation Pydantic — six mille
+lignes revalidées par affichage, neuf pistes rouvrant les mêmes cinq fichiers — et 22 % de
+moteur. Un cache qui aurait visé le réseau aurait doublé un mécanisme existant sans rien
+gagner.
+
+Sur l'**instance Nextcloud réelle**, et c'est la première fois qu'un lot est mesuré
+ailleurs que contre un double :
+
+| | Durée |
+|---|---|
+| Aller-retour WebDAV unitaire | ~180 ms |
+| Premier affichage, cache froid | 751 ms |
+| Affichage suivant | 6 ms |
+| Affichage après expiration du TTL (7 revalidations `304`) | 448 ms |
+
+Sans le préchargement parallèle, la dernière ligne aurait coûté sept allers-retours mis
+bout à bout, soit plus d'une seconde pour un écran qui n'a rien à recalculer.
+
+### Vérifié sur l'instance réelle
+
+`make check-storage` a été lancé pour la première fois : connexion, écriture, relecture,
+nettoyage, et surtout **`If-None-Match` honoré avec un `304`**. C'était la prémisse de
+toute la conception du cache (décision **D8**) ; elle est vérifiée et non plus supposée.
+
+L'écran a ensuite été exécuté contre les vraies données : huit pistes amorcées depuis
+l'historique réel, cadences déduites des quatre dernières semaines, et le détail d'une
+cellule remonte bien la ligne de saisie qui la compose.
+
+### Non vérifié
+
+- **Aucune grille n'a encore un an d'historique réel derrière elle.** Les pistes ayant été
+  amorcées aujourd'hui, `HEAT-07` les rend `off` sur tout le passé, et le taux de respect
+  vaut `null` — ce qui est le comportement correct, mais laisse le rendu d'une grille
+  dense et le calcul des longues séries éprouvés sur données simulées uniquement.
+- **La navigation par plage** n'est pas exposée à l'écran : l'API accepte `from`/`to`, mais
+  l'écran s'en tient à la plage par défaut de 53 semaines.
+- **Le réordonnancement se fait par « Monter »/« Descendre »**, pas par glisser-déposer.
+
 ## [0.11.0] — 2026-07-28
 
 Lot **L10 — Moteur `HEAT` : calcul, cadences, statistiques**. Le cœur du projet, et le

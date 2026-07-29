@@ -77,6 +77,35 @@ class WeekStatus(StrEnum):
     OFF = "off"
 
 
+class DayReason(StrEnum):
+    """Pourquoi un jour est `off`, quand ce n'est pas la cadence qui l'a décidé.
+
+    **Ce n'est pas un cinquième état** : les quatre de `HEAT-05` restent les seuls sur
+    lesquels se décide une couleur, une série ou un taux. C'est une nuance d'affichage,
+    et elle existe parce que quatre situations très différentes se ressemblent trait pour
+    trait sans elle : une semaine de grippe, les six mois qui précèdent la création de la
+    piste, les jours de la semaine en cours qui ne sont pas arrivés, et la journée
+    d'aujourd'hui qui n'est pas finie.
+
+    Les peindre toutes comme un `off` de cadence serait correct au sens du moteur, et
+    illisible à l'écran : une piste créée hier montrerait un an de cellules identiques
+    sans dire que rien n'y était encore suivi.
+
+    Le calcul reste **ici**, avec le reste des règles, et non dans un routeur ou dans le
+    client — un « ce jour est-il neutralisé » écrit ailleurs échapperait à cette batterie
+    de tests.
+    """
+
+    #: `HEAT-06` — maladie, voyage, deload.
+    NEUTRALISED = "neutralised"
+    #: `HEAT-07` — antérieur à la création de la piste.
+    BEFORE_TRACK = "before_track"
+    #: Au-delà d'aujourd'hui : la plage par défaut va jusqu'au dimanche.
+    FUTURE = "future"
+    #: `HEAT-08` — la journée en cours, pas encore validée et pas encore finie.
+    PENDING = "pending"
+
+
 class Expectation(StrEnum):
     """Ce que la cadence attend d'un jour donné.
 
@@ -157,6 +186,9 @@ class Day:
     value: float
     state: DayState
     level: int
+    #: Nuance d'affichage d'un `off`. `None` quand c'est la cadence qui n'attendait rien,
+    #: et sur tout jour qui n'est pas `off`.
+    reason: DayReason | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +343,21 @@ def evaluate(
     def before_track(day: date) -> bool:
         return rules.created is not None and day < rules.created
 
+    def excuse(day: date) -> DayReason | None:
+        """Raison de ne pas juger ce jour, dans l'ordre de priorité documenté ci-dessus.
+
+        Un seul endroit décide, et les deux passages le consultent : sans cela, la liste
+        des jours excusés et celle des cellules peintes pourraient diverger sur un cas
+        limite — un jour neutralisé *et* futur, par exemple.
+        """
+        if neutralised(day):
+            return DayReason.NEUTRALISED
+        if before_track(day):
+            return DayReason.BEFORE_TRACK
+        if day > today:
+            return DayReason.FUTURE
+        return None
+
     # Premier passage : ce qui ne dépend d'aucun autre jour. Les fenêtres glissantes ont
     # besoin de connaître les validations de leurs voisins, y compris hors plage — d'où
     # une marge en amont.
@@ -320,7 +367,7 @@ def evaluate(
     validated: set[date] = set()
     excused: set[date] = set()
     for day in scope:
-        if neutralised(day) or before_track(day) or day > today:
+        if excuse(day) is not None:
             excused.add(day)
         elif values.get(day, 0.0) >= rules.validation_threshold:
             validated.add(day)
@@ -330,15 +377,24 @@ def evaluate(
     for day in all_days:
         value = values.get(day, 0.0)
 
-        if neutralised(day) or before_track(day) or day > today:
-            days.append(Day(date=day, value=value, state=DayState.OFF, level=0))
+        reason = excuse(day)
+        if reason is not None:
+            days.append(Day(date=day, value=value, state=DayState.OFF, level=0, reason=reason))
             continue
 
         is_validated = day in validated
         if day == today and not is_validated:
             # `HEAT-08` : la journée en cours n'est jamais manquée tant qu'elle n'est pas
             # terminée. Elle reste `off`, et basculera le soir venu si rien n'arrive.
-            days.append(Day(date=day, value=value, state=DayState.OFF, level=0))
+            days.append(
+                Day(
+                    date=day,
+                    value=value,
+                    state=DayState.OFF,
+                    level=0,
+                    reason=DayReason.PENDING,
+                )
+            )
             continue
 
         expectation = _expectation(

@@ -119,7 +119,7 @@ papier.
 | **Jalon III — Assiduité** | | | |
 | L09 | `v0.10.0` | Moteur `HEAT` — modèle, config, pistes | L08 |
 | L10 | `v0.11.0` | Moteur `HEAT` — calcul, cadences, statistiques | L09 |
-| L11 | `v0.12.0` | Heatmaps & réglage des pistes (UI) | L10 |
+| L11 | `v0.12.0` | Heatmaps & réglage des pistes (UI) — **livré** | L10 |
 | **Jalon IV — Intelligence** | | | |
 | L12 | `v0.13.0` | Couche IA OpenRouter + analyse de repas + import Apple | L07 |
 | L13 | `v0.14.0` | Planning sport & export iCal | L12 |
@@ -597,22 +597,51 @@ calculable.
 
 **Objectif** : neuf grilles à l'écran, en un appel, explorables.
 
-- [ ] `L11-01` `GET /api/heatmap/{id}?from=&to=` : grille + stats + cadence, forme de réponse exactement conforme à `heat_backlog` §8 (`HEAT-24`)
-- [ ] `L11-02` `GET /api/heatmap?tracks=a,b,c&from=&to=` : lecture multi-pistes en une requête (`HEAT-25`)
-- [ ] `L11-03` `GET /api/heatmap/{id}/day/{date}` : détail explorable (`HEAT-29`)
-- [ ] `L11-04` Cache serveur des grilles, clé = piste + plage + version de config + ETag des sources ; invalidation à toute écriture de source ou de config (`HEAT-33`)
-- [ ] `L11-05` Test de performance : 9 pistes × 371 jours sans relire Nextcloud à chaque affichage
-- [ ] `L11-06` UI : écran Assiduité — les 9 grilles, `off` visuellement distinct de `missed` (une grille majoritairement `off` **ne doit pas se lire comme un échec**)
-- [ ] `L11-07` UI : rendu `per_week` — statut de semaine, pas de rouge au jour
-- [ ] `L11-08` UI : tiroir de détail au clic sur une cellule
-- [ ] `L11-09` UI : stat cards par piste — taux de respect, série en cours, record, total
-- [ ] `L11-10` UI : réglages des pistes — créer, réordonner, mettre en avant, changer la cadence, éditer les seuils **avec avertissement de recalcul rétroactif** (`HEAT-19`, `HEAT-20`, `HEAT-22`)
-- [ ] `L11-11` UI : neutraliser une plage (maladie, voyage, deload) et l'annuler
-- [ ] `L11-12` Palette : accent par piste tiré des 4 signaux des guidelines, niveaux en opacité `l1`–`l4`
+- [x] `L11-01` `GET /api/heatmap/{id}?from=&to=` : grille + stats + cadence, forme de réponse exactement conforme à `heat_backlog` §8 (`HEAT-24`)
+- [x] `L11-02` `GET /api/heatmap?tracks=a,b,c&from=&to=` : lecture multi-pistes en une requête (`HEAT-25`)
+- [x] `L11-03` `GET /api/heatmap/{id}/day/{date}` : détail explorable (`HEAT-29`)
+- [x] `L11-04` Cache serveur des grilles, clé = piste + plage + jour courant ; validité prouvée par l'empreinte des fichiers **réellement lus**, relevée à l'exécution (`HEAT-33`)
+- [x] `L11-05` Test de performance : 9 pistes × 371 jours sans relire Nextcloud à chaque affichage
+- [x] `L11-06` UI : écran Assiduité — les 9 grilles, `off` visuellement distinct de `missed` (une grille majoritairement `off` **ne doit pas se lire comme un échec**)
+- [x] `L11-07` UI : rendu `per_week` — statut de semaine, pas de rouge au jour
+- [x] `L11-08` UI : tiroir de détail au clic sur une cellule
+- [x] `L11-09` UI : stat cards par piste — taux de respect, série en cours, record, total
+- [x] `L11-10` UI : réglages des pistes — créer, réordonner, mettre en avant, changer la cadence, éditer les seuils **avec avertissement de recalcul rétroactif chiffré** (`HEAT-19`, `HEAT-20`, `HEAT-22`, décision **D4**)
+- [x] `L11-11` UI : neutraliser une plage (maladie, voyage, deload) et l'annuler
+- [x] `L11-12` Palette : accent par piste tiré des 4 signaux des guidelines, niveaux en opacité `l1`–`l4`
+- [x] `L11-13` `POST /api/heatmap/tracks/{id}/preview` : ampleur d'une modification avant de la valider — la dette **D4** que le lot L09 n'avait pu que signaler
 
 **DoD** — l'écran affiche 9 grilles en un appel réseau ; changer une cadence depuis
 l'UI n'altère pas le passé ; changer un seuil le recalcule, et l'utilisateur en a été
-averti avant de valider.
+averti avant de valider. ✅ **Vérifiée.**
+
+### Ce que la mesure a changé
+
+`L11-04` a été écrit **après** avoir profilé un affichage, et le profil a décidé de la
+conception. Le réseau était déjà réglé par le cache de `FileStore` (`STO-06`) : ce qui
+restait était du calcul refait à l'identique — 70 % d'analyse CSV, six mille lignes
+revalidées par affichage parce que neuf pistes rouvrent les mêmes cinq fichiers. Un cache
+visant le réseau aurait doublé un mécanisme existant sans rien gagner.
+
+Sur l'instance réelle, un aller-retour WebDAV coûte **~180 ms**. D'où le préchargement
+parallèle des sources : sans lui, un affichage après expiration du TTL paierait sept
+allers-retours mis bout à bout.
+
+| | Mesure |
+|---|---|
+| CPU par affichage, 9 pistes × 371 jours | 50 ms → 5 ms |
+| Premier affichage sur Nextcloud réel | 751 ms |
+| Affichage suivant | 6 ms |
+| Après expiration du TTL, 7 revalidations `304` | 448 ms |
+
+### Une décision de périmètre
+
+**La refonte de l'écran Activité n'a pas été incluse.** Elle reste à faire — le panneau de
+saisie des charges n'existe que si une séance est active, si bien que le regard tombe sur
+le catalogue, qui ne prend aucun chiffre. Mais elle ne partage aucun code avec les
+heatmaps : l'argument « le lot touche déjà aux écrans » ne valait rien, puisque L11 touche
+Assiduité et Réglages, pas Activité. Elle mérite son propre lot, avec ses propres tests
+d'écran — ceux qui manquaient quand le bouton « ouvrir » est resté inerte.
 
 ---
 
@@ -767,11 +796,11 @@ changement de spec, pas comme une question ouverte.
 | **D1** | Collision d'identifiants `HEAT` | `HEAT-01→08` existent avec deux sens différents dans les deux documents | La v2 fait autorité ; corriger les renvois de `SUP-06` et `HYD-01` dans `backlogV2.md` | L09 |
 | **D2** | `settings.csv` vs `settings/` | L'annexe pose `settings.csv` à la racine, la spec `HEAT` pose `settings/heatmap_tracks.csv` | Tout regrouper sous `settings/` : `settings/settings.csv` + les 3 fichiers de pistes. Un fichier et un dossier homonymes au même niveau est légal mais piégeux | L08 |
 | **D3** | Cadence des suppléments | `HEAT-23` : la cadence vient de `schedule.frequency`. `HEAT-14` : la cadence est versionnée dans `heatmap_cadences.csv`. Deux sources de vérité | `schedule.frequency` = **valeur courante éditable** (un seul endroit décrit « whey un jour sur deux ») ; `heatmap_cadences.csv` = **journal append-only** alimenté à chaque changement. Le moteur lit le journal pour juger le passé, `schedule` pour le présent. Divergence structurellement impossible | L09 |
-| **D4** | Recalcul rétroactif des seuils | `HEAT-20` : changer un seuil réécrit tout l'historique, et « doit être annoncé à l'utilisateur » | Confirmation obligatoire avant validation, avec l'ampleur chiffrée : « 34 jours passeraient de validé à manqué » | L09 / L11 |
+| **D4** | Recalcul rétroactif des seuils | `HEAT-20` : changer un seuil réécrit tout l'historique, et « doit être annoncé à l'utilisateur » | Confirmation obligatoire avant validation, avec l'ampleur chiffrée : « 34 jours passeraient de validé à manqué ». **Soldée au L11** : `POST /tracks/{id}/preview` évalue la grille deux fois et compare | L09 / L11 ✅ |
 | **D5** | Heatmap « suppléments complets » | L'ancien `HEAT-04` (jour complet = toutes les prises planifiées cochées) **n'est pas exprimable** avec les sources de la v2, qui ne connaît qu'un supplément à la fois | Le ratio du jour reste couvert par `SUP-06` au tableau de bord. Si la grille est voulue : ajouter une 7ᵉ source `supplement.completion` — coût faible, à décider une fois les pistes en place | L09 |
 | **D6** | Alignement des 371 jours | « 371 jours se terminant aujourd'hui, alignés sur des semaines commençant le lundi » : les deux conditions ne peuvent être vraies ensemble sauf si aujourd'hui est un dimanche | Retenir : `from` = lundi de la semaine d'il y a 52 semaines, `to` = dimanche de la semaine courante (53 colonnes pleines, la dernière partiellement dans le futur et rendue en `off`). L'alignement de grille prime sur la borne exacte | L10 |
 | **D7** | Groupe musculaire `autre` | `ACT-06` compte 9 valeurs, les 5 pistes par défaut n'en couvrent que 8 | `autre` reste délibérément non mappé : il ne doit pas polluer une piste. Le mapping étant une configuration, l'utilisateur peut le rattacher s'il le souhaite | L09 |
-| **D8** | Cache et écritures externes | `HEAT-33` suppose que l'invalidation suit nos écritures, mais Nextcloud est modifiable depuis un autre appareil ou un tableur | Clé de cache incluant l'ETag des fichiers sources ; le cache ne survit pas à une modification externe | L01 / L11 |
+| **D8** | Cache et écritures externes | `HEAT-33` suppose que l'invalidation suit nos écritures, mais Nextcloud est modifiable depuis un autre appareil ou un tableur | Empreinte des fichiers **réellement lus**, relevée à l'exécution plutôt que déclarée ; le cache ne survit pas à une modification externe. Prémisse vérifiée au L11 : l'instance réelle honore `If-None-Match` | L01 / L11 ✅ |
 | **D9** | `per_week` par défaut à 2 | 5 groupes × 2 = 10 créneaux musculaires hebdomadaires, plus la course *(décision ouverte du backlog `HEAT`)* | Amorcer les pistes **à partir de la fréquence réelle des 4 dernières semaines**, pas d'une constante. Nécessite des données : à faire au premier lancement, après L05 | L09 |
 | **D10** | Validation eau à 1 L | Plancher bas : valide des journées à la moitié de l'objectif *(décision ouverte)* | Passer à **1500 ml**. Le seuil de validation décide vert ou rouge ; à 1 L le vert ne veut rien dire. `HEAT-17` garde le gradient jusqu'à 2 L | L09 |
 | **D11** | Suppléments en binaire | Deux doses de whey = information perdue *(décision ouverte)* | Rester binaire par défaut : le mode gradué est déjà supporté (`HEAT-15`), il suffira de renseigner deux seuils si le besoin apparaît | L09 |
@@ -797,7 +826,7 @@ changement de spec, pas comme une question ouverte.
 |---|---|---|---|
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
-| III — Assiduité | L09 → L11 | `v0.12.0` | ▣ en cours — **L09 `v0.10.0` et L10 `v0.11.0` livrés**, reste L11 (grilles à l'écran) |
+| III — Assiduité | L09 → L11 | `v0.12.0` | ✅ **clos** — L09 `v0.10.0`, L10 `v0.11.0`, L11 `v0.12.0` |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
 

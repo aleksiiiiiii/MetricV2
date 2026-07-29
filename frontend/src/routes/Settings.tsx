@@ -13,14 +13,16 @@ import { num } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
+import { Tracks } from './settings/Tracks';
+
 import styles from './Settings.module.css';
 
 /**
- * Les réglages généralistes (`L08-08`).
+ * Les réglages généralistes (`L08-08`) et les pistes d'assiduité (`L11-10`).
  *
- * Les pistes d'assiduité — création, cadence, seuils — viendront au lot L11 : elles
- * n'existent pas encore comme données, et leur inventer une section vide ici ne
- * renseignerait personne.
+ * Les deux vivent sur le même écran parce qu'ils répondent à la même question — « qu'est-ce
+ * que je vise ? » — et parce que la piste mise en avant *est* le réglage `heatmap_metric`.
+ * Les séparer aurait obligé à expliquer deux fois où se règle la même chose.
  *
  * Un principe tient tout l'écran : **aucune valeur de repli n'est écrite côté client.**
  * Les défauts arrivent du serveur avec les valeurs effectives, et l'écran se contente de
@@ -256,7 +258,7 @@ export function Settings() {
               label="Clé de la piste"
               value={fields.heatmap_metric}
               error={refusal?.messageFor('heatmap_metric')}
-              hint={`Les pistes d’assiduité arrivent au lot L11 · défaut ${data.defaults.heatmap_metric}`}
+              hint={`Se règle aussi d’un clic depuis les pistes, plus bas · défaut ${data.defaults.heatmap_metric}`}
               onChange={set('heatmap_metric')}
             />
           </Card>
@@ -279,6 +281,8 @@ export function Settings() {
           )}
         </div>
       </form>
+
+      <Tracks />
 
       <div style={{ height: 40 }} />
     </div>

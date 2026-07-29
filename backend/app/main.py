@@ -24,6 +24,7 @@ from app.core.errors import register_error_handlers
 from app.core.security import PasswordChecker, TokenIssuer
 from app.core.throttle import LoginThrottle
 from app.domains.api import protected_router, public_router
+from app.domains.heatmap.cache import GridCache
 from app.storage.provider import StorageProvider
 
 
@@ -60,6 +61,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.password_checker = PasswordChecker(settings)
         app.state.token_issuer = TokenIssuer(settings)
         app.state.login_throttle = LoginThrottle()
+        # Les grilles se mémorisent pour toute la durée de vie du processus, et sont
+        # invalidées par la version de leurs fichiers sources et non par une horloge
+        # (`HEAT-33`, décision **D8**).
+        app.state.grid_cache = GridCache()
         try:
             yield
         finally:

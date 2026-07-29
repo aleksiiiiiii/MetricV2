@@ -89,9 +89,9 @@ function demoDays(): HeatDay[] {
     const draw = random();
 
     if (index < 40) {
-      days.push({ date: iso, value: 0, state: 'void', level: 0 });
+      days.push({ date: iso, value: 0, state: 'off', level: 0, reason: 'before_track' });
     } else if (index > 200 && index < 209) {
-      days.push({ date: iso, value: 0, state: 'neutralised', level: 0 });
+      days.push({ date: iso, value: 0, state: 'off', level: 0, reason: 'neutralised' });
     } else if (draw < 0.28) {
       days.push({
         date: iso,

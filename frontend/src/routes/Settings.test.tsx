@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Toaster } from '@/components/ui';
 import { createQueryClient } from '@/lib/query';
-import { SETTINGS } from '@/test/fixtures';
+import { SETTINGS, TRACKS } from '@/test/fixtures';
 
 import { Settings } from './Settings';
 
@@ -29,6 +29,11 @@ function stub(custom?: (url: string, init?: RequestInit) => Response | undefined
     const override = custom?.(url, init);
     if (override) return Promise.resolve(override);
 
+    // L'écran porte deux sections depuis le lot L11 : les objectifs et les pistes
+    // d'assiduité. Un stub qui répondrait les réglages à tout ferait planter la
+    // seconde sur un `data.tracks` absent — et le test dirait « écran cassé » sans
+    // que l'écran le soit.
+    if (url.includes('/api/heatmap/tracks')) return Promise.resolve(json(200, TRACKS));
     return Promise.resolve(json(200, SETTINGS));
   });
   vi.stubGlobal('fetch', fetchMock);

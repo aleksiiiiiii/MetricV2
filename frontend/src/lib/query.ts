@@ -64,6 +64,8 @@ export const keys = {
     tracks: () => ['heatmap', 'tracks'] as const,
     grid: (tracks: string[], from: string, to: string) =>
       ['heatmap', 'grid', tracks.join(','), from, to] as const,
+    /** Grilles de l'écran : toutes les pistes actives, plage par défaut du serveur. */
+    screen: () => ['heatmap', 'grid', 'all'] as const,
     day: (track: string, day: string) => ['heatmap', 'day', track, day] as const,
   },
   planning: {

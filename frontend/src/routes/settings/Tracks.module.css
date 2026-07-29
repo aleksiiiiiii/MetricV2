@@ -1,0 +1,148 @@
+/* Réglage des pistes d'assiduité (`L11-10`, `L11-11`). */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+/* Un `h3` : chaque piste est atteignable par son nom, au clavier comme au test. */
+.rowName {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.rowMeta {
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-low);
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s5);
+}
+
+@media (max-width: 640px) {
+  .form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}
+
+.select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.select span {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-low);
+}
+
+.select select {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.select select:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-size: 14px;
+  color: var(--ink-mid);
+  align-self: end;
+  padding-bottom: 10px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+.note {
+  margin-top: var(--s4);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-low);
+}
+
+.creator {
+  margin-top: var(--s4);
+}
+
+.muted {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.error {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--recover);
+  border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  line-height: 1.5;
+  margin-bottom: var(--s4);
+}
+
+/* ── Recalcul rétroactif (`HEAT-20`, décision D4) ──────
+
+   Le ton « charge » et non « alerte » : ce n'est pas une erreur, c'est une conséquence.
+   Le rouge y serait un reproche, alors que l'utilisateur n'a rien fait de mal. */
+
+.impact {
+  margin-top: var(--s5);
+  border: 1px solid rgb(var(--load-rgb) / var(--badge-border-a));
+  background: rgb(var(--load-rgb) / var(--badge-bg-a));
+  border-radius: var(--r-sm);
+  padding: var(--s4);
+}
+
+.impactList {
+  margin-top: var(--s3);
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.impactRange {
+  margin-top: var(--s3);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-low);
+}

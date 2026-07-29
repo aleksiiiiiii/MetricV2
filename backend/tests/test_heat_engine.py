@@ -20,6 +20,7 @@ import pytest
 
 from app.core.cadence import Cadence
 from app.domains.heatmap.engine import (
+    DayReason,
     DayState,
     Grid,
     OffRange,
@@ -621,3 +622,92 @@ def test_a_fully_neutralised_range_accuses_no_one(cadence: str) -> None:
     assert set(shape(grid)) == {"."}
     assert grid.stats.current_streak == 0
     assert grid.stats.compliance is None or grid.stats.expected_days == 0
+
+
+# ── Nuance d'affichage d'un `off` (lot L11) ───────────
+#
+# Quatre situations très différentes produisent le même `off`, et se ressembleraient
+# trait pour trait à l'écran sans une raison attachée à la cellule. La raison ne change
+# aucun état, aucune série, aucun taux : elle dit seulement pourquoi rien n'était dû.
+
+
+def reasons(grid: Grid) -> dict[date, DayReason | None]:
+    return {day.date: day.reason for day in grid.days}
+
+
+def test_a_day_the_cadence_did_not_ask_for_carries_no_reason() -> None:
+    """Le cas ordinaire. « Rien n'était attendu ce jour-là » est déjà porté par l'état :
+    y ajouter une raison inviterait le client à peindre quatre gris différents."""
+    grid = run(taken(-6, -4, -2), cadence=WINDOW, window=span(-6, -1))
+
+    assert grid.days[1].state is DayState.OFF
+    assert grid.days[1].reason is None
+
+
+def test_a_neutralised_day_says_it_was_neutralised() -> None:
+    grid = run({}, off_ranges=(OffRange(J(-4), J(-3)),), window=span(-6, -1))
+
+    assert reasons(grid)[J(-4)] is DayReason.NEUTRALISED
+    assert reasons(grid)[J(-3)] is DayReason.NEUTRALISED
+    assert reasons(grid)[J(-2)] is None, "hors de la plage neutralisée, le jour est jugé"
+
+
+def test_a_day_before_the_track_says_the_track_did_not_exist() -> None:
+    """`HEAT-07`. Une piste créée hier ne doit pas montrer une année de cellules qu'on
+    ne distingue pas d'une année sans rien faire."""
+    grid = run({}, created=J(-3), window=span(-6, -1))
+
+    assert reasons(grid)[J(-4)] is DayReason.BEFORE_TRACK
+    assert reasons(grid)[J(-3)] is None
+
+
+def test_a_day_still_to_come_says_so_rather_than_looking_empty() -> None:
+    grid = run({}, window=span(-1, 3))
+
+    assert reasons(grid)[J(1)] is DayReason.FUTURE
+    assert reasons(grid)[J(3)] is DayReason.FUTURE
+
+
+def test_today_says_it_is_not_over_yet() -> None:
+    """`HEAT-08`. La journée en cours n'est ni manquée ni à venir : elle est en train."""
+    grid = run({}, window=span(-1, 0))
+
+    assert reasons(grid)[J(0)] is DayReason.PENDING
+    assert reasons(grid)[J(-1)] is None, "hier, lui, est bel et bien manqué"
+
+
+def test_today_loses_its_reason_once_it_is_validated() -> None:
+    grid = run(taken(0), window=span(-1, 0))
+
+    assert grid.days[-1].state is DayState.DONE
+    assert grid.days[-1].reason is None
+
+
+def test_neutralisation_wins_over_every_other_reason() -> None:
+    """L'ordre de priorité de `evaluate` est le même dans les deux passages du moteur.
+
+    Un jour à la fois neutralisé, antérieur à la piste et à venir n'a qu'une raison, et
+    c'est la première de la liste — sans quoi la table des jours excusés et les cellules
+    peintes pourraient diverger sur ce cas limite.
+    """
+    grid = run({}, created=J(2), off_ranges=(OffRange(J(1), J(3)),), window=span(0, 3))
+
+    assert reasons(grid)[J(1)] is DayReason.NEUTRALISED
+    assert reasons(grid)[J(2)] is DayReason.NEUTRALISED
+
+
+@pytest.mark.parametrize("cadence", CADENCES)
+def test_a_reason_never_appears_on_a_day_that_counts(cadence: str) -> None:
+    """La raison est réservée aux `off`. Un `done` ou un `missed` qui en porterait une
+    laisserait croire qu'il ne compte pas."""
+    grid = run(
+        taken(*range(-30, 1, 2)),
+        cadence=cadence,
+        created=J(-20),
+        off_ranges=(OffRange(J(-10), J(-9)),),
+        window=span(-30, 2),
+    )
+
+    for day in grid.days:
+        if day.state is not DayState.OFF:
+            assert day.reason is None

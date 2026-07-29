@@ -30,6 +30,7 @@ from app.domains.activity.service import ExerciseService, RunService, WorkoutSer
 from app.domains.aggregates.service import DashboardService
 from app.domains.hydration.service import HydrationService
 from app.domains.supplements.service import SupplementService
+from app.storage import paths
 from app.storage.files import FileStore
 
 #: Séparateur des listes internes à une cellule (`STO-02`).
@@ -273,6 +274,15 @@ class Source:
     load: Callable[[FileStore, str], Awaitable[dict[date, float]]]
     #: Ce qui compose la valeur d'un jour (`HEAT-29`). Chaque cellule est explorable.
     explain: Callable[[FileStore, str, date], Awaitable[list[DayDetail]]] | None = None
+    #: Fichiers que `load` ouvre, pour les précharger **en parallèle** avant d'évaluer
+    #: neuf grilles (`HEAT-33`).
+    #:
+    #: C'est une déclaration, donc une chose qui peut mentir. Elle ne sert qu'à préparer
+    #: le cache et jamais à décider de sa validité — l'invalidation, elle, s'appuie sur
+    #: les lectures réellement observées. Une déclaration incomplète coûte un
+    #: aller-retour, pas une grille fausse ; `test_declared_paths_match_what_is_read` la
+    #: compare aux lectures effectives.
+    paths: tuple[str, ...] = ()
 
 
 SOURCES: dict[str, Source] = {
@@ -285,6 +295,7 @@ SOURCES: dict[str, Source] = {
             filter_label="Groupes musculaires",
             load=_muscle_group,
             explain=_muscle_group_detail,
+            paths=(paths.EXERCISE_LOG,),
         ),
         Source(
             key="activity.runs",
@@ -293,6 +304,7 @@ SOURCES: dict[str, Source] = {
             filter_label=None,
             load=_runs,
             explain=_runs_detail,
+            paths=(paths.RUNS,),
         ),
         Source(
             key="activity.duration",
@@ -301,6 +313,7 @@ SOURCES: dict[str, Source] = {
             filter_label=None,
             load=_duration,
             explain=_duration_detail,
+            paths=(paths.RUNS, paths.WORKOUTS),
         ),
         Source(
             key="supplement.intake",
@@ -309,6 +322,7 @@ SOURCES: dict[str, Source] = {
             filter_label="Supplément",
             load=_supplement_intake,
             explain=_supplement_detail,
+            paths=(paths.SUPPLEMENT_LOG,),
         ),
         Source(
             key="hydration.intake",
@@ -317,6 +331,7 @@ SOURCES: dict[str, Source] = {
             filter_label=None,
             load=_hydration_intake,
             explain=_hydration_detail,
+            paths=(paths.HYDRATION_LOG,),
         ),
         Source(
             key="entry_count",
@@ -325,9 +340,26 @@ SOURCES: dict[str, Source] = {
             filter_label=None,
             load=_entry_count,
             explain=_entry_count_detail,
+            # Les sept domaines de `AGG-03`, et c'est la source la plus chère du
+            # catalogue : à elle seule elle ouvre autant de fichiers que les cinq autres.
+            paths=(
+                paths.WEIGHT,
+                paths.MEASUREMENTS,
+                paths.RUNS,
+                paths.WORKOUTS,
+                paths.MEALS,
+                paths.HYDRATION_LOG,
+                paths.SUPPLEMENT_LOG,
+            ),
         ),
     )
 }
+
+
+def source_paths(source: str) -> tuple[str, ...]:
+    """Fichiers qu'une source ouvrira. Vide pour une source inconnue."""
+    known = SOURCES.get(source)
+    return known.paths if known else ()
 
 
 async def daily_values(store: FileStore, source: str, filter_: str) -> dict[date, float]:

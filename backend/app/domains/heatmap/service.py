@@ -246,11 +246,18 @@ class TrackService:
 
         # Ce qui redéfinit « validé » rejuge tout le passé ; ce qui décrit un engagement
         # ne vaut que pour l'avenir. La différence est annoncée, pas subie (`HEAT-20`).
+        #
+        # La source et le filtre en font partie : rebrancher une piste de « pectoraux »
+        # sur « jambes » réécrit son historique aussi sûrement qu'un seuil déplacé. Ils
+        # manquaient à cette liste au lot L09, et la modification passait donc pour
+        # non rétroactive alors qu'elle changeait toute la grille.
         levels = _levels_to_text(payload.levels)
         retroactive = (
             payload.validation_threshold != before.validation_threshold
             or levels != before.levels
             or payload.binary != before.binary
+            or payload.source != before.source
+            or payload.filter != before.filter
         )
 
         await self._tracks.replace_by_token(
@@ -278,8 +285,8 @@ class TrackService:
         warnings: list[str] = []
         if retroactive:
             warnings.append(
-                "Les seuils ont changé : tout l'historique de cette piste est rejugé, "
-                "y compris les journées déjà passées."
+                "La définition de « validé » a changé : tout l'historique de cette piste "
+                "est rejugé, y compris les journées déjà passées."
             )
         if changed_cadence:
             warnings.append(
@@ -600,9 +607,9 @@ class TrackService:
             position=model.position,
             active=model.active,
             created=model.created,
-            cadence=_cadence_view(cadence, None),
+            cadence=cadence_view(cadence, None),
             cadence_history=[
-                _cadence_view(self._read_cadence(entry), entry.valid_from) for entry in entries
+                cadence_view(self._read_cadence(entry), entry.valid_from) for entry in entries
             ],
         )
 
@@ -658,7 +665,12 @@ def _params_text(cadence: Cadence) -> str:
     return ";".join(f"{name}={value}" for name, value in sorted(cadence.params.items()))
 
 
-def _cadence_view(cadence: Cadence, valid_from: date | None) -> CadenceView:
+def cadence_view(cadence: Cadence, valid_from: date | None) -> CadenceView:
+    """Cadence prête à afficher, libellé français compris (`HEAT-30`).
+
+    Publique parce que les grilles s'en servent aussi : la cadence en vigueur accompagne
+    chaque grille, et la reformuler côté client est précisément ce que `HEAT-30` interdit.
+    """
     return CadenceView(
         type=str(cadence.type),
         params=dict(cadence.params),

@@ -42,8 +42,12 @@
   background: var(--surface-2);
 }
 
-/* Hors plage : avant la création de la piste (`HEAT-07`), ou dans le futur. La cellule
-   existe pour que la grille garde sa géométrie, mais elle ne dit rien. */
+/* Avant la création de la piste (`HEAT-07`). La cellule existe pour que la grille garde
+   sa géométrie, mais elle ne dit rien — il n'y avait alors rien à tenir.
+
+   Les jours **à venir**, eux, ne passent pas par ici : la plage va jusqu'au dimanche de
+   la semaine en cours, et en faire des trous donnerait à chaque grille une entaille
+   hebdomadaire qui ne veut rien dire. Ils sont peints comme les autres `off`. */
 .void {
   background: transparent;
   border-color: transparent;
@@ -87,6 +91,13 @@
   box-shadow: inset 0 0 0 1px rgb(var(--effort-rgb) / 0.7);
 }
 
+/* Aujourd'hui. Repère de lecture, sans état propre : la journée n'est pas finie, et le
+   cadre ne dit rien de plus que « c'est ici que tu en es ». */
+.today {
+  outline: 1px solid var(--ink-mid);
+  outline-offset: 1px;
+}
+
 /* ── Semaines (`HEAT-11`, `HEAT-28`) ──────────────── */
 
 /* Pour une piste `per_week`, c'est la semaine qui porte le statut, jamais le jour. */
@@ -114,6 +125,10 @@
 .weekMissed {
   background: var(--recover);
 }
+
+/* Semaine `off` : antérieure à la piste, neutralisée, ou pas encore arrivée. Elle garde
+   la teinte neutre de la bande — lui donner une couleur serait lui faire dire quelque
+   chose qu'elle n'a pas à dire (`HEAT-07`). */
 
 /* ── Mois et légende ──────────────────────────────── */
 
