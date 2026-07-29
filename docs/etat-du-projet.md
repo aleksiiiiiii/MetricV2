@@ -210,17 +210,26 @@ backend/app/
 │   ├── security.py    Argon2id + JWT
 │   └── deps.py        dépendances FastAPI
 ├── storage/           WebDAV, cache (contenu **et** absence), dépôt CSV typé
+│                      `files.py` sait aussi dire ce qu'il a lu (`observe`) et
+│                      lire en parallèle (`prefetch`) ← à réutiliser
 └── domains/<nom>/     models · schemas · service · router
-                       (activity a un `stats.py` de plus ; heatmap a `engine.py`
-                        — pur —, `grids.py` — la couture — et `sources.py` ;
-                        aggregates n'a pas de `models.py`, c'est le seul domaine
-                        sans fichier à lui)
+                       (activity a un `stats.py` de plus ; aggregates n'a pas de
+                        `models.py`, c'est le seul domaine sans fichier à lui)
+
+backend/app/domains/heatmap/   le domaine le plus découpé, et la frontière compte
+├── engine.py          **juge** — pur, sans fichier ni horloge. Toute règle vit ici
+├── grids.py           **coud** — ingrédients → moteur → formes publiées
+├── sources.py         registre : une source rend un nombre par jour, rien d'autre
+├── cache.py           grilles mémorisées, invalidées par la version de leurs sources
+└── service.py         pistes, cadences versionnées, jours neutralisés
 
 frontend/src/
 ├── components/ui/     bibliothèque de la charte
 ├── features/<nom>/    types + appels d'un domaine, aucun calcul
 ├── lib/               api, auth, query, format, cx
 └── routes/            un écran par domaine
+                       (`settings/` regroupe les sections de l'écran Réglages,
+                        qui en porte deux depuis le L11)
 ```
 
 **Avant d'ajouter un domaine, lire [`docs/patron-domaine.md`](patron-domaine.md).** Il
