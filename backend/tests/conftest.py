@@ -10,10 +10,14 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.core.security import hash_password
+from app.domains.ai.client import OpenRouterClient
+from app.domains.ai.service import AiProvider, AiService, ModelCatalogue
 from app.main import create_app
 from app.storage.cache import FileCache
 from app.storage.files import FileStore
+from app.storage.provider import StorageProvider
 from app.storage.webdav import WebDavClient
+from tests.fake_openrouter import FakeOpenRouter, free_model
 from tests.fake_webdav import FakeWebDav
 
 #: Compte de test. Le hash est calculé une fois pour toute la session : Argon2 est lent
@@ -123,3 +127,64 @@ def store(webdav: WebDavClient, cache: FileCache) -> FileStore:
     # tests qui comptent les requêtes.
     store._known_collections.update({"body", "activity", "settings", "hydration", "supplements"})
     return store
+
+
+# ── Couche IA ─────────────────────────────────────────
+#
+# Aucune de ces fixtures ne touche le vrai OpenRouter, et c'est une contrainte du lot :
+# un test qui l'appellerait ne serait pas déterministe, donc pas rejouable en CI.
+
+
+@pytest.fixture
+def openrouter() -> FakeOpenRouter:
+    """Faux service, avec un catalogue gratuit plausible par défaut.
+
+    Deux modèles vision et un modèle texte : de quoi vérifier que la cascade descend, et
+    qu'elle ne descend pas jusqu'au modèle qui ne lit pas les images (`IA-04`).
+    """
+    return FakeOpenRouter(
+        models=[
+            free_model("vendeur/grand-vision-70b", vision=True),
+            free_model("vendeur/petit-vision-8b", vision=True, context=64000),
+            free_model("vendeur/texte-seul-13b", vision=False),
+        ]
+    )
+
+
+@pytest.fixture
+async def ai_client(openrouter: FakeOpenRouter) -> AsyncIterator[OpenRouterClient]:
+    client = OpenRouterClient(
+        api_key="cle-de-test",
+        base_url="https://openrouter.test/api/v1",
+        transport=httpx2.ASGITransport(app=openrouter),
+    )
+    try:
+        yield client
+    finally:
+        await client.aclose()
+
+
+@pytest.fixture
+def ai_service(ai_client: OpenRouterClient) -> AiService:
+    return AiService(ai_client, ModelCatalogue(ai_client))
+
+
+@pytest.fixture
+def store_client(client: TestClient, store: FileStore) -> TestClient:
+    """Application dont le stockage est branché sur le double, **sans** assistance IA.
+
+    C'est la configuration de référence de `IA-07` : tout doit fonctionner ainsi.
+    """
+    provider = client.app.state.storage  # type: ignore[attr-defined]
+    assert isinstance(provider, StorageProvider)
+    provider.use(store)
+    return client
+
+
+@pytest.fixture
+def ai_app_client(store_client: TestClient, ai_client: OpenRouterClient) -> TestClient:
+    """Application dont le stockage **et** l'assistance sont branchés sur des doubles."""
+    ai = store_client.app.state.ai  # type: ignore[attr-defined]
+    assert isinstance(ai, AiProvider)
+    ai.use(ai_client)
+    return store_client

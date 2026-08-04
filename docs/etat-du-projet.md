@@ -3,14 +3,14 @@
 Document d'entrée. À lire en premier pour reprendre le développement de **Metric** sans
 contexte préalable — que ce soit dans trois mois ou dans une nouvelle session.
 
-**Version courante : `v0.12.2`** · douze lots livrés sur dix-huit. **Le jalon III est
-clos** : le moteur d'assiduité calcule, et il a désormais ses écrans. La dette
-d'ergonomie qu'il laissait derrière lui est soldée ; **le prochain travail est le lot L12**.
+**Version courante : `v0.13.0`** · treize lots livrés sur dix-huit. Le jalon IV est
+**ouvert** : la couche IA existe, elle estime une assiette et lit une capture Apple. Sa
+DoD est vérifiée **à moitié** — voir le §7, qui dit ce qui reste et pourquoi.
 
-| Mesure | Valeur *(vérifiée le 2026-07-28)* |
+| Mesure | Valeur *(vérifiée le 2026-07-30)* |
 |---|---|
-| Tests backend | **655**, dont 35 de sécurité sur les photos et **135 sur le moteur d'assiduité** |
-| Tests frontend | **149**, dont 21 sur le seul parcours de saisie d'une séance |
+| Tests backend | **775**, dont 35 de sécurité sur les photos, **135 sur le moteur d'assiduité** et **120 sur la couche IA** |
+| Tests frontend | **177**, dont 28 sur les parcours d'estimation et d'import |
 | Couverture du moteur | **100 %** de `heatmap/engine.py` |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
 | Build de production | 120 ko gzip |
@@ -170,6 +170,31 @@ Trois règles encadrent le glissement, et elles ont chacune coûté quelque chos
 
 Le geste a **une seule implémentation**, `lib/swipe.ts`. Deux en donneraient deux seuils.
 
+### Une valeur proposée n'est pas une mesure
+
+Ce qu'un modèle rend est **proposé** : affiché comme tel — trait discontinu, teinte du bloc
+IA, `aria-description` —, corrigeable au doigt, et jamais écrit sans validation
+(`NUT-04`, `IMP-02`). Retoucher une proposition la fait sienne, et la marque disparaît.
+
+C'est « aucune valeur inventée à l'écran » appliqué à l'estimation, et c'est le cas
+**difficile** : un zéro se repère, un chiffre inventé par un modèle est plausible.
+
+Deux corollaires, qui ont chacun une raison :
+
+- **Hors bornes, on écarte ; on ne ramène pas à la borne.** 4000 g de protéines ramenés à
+  500 g donneraient une valeur fausse d'apparence honnête.
+- **Une réponse tronquée ne rend rien.** Compléter des accolades manquantes reviendrait à
+  inventer les valeurs qu'elles contenaient. On passe au modèle suivant (`IA-03`).
+
+### Sans clé, rien n'est bloqué
+
+`IA-07` : l'IA est un confort, jamais un prérequis. Sans clé, `AiServiceDep` fait échouer
+l'endpoint avec un code du catalogue — l'appelant n'a rien à vérifier lui-même —, les
+écrans ne proposent simplement pas l'assistance, et `/reglages` dit ce qui manque.
+
+C'est « un fichier de configuration ne fait jamais tomber un écran », appliqué à une
+dépendance externe.
+
 ### Les erreurs portent un code, pas un texte
 
 Le client décide sur `code` (`API-07`), jamais sur le message. Le message vient du serveur,
@@ -206,6 +231,7 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 | L11 | `v0.12.0` | Heatmaps à l'écran, cache de grilles mesuré, réglage des pistes — **clôt le jalon III** |
 | L11b | `v0.12.1` | Refonte de l'écran Activité — *dette soldée, pas un lot* |
 | L11c | `v0.12.2` | Passe tactile : charte + écran Activité — *avance `L17-07`* |
+| L12 | `v0.13.0` | Couche IA OpenRouter, estimation d'assiette, import Apple — **ouvre le jalon IV** |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -239,8 +265,20 @@ backend/app/
 │                      `files.py` sait aussi dire ce qu'il a lu (`observe`) et
 │                      lire en parallèle (`prefetch`) ← à réutiliser
 └── domains/<nom>/     models · schemas · service · router
-                       (activity a un `stats.py` de plus ; aggregates n'a pas de
-                        `models.py`, c'est le seul domaine sans fichier à lui)
+                       (activity a un `stats.py` de plus ; aggregates, ai et imports
+                        n'ont pas de `models.py` — ils ne possèdent aucun fichier CSV)
+
+backend/app/domains/ai/        la couche IA, sans fichier ni domaine métier
+├── client.py          transport OpenRouter, et la distinction quota / panne
+├── service.py         cascade bornée, catalogue mémorisé une heure, cycle de vie
+├── extract.py         lire un JSON dans de la prose, sans jamais compléter
+├── images.py          1024 px, JPEG, data URL
+└── deps.py            `AiServiceDep` — sans clé, l'endpoint ne s'exécute pas
+
+backend/app/domains/imports/   n'écrit que dans les fichiers du domaine Activité
+├── analysis.py        consigne au modèle, relecture, conversions (`IMP-03`)
+├── service.py         `analyze` ne sait pas écrire, `confirm` ne lit aucune image
+└── schemas.py         brouillon (tout nullable) et charge utile (bornée)
 
 backend/app/domains/heatmap/   le domaine le plus découpé, et la frontière compte
 ├── engine.py          **juge** — pur, sans fichier ni horloge. Toute règle vit ici
@@ -268,8 +306,24 @@ de tests à écrire, et une liste de reprise.
 
 ```bash
 make console      # console interactive : start / stop / status / logs
+make dev          # API + frontend, en local uniquement
+make dev-lan      # idem, mais joignable depuis un téléphone du réseau
 make check        # lint + types + tests, des deux côtés — ce que rejoue la CI
 ```
+
+### Ouvrir l'application sur un téléphone
+
+`make dev-lan` annonce l'URL à saisir (`http://<ip>:5180/`). Trois choses à savoir :
+
+- **Seul le frontend est exposé.** Le proxy de Vite relaie `/api` depuis la machine de
+  développement vers `127.0.0.1:8000` : l'API — donc les identifiants Nextcloud et le
+  secret JWT — reste injoignable depuis le réseau. Ne pas ajouter `--host` à uvicorn.
+- **Port dédié `5180`, en `--strictPort`**, et non le 5173 habituel. Vite ne cherche un
+  port libre que sur l'adresse qu'il va écouter : un autre projet tenant `[::1]:5173`
+  laisse `*:5173` libre, les deux serveurs démarrent, et l'application obtenue dépend de
+  l'adresse tapée. Sur un téléphone, c'est indémêlable. Le cas s'est produit.
+- **C'est du `http://` en clair**, sur un réseau de confiance seulement. Le jour où le lot
+  L15 amènera la PWA, les service workers exigeront un contexte sécurisé.
 
 `make check` doit être vert avant tout commit. Il couvre `ruff`, `mypy --strict`,
 `pytest`, `prettier`, `eslint`, `tsc --noEmit` et `vitest`.
@@ -382,43 +436,83 @@ référence exclusive.
 
 ---
 
-## 7. Prochain lot — L12
+## 7. Où en est le lot L12, et ce qu'il reste
 
-**Couche IA + analyse de repas + import Apple.** Il ouvre le jalon IV.
+**Couche IA + estimation de repas + import Apple** — livré en `v0.13.0`, DoD vérifiée
+**à moitié**. Le lot n'est donc pas clos : la convention du projet ne connaît pas le
+« clos à 90 % ».
 
-Son UI se greffe sur un écran désormais tactile : le bloc IA, l'aperçu d'import et le
-bouton « Pas d'accord » suivent les règles du §2 — plancher de 44 px, mobile d'abord, et
-les contrôles de `primitives.tsx` (`Stepper`, `Chip`, `ChipStrip`, `SwipeRow`) plutôt que
-de nouveaux. Une valeur **proposée** par l'IA se corrige au doigt, sinon elle sera adoptée
-telle quelle faute de pouvoir la retoucher — ce qui viderait `NUT-04` de son sens.
+**Ce qui est vérifié** : sans clé, aucune fonctionnalité n'est bloquée. L'état répond en
+disant ce qui manque, les endpoints IA refusent avec un code du catalogue, et la saisie
+manuelle comme la validation d'un import écrivent normalement.
 
-Le contrat structurant est `IA-07` : **sans clé API, aucune fonctionnalité n'est bloquée.**
-L'application reste pleinement utilisable en saisie manuelle, et le manque de clé se dit
-en clair plutôt que de faire échouer un écran. C'est la même règle que « un fichier de
-configuration ne fait jamais tomber un écran », appliquée à une dépendance externe.
+**`IA-02` a été passé pour de bon le 2026-07-31** : 365 modèles publiés, 15 retenus,
+6 vision. Le filtrage tient — et il a fallu le corriger deux fois, voir plus bas.
 
-Trois points à ne pas manquer, tous déjà écrits dans le backlog :
+**Ce qui reste** : passer une vraie capture dans un vrai modèle. C'est la seule chose que
+la simulation ne peut pas dire, et elle **demande un accord préalable**, chaque fois.
 
-- **La cascade multi-modèles** (`IA-03`) doit distinguer « quota saturé » de « autre
-  erreur ». Les deux mènent à un échec, mais l'un se résout en attendant et l'autre non —
-  et l'utilisateur n'a pas la même conduite à tenir.
-- **Ce que l'IA propose n'est jamais imposé** (`NUT-04`, `IMP-02`). Les valeurs proposées
-  doivent être visuellement distinctes des valeurs saisies, et rien ne s'écrit sans
-  validation. C'est le pendant de « aucune valeur inventée à l'écran ».
-- **Les conversions de l'import Apple laissent vide ce qu'elles ne savent pas**
-  (`IMP-03`). Une valeur absente reste absente ; la deviner ferait entrer une mesure
-  fausse dans un fichier qui est censé rester exploitable dans dix ans.
+**Le modèle configuré est payant, et c'est voulu.** `OPENROUTER_MODEL` vaut
+`anthropic/claude-sonnet-5` : il passe en tête de cascade, il lit une capture bien mieux
+qu'un 31B gratuit, et une analyse coûte de l'ordre d'un centime. Les gratuits sont le
+repli. Vider le réglage suffit à revenir au tout-gratuit.
 
-**La clé OpenRouter est configurée** (`ai_enabled` vrai au démarrage). La conduite arrêtée
-le 2026-07-29 : **développement et tests intégralement sur réponses simulées** — `L12-16`
-l'exige de toute façon (JSON bavard, JSON tronqué, `429` en cascade, aucune clé). Le vrai
-service n'est appelé que pour les deux choses qui ne se simulent pas — la découverte des
-modèles gratuits (`IA-02`, dont le catalogue réel change en permanence) et une passe de
-bout en bout sur un vrai screenshot à la DoD — **et jamais sans accord préalable**. Tout
-test qui appellerait réellement OpenRouter reste hors de `make check` : il ne serait pas
-déterministe.
+### Ce que la couche IA a posé, et qui resservira
 
-### Ce que L11 laisse en place
+Trois lots l'attendent : le planning (`PLAN-03`), les objectifs (`GOAL-*`) et le bilan
+hebdomadaire (`IA-08`). Ils n'auront ni modèle à choisir ni cascade à écrire.
+
+| Pièce | Où | Ce qu'elle fait |
+|---|---|---|
+| `AiService.ask_json` | `domains/ai/service.py` | consigne + image → dictionnaire, ou une erreur qui distingue quota et panne |
+| `ModelCatalogue` | `domains/ai/service.py` | modèles gratuits découverts, filtrés, classés, mémorisés une heure |
+| `first_json_object` | `domains/ai/extract.py` | lit un JSON dans de la prose, sans jamais compléter ce qui manque |
+| `prepare_data_url` | `domains/ai/images.py` | 1024 px, JPEG, data URL |
+| `AiServiceDep` | `domains/ai/deps.py` | sans clé, l'endpoint ne s'exécute pas — rien à vérifier soi-même |
+| `AiBlock`, `Stepper proposed` | `components/ui/primitives.tsx` | dire à l'écran qu'une valeur est proposée, et la laisser corriger |
+| `tests/fake_openrouter.py` | tests | scénariser un `429`, un JSON tronqué, un catalogue sans vision |
+
+### Les règles que ce lot a ajoutées aux invariants
+
+**Une valeur proposée n'est pas une mesure**, et l'écran doit le montrer. C'est « aucune
+valeur inventée à l'écran » appliqué à l'estimation — en plus difficile, parce qu'un
+chiffre inventé par un modèle est *plausible*, là où un zéro se repère.
+
+**Hors bornes, on écarte ; on ne ramène pas à la borne.** 4000 g de protéines ramenés à
+500 g donneraient une valeur fausse d'apparence honnête. Le champ reste vide.
+
+**Le modèle lit, il ne convertit pas.** Miles, `28:45`, dates relatives : une seule
+grammaire, celle de `app/core/parsing.py`, la même que pour une saisie au clavier.
+
+**Une réponse tronquée ne rend rien.** Compléter des accolades manquantes reviendrait à
+inventer les valeurs qu'elles contenaient.
+
+### Ce que la passe réelle a appris, et qu'il faut retenir
+
+Deux entrées du vrai catalogue passaient le filtre à tort, et **aucune simulation
+n'aurait eu l'idée de les écrire** :
+
+| Entrée | Ce qu'elle annonce | Pourquoi elle passait |
+|---|---|---|
+| `openrouter/auto` | `pricing.prompt = "-1"` | sentinelle « variable » : le routeur facture le tarif du modèle vers lequel il route. Le test était « pas strictement positif » |
+| `google/lyria-3-clip-preview` | `output_modalities = ["text", "audio"]` | générateur de musique. Le test était « `text` est parmi les sorties » |
+
+Un prix doit désormais valoir **exactement zéro**, et un modèle retenu doit rendre **du
+texte et rien d'autre**. Le catalogue passe de 22 retenus à 15, de 10 vision à 6.
+
+C'est la même leçon que le §6 répète depuis trois lots : la batterie simulée était verte
+sur les deux. **Une entrée réelle a des formes que personne n'invente.**
+
+### Ce qui reste ouvert dans le lot
+
+- **Aucune vraie capture n'est passée dans un vrai modèle.** Toute la chaîne est couverte
+  contre le double ASGI ; ce qu'il ne peut pas dire, c'est si un modèle lit réellement un
+  écran Apple Fitness. C'est la moitié de DoD qui manque.
+- **Le HEIC n'est pas analysable** — écart assumé. Pillow demanderait `pillow-heif` et sa
+  chaîne native ; une photo au format iPhone par défaut reçoit un refus explicite et le
+  repas s'enregistre normalement.
+
+### Ce que L11 laisse en place, toujours valable
 
 | Pièce | Où |
 |---|---|

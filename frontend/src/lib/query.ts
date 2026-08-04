@@ -79,6 +79,11 @@ export const keys = {
   settings: {
     all: () => ['settings'] as const,
   },
+  ai: {
+    all: () => ['ai'] as const,
+    /** État de l'assistance (`IA-07`) — lu une fois, il ne change pas en cours de session. */
+    status: () => ['ai', 'status'] as const,
+  },
 } as const;
 
 /**

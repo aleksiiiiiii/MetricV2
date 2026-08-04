@@ -1,6 +1,6 @@
 [project]
 name = "metric-backend"
-version = "0.12.2"
+version = "0.13.0"
 description = "Metric — API de suivi sportif personnel, stockage CSV sur Nextcloud"
 requires-python = ">=3.12"
 dependencies = [
@@ -16,6 +16,11 @@ dependencies = [
   "python-dateutil>=2.9",
   # Téléversement de photos de repas (`NUT-01`) : FastAPI en dépend pour le multipart.
   "python-multipart>=0.0.20",
+  # Préparation des images avant envoi à un modèle vision (`IA-06`) : redimensionnement
+  # et conversion JPEG. Côté serveur et non côté navigateur, parce qu'une photo **déjà
+  # rangée** sur Nextcloud doit pouvoir être analysée elle aussi — un canvas ne la voit
+  # jamais.
+  "pillow>=11.0",
 ]
 
 [project.optional-dependencies]

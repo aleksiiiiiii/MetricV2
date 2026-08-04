@@ -136,3 +136,21 @@ class AiQuotaError(MetricError):
     code = "ai_quota"
     status_code = 503
     message = "Quota des modèles gratuits épuisé. Réessaie plus tard."
+
+
+class AiUnreadableError(MetricError):
+    """Le modèle a répondu, mais l'image ne portait pas ce qu'on y cherchait (`IMP-06`).
+
+    Distinct de `ai_unavailable` : la chaîne a fonctionné de bout en bout, c'est la
+    **capture** qui ne convient pas. La conduite à tenir n'est donc pas d'attendre mais de
+    refaire la capture — ou de saisir à la main, ce qui reste toujours possible.
+
+    `422` et non `503` : rien n'est en panne, l'entrée ne convient pas.
+    """
+
+    code = "ai_unreadable"
+    status_code = 422
+    message = (
+        "Cette capture n'a pas pu être lue. Réessaie avec une capture entière de l'écran "
+        "de résumé, ou saisis les valeurs à la main."
+    )

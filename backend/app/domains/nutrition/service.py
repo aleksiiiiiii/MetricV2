@@ -6,7 +6,10 @@ import secrets
 from datetime import date, datetime
 
 from app.core.dates import local_day_of, now_local
+from app.domains.ai.images import prepare_data_url
+from app.domains.ai.service import AiService
 from app.domains.app_settings.service import SettingsService
+from app.domains.nutrition.analysis import INSTRUCTION, PROMPT, read_estimate
 from app.domains.nutrition.models import TYPE_BY_HOUR, FavoriteRow, MealRow, MealType
 from app.domains.nutrition.photos import build_path, content_type, storage_path
 from app.domains.nutrition.schemas import (
@@ -14,6 +17,7 @@ from app.domains.nutrition.schemas import (
     Favorite,
     FavoritePayload,
     Meal,
+    MealEstimate,
     MealPayload,
     NutritionView,
 )
@@ -159,13 +163,16 @@ class NutritionService:
                 datetime_=payload.datetime or existing.datetime_,
                 meal_type=payload.meal_type,
                 comment=payload.comment,
-                # Photo et source d'origine préservées (`NUT-09`) : corriger une macro
-                # estimée par l'IA ne supprime pas la photo ni ne réécrit la provenance.
+                # Photo préservée (`NUT-09`) : corriger une macro ne fait pas perdre
+                # l'image, qui est souvent la seule trace du repas.
                 photo=existing.photo,
                 protein_g=payload.protein_g,
                 added_sugar_g=payload.added_sugar_g,
                 calories=payload.calories,
-                source=existing.source,
+                # Provenance préservée par défaut : corriger une macro estimée ne la
+                # réécrit pas en saisie manuelle. Elle ne change que si la requête le
+                # demande — accepter une estimation sur un repas déjà relevé.
+                source=payload.source or existing.source,
             ),
         )
         return self._to_schema(row)
@@ -185,6 +192,43 @@ class NutritionService:
         if not data:
             raise StorageNotFoundError("Cette photo n'existe pas.")
         return data, content_type(relative)
+
+    # ── Estimation assistée (`NUT-04`) ────────────────
+
+    @staticmethod
+    async def estimate(ai: AiService, photo: bytes) -> MealEstimate:
+        """Propose des macros pour une assiette. **N'écrit rien** (`NUT-04`).
+
+        Volontairement statique : cette opération ne touche pas au stockage, et le dire
+        dans la signature vaut mieux que le promettre en commentaire.
+        """
+        payload = await ai.ask_json(
+            instruction=INSTRUCTION,
+            prompt=PROMPT,
+            image_url=prepare_data_url(photo),
+            # Une estimation tient en cinq nombres : au-delà, on paie le monologue d'un
+            # modèle à raisonnement visible, que l'extraction jettera de toute façon.
+            max_tokens=500,
+        )
+        return read_estimate(payload)
+
+    async def estimate_meal(self, ai: AiService, index: int) -> MealEstimate:
+        """Estime les macros d'un repas **déjà enregistré**, depuis sa photo rangée.
+
+        C'est le cas courant et non l'exception : l'écran promet qu'« une photo suffit,
+        les chiffres peuvent venir après ». Sans cette porte, « après » n'existerait que
+        pour les repas dont on a gardé le fichier d'origine sous la main.
+        """
+        rows = await self._meals.read_all()
+        if not 0 <= index < len(rows):
+            raise StorageNotFoundError("Ce repas n'existe pas.")
+
+        relative = rows[index].model.photo
+        if not relative:
+            raise StorageNotFoundError("Ce repas n'a pas de photo à analyser.")
+
+        data, _ = await self.read_photo(relative)
+        return await self.estimate(ai, data)
 
     # ── Favoris (`NUT-10`) ────────────────────────────
 

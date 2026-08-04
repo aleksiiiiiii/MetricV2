@@ -12,6 +12,7 @@ deux analyseurs finiraient par diverger.
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 
 #: `44:12` ou `1:18:44`, avec ou sans espaces.
 _CLOCK = re.compile(r"^(?:(\d+):)?(\d{1,2}):(\d{1,2}(?:[.,]\d+)?)$")
@@ -99,6 +100,111 @@ def parse_distance_km(raw: str | float | int) -> float:
         if text.endswith(suffix):
             return parse_decimal(text.removesuffix(suffix)) * _MILES_PER_KM
     return parse_decimal(text.removesuffix("km"))
+
+
+#: `2026-07-30`, la forme demandée au modèle et la seule qui n'a pas d'ambiguïté.
+_ISO_DAY = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+
+#: `30/07/2026`, `30/07`, `30-07`. L'ordre est jour puis mois : une capture d'un appareil
+#: réglé en français ne s'écrit pas autrement, et l'inverse serait indécidable au-delà du 12.
+_DAY_MONTH = re.compile(r"^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?$")
+
+#: `il y a 3 jours`, `il y a 1 jour`, une fois les espaces retirés.
+_DAYS_AGO = re.compile(r"^ilya(\d+)jours?$")
+
+#: Décalages nommés, tels qu'une capture ou un modèle les écrivent.
+_NAMED_OFFSETS: dict[str, int] = {
+    "aujourdhui": 0,
+    "cejour": 0,
+    "hier": 1,
+    "avanthier": 2,
+}
+
+#: Jours de la semaine, pour « lundi » — qui désigne le lundi **écoulé**, jamais le suivant.
+_WEEKDAYS: dict[str, int] = {
+    "lundi": 0,
+    "mardi": 1,
+    "mercredi": 2,
+    "jeudi": 3,
+    "vendredi": 4,
+    "samedi": 5,
+    "dimanche": 6,
+}
+
+
+def parse_day(raw: str, *, today: date) -> date | None:
+    """Date absolue et **non future**, à partir de ce qu'une capture peut porter (`IMP-03`).
+
+    Une capture Apple écrit « Hier », « Lundi », « 30/07 » ou une date complète selon
+    l'écran et la langue de l'appareil. Toutes désignent un jour passé : on relève ce qui
+    a eu lieu.
+
+    Le repli est `None` — **jamais une date choisie par défaut**. Une date inventée entrerait
+    silencieusement dans `runs.csv` et y resterait des années ; un champ vide se remplit en
+    deux secondes, et l'écran le montre vide.
+
+    | Saisie           | Rendu, un 30/07/2026 (jeudi)                      |
+    |------------------|---------------------------------------------------|
+    | `2026-07-28`     | le 28 juillet 2026                                |
+    | `hier`           | le 29 juillet 2026                                |
+    | `il y a 3 jours` | le 27 juillet 2026                                |
+    | `28/07`          | le 28 juillet 2026 — l'année qui n'est pas future |
+    | `lundi`          | le lundi écoulé, jamais celui à venir             |
+    | `2027-01-01`     | `None` : on ne relève pas ce qui n'a pas eu lieu  |
+    """
+    text = raw.strip().lower().replace(" ", "").replace(" ", "").replace("'", "").replace("’", "")
+    if not text:
+        return None
+
+    # Les formes parlées perdent aussi leur trait d'union : « avant-hier » est un mot. Les
+    # formes chiffrées le gardent, où il sépare — `28-07-2026`.
+    word = text.replace("-", "")
+
+    if word in _NAMED_OFFSETS:
+        return today - timedelta(days=_NAMED_OFFSETS[word])
+
+    ago = _DAYS_AGO.match(word)
+    if ago:
+        return today - timedelta(days=int(ago.group(1)))
+
+    if word in _WEEKDAYS:
+        # Distance en arrière jusqu'à ce jour de la semaine. Zéro veut dire aujourd'hui,
+        # et c'est bien le sens de « lundi » quand on est lundi.
+        back = (today.weekday() - _WEEKDAYS[word]) % 7
+        return today - timedelta(days=back)
+
+    iso = _ISO_DAY.match(text)
+    if iso:
+        year, month, day = (int(part) for part in iso.groups())
+        return _valid_past_date(year, month, day, today=today)
+
+    partial = _DAY_MONTH.match(text)
+    if partial:
+        day, month = int(partial.group(1)), int(partial.group(2))
+        written_year = partial.group(3)
+        if written_year is None:
+            # Sans année, on choisit la seule qui ne soit pas future : une sortie du 28/12
+            # lue le 3 janvier appartient à l'année précédente.
+            for year in (today.year, today.year - 1):
+                candidate = _valid_past_date(year, month, day, today=today)
+                if candidate is not None:
+                    return candidate
+            return None
+        year = int(written_year)
+        if year < 100:
+            year += 2000
+        return _valid_past_date(year, month, day, today=today)
+
+    return None
+
+
+def _valid_past_date(year: int, month: int, day: int, *, today: date) -> date | None:
+    """Date réelle et passée, ou `None`. Un 31 février n'est pas une date à corriger."""
+    try:
+        candidate = date(year, month, day)
+    except ValueError:
+        return None
+    return candidate if candidate <= today else None
 
 
 def format_duration(minutes: float) -> str:

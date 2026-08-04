@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -22,6 +23,13 @@ class MealPayload(BaseModel):
     added_sugar_g: SugarG | None = None
     calories: Calories | None = None
     datetime: PastDateTime | None = None
+    #: Provenance, **seulement quand elle change** (`NUT-04`).
+    #:
+    #: Absente — le cas de toute correction ordinaire — la provenance d'origine est
+    #: préservée : corriger une macro estimée ne la transforme pas en saisie manuelle
+    #: (`NUT-09`). Présente, elle dit un changement réel : un repas relevé à la main dont
+    #: on accepte ensuite une estimation devient `ai`, et le fichier le raconte.
+    source: Literal["manual", "ai"] | None = None
 
     @model_validator(mode="after")
     def require_content(self) -> MealPayload:
@@ -79,6 +87,26 @@ class FavoritePayload(BaseModel):
     protein_g: ProteinG | None = None
     added_sugar_g: SugarG | None = None
     calories: Calories | None = None
+
+
+class MealEstimate(BaseModel):
+    """Ce qu'un modèle propose pour une assiette (`NUT-04`).
+
+    **Une proposition, pas une mesure.** Tous les champs sont facultatifs : un modèle qui
+    ne distingue pas les sucres ajoutés rend `null`, et l'écran laisse le champ vide. Ils
+    portent les mêmes bornes qu'une saisie humaine — ce qui les dépasse a été écarté à la
+    relecture, pas ramené à la borne.
+    """
+
+    comment: str | None = None
+    protein_g: ProteinG | None = None
+    added_sugar_g: SugarG | None = None
+    calories: Calories | None = None
+    #: Faux quand le modèle annonce lui-même ne pas voir de nourriture.
+    readable: bool = True
+    #: Vrai quand la réponse ne porte **aucun** chiffre : l'écran le dit plutôt que
+    #: d'afficher trois champs vides sans explication.
+    empty: bool = False
 
 
 class NutritionView(BaseModel):

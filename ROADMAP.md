@@ -713,26 +713,54 @@ horizontal, et une charge se consigne entièrement au doigt. ✅ **Vérifiée** 
 
 ## L12 · `v0.13.0` — Couche IA + analyse de repas + import Apple
 
-- [ ] `L12-01` Client OpenRouter unique, API compatible OpenAI, modèle préféré configurable (`IA-01`)
-- [ ] `L12-02` Découverte des modèles gratuits : filtrage modération/embedding/TTS, classement, cache 1 h (`IA-02`)
-- [ ] `L12-03` Cascade multi-modèles sur `429` ou réponse inexploitable ; échec total distinguant quota saturé et autre erreur (`IA-03`)
-- [ ] `L12-04` Cascade restreinte aux modèles vision pour les appels sur image (`IA-04`)
-- [ ] `L12-05` Extraction JSON robuste : nettoyage `<think>…`, premier objet valide par équilibrage d'accolades (`IA-05`)
-- [ ] `L12-06` Préparation d'images : 1024 px max, JPEG, data URL (`IA-06`)
-- [ ] `L12-07` Dégradation propre sans clé : message clair, app pleinement utilisable en manuel (`IA-07`)
-- [ ] `L12-08` Analyse IA de l'assiette : protéines, sucres ajoutés, calories **proposés, jamais imposés** (`NUT-04`)
-- [ ] `L12-09` Import Apple : analyse d'un screenshot, aucune écriture sans validation (`IMP-01`)
-- [ ] `L12-10` Pré-remplissage intégralement modifiable (`IMP-02`)
-- [ ] `L12-11` Conversions : miles → km, `28:45` → décimal, dates relatives → absolue non future ; **valeurs absentes laissées vides, jamais inventées** (`IMP-03`)
-- [ ] `L12-12` Détection de doublon probable à la minute près (`IMP-04`)
-- [ ] `L12-13` `source=apple|manual` dans le CSV (`IMP-05`)
-- [ ] `L12-14` Capture illisible : message explicite, relance ou saisie manuelle (`IMP-06`)
-- [ ] `L12-15` UI : bloc IA des guidelines (section 10), valeurs proposées visuellement distinctes des valeurs saisies, action « Pas d'accord »
-- [ ] `L12-16` Tests avec réponses de modèle simulées : JSON bavard, JSON tronqué, `429` en cascade, aucune clé configurée
+- [x] `L12-01` Client OpenRouter unique, API compatible OpenAI, modèle préféré configurable (`IA-01`)
+- [x] `L12-02` Découverte des modèles gratuits : filtrage modération/embedding/TTS, classement, cache 1 h (`IA-02`)
+- [x] `L12-03` Cascade multi-modèles sur `429` ou réponse inexploitable ; échec total distinguant quota saturé et autre erreur (`IA-03`)
+- [x] `L12-04` Cascade restreinte aux modèles vision pour les appels sur image (`IA-04`)
+- [x] `L12-05` Extraction JSON robuste : nettoyage `<think>…`, premier objet valide par équilibrage d'accolades (`IA-05`)
+- [x] `L12-06` Préparation d'images : 1024 px max, JPEG, data URL (`IA-06`)
+- [x] `L12-07` Dégradation propre sans clé : message clair, app pleinement utilisable en manuel (`IA-07`)
+- [x] `L12-08` Analyse IA de l'assiette : protéines, sucres ajoutés, calories **proposés, jamais imposés** (`NUT-04`)
+- [x] `L12-09` Import Apple : analyse d'un screenshot, aucune écriture sans validation (`IMP-01`)
+- [x] `L12-10` Pré-remplissage intégralement modifiable (`IMP-02`)
+- [x] `L12-11` Conversions : miles → km, `28:45` → décimal, dates relatives → absolue non future ; **valeurs absentes laissées vides, jamais inventées** (`IMP-03`)
+- [x] `L12-12` Détection de doublon probable à la minute près (`IMP-04`)
+- [x] `L12-13` `source=apple|manual` dans le CSV (`IMP-05`)
+- [x] `L12-14` Capture illisible : message explicite, relance ou saisie manuelle (`IMP-06`)
+- [x] `L12-15` UI : bloc IA des guidelines (section 10), valeurs proposées visuellement distinctes des valeurs saisies, action « Pas d'accord »
+- [x] `L12-16` Tests avec réponses de modèle simulées : JSON bavard, JSON tronqué, `429` en cascade, aucune clé configurée
 
 **DoD** — sans clé API, aucune fonctionnalité n'est bloquée ; avec clé, un
 screenshot Apple Fitness pré-remplit une course en une action, et rien n'est écrit
 sans validation.
+
+**Première moitié ✅ vérifiée** : `test_ai_api.py` refait le parcours sans clé — l'état
+répond `200` en disant ce qui manque, les deux endpoints IA refusent avec un code du
+catalogue, et la saisie manuelle comme la validation d'un import écrivent normalement.
+
+**Seconde moitié ⏳ vérifiée sur réponses simulées uniquement.** Le pré-remplissage, les
+conversions, le doublon et l'absence d'écriture sont couverts de bout en bout par
+`test_imports.py` contre le double `tests/fake_openrouter.py`. **Il reste à passer une
+vraie capture dans un vrai modèle** — c'est la seule chose que la simulation ne peut pas
+dire : si les modèles gratuits du jour lisent réellement un écran Apple Fitness.
+
+> **`IA-02` vérifié sur le vrai catalogue le 2026-07-31** : 365 modèles publiés, 15
+> retenus, 6 vision. Deux entrées passaient le filtre à tort — `openrouter/auto`, dont le
+> prix `"-1"` veut dire « variable », et `google/lyria-3-clip-preview`, qui rend du texte
+> **et** de l'audio parce qu'il compose de la musique. Corrigé, avec un test chacun.
+> **Reste la passe sur une vraie capture, qui demande un accord préalable.** Aucun test de
+> `make check` n'appelle OpenRouter — il ne serait pas déterministe.
+
+> **Écart assumé — le HEIC n'est pas analysé.** Pillow l'ouvre seulement avec
+> `pillow-heif` et sa chaîne de compilation native. Une photo prise au format iPhone par
+> défaut reçoit donc un refus explicite nommant les formats lisibles, et le repas
+> s'enregistre normalement — `IA-07` l'autorise : l'assistance manque, la saisie reste
+> entière. À rouvrir si le cas se présente en usage réel.
+
+> **Décision — une estimation corrigée reste `source=ai`.** Ce que la colonne raconte,
+> c'est d'où vient la ligne. Une estimation retouchée au pouce n'est pas une valeur lue
+> sur un emballage. « Pas d'accord » la ramène en revanche à `manual` : la proposition a
+> été refusée, elle n'est l'origine de rien.
 
 ---
 
@@ -891,7 +919,7 @@ changement de spec, pas comme une question ouverte.
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ✅ **clos** — L09 `v0.10.0`, L10 `v0.11.0`, L11 `v0.12.0` ; dette d'ergonomie soldée en `v0.12.1` |
-| IV — Intelligence | L12 → L14 | `v0.15.0` | ☐ à faire |
+| IV — Intelligence | L12 → L14 | `v0.15.0` | ◐ ouvert — L12 livré, DoD à moitié vérifiée |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
 
 Mettre à jour ce tableau et les cases des lots à chaque clôture, en même temps que le

@@ -48,13 +48,28 @@ echo "→ Doc API http://127.0.0.1:8000/api/docs"
 # l'expansion d'un tableau **vide** comme une variable non définie et s'arrête. Le cas
 # nominal, `make dev`, serait tombé. Vide, la chaîne ne produit aucun mot ; sinon elle en
 # produit un seul, et sa valeur est un littéral que ce script contrôle.
+#
+# Port **dédié et strict** en mode réseau, et non le 5173 habituel avec repli.
+#
+# Vite ne cherche un port libre que sur l'adresse qu'il s'apprête à écouter. Un autre
+# projet tenant `[::1]:5173` laisse donc `*:5173` libre : les deux serveurs démarrent,
+# et l'application qu'on obtient dépend de l'adresse tapée. Sur un téléphone, où l'URL
+# se saisit à la main et où l'on ne voit aucun journal, c'est indémêlable.
+#
+# `--strictPort` fait échouer le démarrage au lieu de dériver silencieusement : l'URL
+# annoncée ici est donc toujours la bonne.
 web_host=""
+lan_port="${METRIC_LAN_PORT:-5180}"
 if [[ -n "${METRIC_LAN:-}" ]]; then
-  web_host="--host"
+  web_host="--host --port $lan_port --strictPort"
   echo
   echo "⚠  Frontend exposé sur le réseau local, en clair (http://, pas https://)."
   echo "   À n'utiliser que sur un réseau de confiance. macOS peut demander à"
   echo "   autoriser « node » à accepter les connexions entrantes : accepter."
+  echo "   L'API, elle, reste sur 127.0.0.1 — le proxy de Vite s'en charge."
+  for ip in $(ipconfig getifaddr en0 2>/dev/null) $(ipconfig getifaddr en1 2>/dev/null); do
+    echo "→ Téléphone : http://$ip:$lan_port/"
+  done
 fi
 echo
 

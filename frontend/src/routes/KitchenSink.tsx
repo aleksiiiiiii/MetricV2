@@ -237,6 +237,7 @@ const ROUTINE: { group: string; items: RoutineItem[] }[] = [
 export function KitchenSink() {
   const [period, setPeriod] = useState<Period>('30j');
   const [charge, setCharge] = useState('82,5');
+  const [proposedProtein, setProposedProtein] = useState('38');
   const [reps, setReps] = useState('8');
   const [seance, setSeance] = useState(SEANCES[0]);
   const [checked, setChecked] = useState<Record<string, boolean>>(() =>
@@ -396,6 +397,18 @@ export function KitchenSink() {
               onChange={setReps}
               min={1}
               max={50}
+            />
+            {/* L'état « proposé » (`NUT-04`, `IMP-02`) : trait discontinu et teinte du bloc
+                IA. Le champ se comporte exactement comme les deux autres — c'est le
+                statut de la valeur qui change, pas ce qu'on peut en faire. */}
+            <Stepper
+              label="Protéines (g)"
+              value={proposedProtein}
+              onChange={setProposedProtein}
+              step={5}
+              min={0}
+              proposed={proposedProtein === '38'}
+              hint="proposé par l'IA — la marque disparaît dès qu'on y touche"
             />
           </div>
         </Card>

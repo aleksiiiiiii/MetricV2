@@ -31,3 +31,10 @@
   line-height: 1.5;
   margin-bottom: var(--s4);
 }
+
+/* Phrase explicative sous un titre de carte — même registre que les autres écrans. */
+.note {
+  color: var(--ink-mid);
+  font-size: 13px;
+  line-height: 1.6;
+}

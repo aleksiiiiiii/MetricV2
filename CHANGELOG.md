@@ -3,6 +3,132 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.13.0] — 2026-07-30
+
+**Couche IA OpenRouter, estimation d'une assiette, import d'une capture Apple.** Ouvre le
+jalon IV. C'est le premier lot dont une partie du résultat vient d'ailleurs que du calcul :
+un modèle qui regarde une photo et rend des chiffres. Tout le lot est construit autour de
+la conséquence — **une valeur proposée n'est pas une mesure**, et rien de ce qui vient d'un
+modèle n'entre dans un fichier sans qu'on l'ait validé.
+
+775 tests backend *(655 → +120)*, 177 frontend *(149 → +28)*.
+
+### Ajouté — la couche IA
+
+- **Client OpenRouter unique** (`IA-01`), API compatible OpenAI, transport injectable. Il
+  sert déjà deux fonctions et en servira trois de plus (planning, objectifs, bilan) :
+  un client par fonction aurait multiplié les délais, les en-têtes et les façons de lire
+  une réponse.
+- **Découverte des modèles gratuits** (`IA-02`) — coût nul, capables de rendre du texte,
+  débarrassés des familles qui ne suivent pas de consigne (modération, plongements,
+  synthèse vocale), classés par taille puis fenêtre de contexte, **mémorisés une heure**.
+- **Cascade multi-modèles** (`IA-03`), bornée à trois tentatives.
+- **Cascade restreinte aux modèles vision** pour tout appel portant une image (`IA-04`).
+- **Extraction JSON robuste** (`IA-05`) : monologues `<think>` retirés, premier objet
+  **équilibré** retenu.
+- **Préparation d'images** (`IA-06`) : 1024 px de côté long, orientation EXIF appliquée,
+  JPEG, data URL.
+- **`GET /api/ai/status`** — l'écran demande au serveur s'il a une clé, plutôt que de le
+  deviner. `GET /api/ai/models` publie le catalogue découvert.
+
+### Ajouté — ce que ça donne à l'écran
+
+- **Estimation d'une assiette** (`NUT-04`) : protéines, sucres ajoutés, calories et une
+  description, depuis une photo. Sur le formulaire d'ajout **et** sur un repas déjà
+  enregistré — l'écran promet que « les macros peuvent attendre », il fallait une porte
+  pour « après ».
+- **Import d'une capture Apple** (`IMP-01` → `IMP-06`) sur l'écran Activité : lecture,
+  conversions, avertissement de doublon, puis écriture marquée `source=apple`.
+- **`Stepper` a un état « proposé »** : trait discontinu, teinte du bloc IA, et un
+  `aria-description` — la marque est dite, pas seulement dessinée. Elle disparaît dès
+  qu'on retouche la valeur.
+- **Les macros de la nutrition passent en pas-à-pas.** Une valeur proposée qu'on ne peut
+  pas corriger au pouce sera adoptée telle quelle, ce qui viderait `NUT-04` de son sens.
+- **Section « Assistance » dans Réglages** : l'état de l'IA s'y lit, avec le message du
+  serveur.
+
+### Décidé
+
+- **La distinction quota / panne est portée par deux exceptions**, pas par un booléen
+  (`IA-03`). Les deux mènent à un échec, mais l'un se résout en attendant et l'autre non —
+  et l'utilisateur n'a pas la même conduite à tenir. Un seul `429` parmi des pannes suffit
+  à basculer le message vers « indisponible » : promettre que l'attente réparera une panne
+  serait pire que ne rien promettre.
+- **Le modèle lit, il ne convertit pas.** On lui demande de recopier ce qui est affiché,
+  unité comprise — `5,20 MI`, `28:45`, `Hier`. La conversion vit dans
+  `app/core/parsing.py`, celui-là même qui lit les saisies au clavier : deux grammaires
+  finiraient par diverger, et un modèle à qui l'on demande de convertir se trompe d'un
+  facteur mille sans que ça se voie.
+- **Hors bornes, une valeur est écartée, jamais ramenée à la borne.** Ramener 4000 g de
+  protéines à 500 g donnerait une valeur fausse d'apparence honnête ; un champ vide dit ce
+  qu'il en est. Même règle pour une fréquence cardiaque à 1852 : le modèle a lu autre
+  chose.
+- **Une réponse tronquée ne rend rien.** Compléter les accolades manquantes reviendrait à
+  inventer les valeurs qu'elles contenaient. Le modèle suivant est essayé.
+- **Une course sans distance est proposée en séance.** `runs.csv` porte l'allure, qui
+  n'existe pas sans distance : plutôt qu'un pré-remplissage impossible à valider, l'écran
+  bascule — et laisse rebasculer en un appui.
+- **Le doublon est un avertissement, jamais un refus** (`IMP-04`). Deux sorties de trente
+  minutes le même jour, cela existe.
+- **Une estimation corrigée reste `source=ai`**, mais une estimation refusée retombe à
+  `manual`. Ce que la colonne raconte, c'est d'où vient la ligne.
+- **Pillow côté serveur**, et non un redimensionnement dans le navigateur : une photo
+  **déjà rangée** sur Nextcloud doit pouvoir être analysée, et un canvas ne la voit jamais.
+
+### Vérifié
+
+Sur **réponses simulées**, par un faux OpenRouter monté en ASGI
+(`tests/fake_openrouter.py`) — même parti pris que le faux WebDAV, et pour une raison plus
+forte : un vrai appel n'est pas déterministe. Le même modèle, la même photo et la même
+consigne rendent deux réponses différentes ; le catalogue gratuit change de semaine en
+semaine ; les quotas dépendent de l'heure.
+
+Ce que le double permet de scénariser, et qui est couvert : JSON bavard entouré de
+politesses, JSON enfermé dans un bloc de code, monologue `<think>` contenant lui-même des
+accolades, monologue **jamais refermé**, objet tronqué en plein nombre, `429` en cascade,
+`429` annoncé dans un `200`, modèle muet, catalogue injoignable, catalogue sans aucun
+modèle vision, et aucune clé configurée.
+
+**Aucun test de `make check` n'appelle OpenRouter.**
+
+### Vérifié sur le vrai catalogue — et deux défauts en sont sortis
+
+`IA-02` interrogé pour de bon : **365 modèles publiés, 15 retenus, 6 vision.** Le filtrage
+et le classement tiennent. Mais la passe a trouvé deux entrées que le filtre acceptait à
+tort, et **aucune simulation n'aurait eu l'idée de les écrire** :
+
+- **`openrouter/auto` annonce `"prompt": "-1"`.** C'est une sentinelle « variable » — le
+  routeur facture le tarif du modèle vers lequel il route. Un test « pas strictement
+  positif » le prenait pour gratuit. Un prix doit désormais valoir **exactement zéro**.
+- **`google/lyria-3-clip-preview` annonce `["text", "audio"]` en sortie**, et compose de la
+  musique. Un test « `text` est parmi les sorties » le laissait entrer, et il figurait
+  dans les modèles **vision** retenus — donc joignable par la cascade d'une analyse de
+  photo. La règle est maintenant « du texte, et rien d'autre ».
+
+Le filtre passe ainsi de 22 modèles retenus à 15, et de 10 vision à 6. Les deux cas ont
+leur test de non-régression.
+
+C'est la démonstration de ce que le §6 du document d'état répète depuis trois lots :
+**ce qui a été trouvé ici l'a été en utilisant la chose, pas en la testant.** La batterie
+simulée était verte sur les deux entrées.
+
+### Décidé après la passe réelle
+
+- **Le modèle configuré reste `anthropic/claude-sonnet-5`, payant, et en tête de cascade.**
+  Il lit une capture Apple bien mieux qu'un 31B gratuit, et une analyse d'image coûte de
+  l'ordre d'un centime. Les gratuits restent le repli quand son quota tombe. C'est un choix
+  explicite : `IA-01` rend le modèle configurable précisément pour cela.
+
+### Non vérifié
+
+- **Aucune vraie capture n'est encore passée dans un vrai modèle.** Toute la chaîne est
+  couverte de bout en bout contre le double ; ce que la simulation ne peut pas dire, c'est
+  si un modèle lit réellement un écran Apple Fitness. C'est la seconde moitié de la DoD,
+  et elle reste ouverte.
+- **Le HEIC n'est pas analysable** — écart assumé. Pillow ne l'ouvre qu'avec
+  `pillow-heif` et sa chaîne de compilation native ; une photo au format iPhone par défaut
+  reçoit un refus explicite et le repas s'enregistre normalement.
+
 ## [0.12.2] — 2026-07-29
 
 **Passe tactile de l'écran Activité**, et les contrôles qu'elle demandait versés dans la
@@ -72,6 +198,22 @@ Trois défauts en sont sortis, qu'aucun test n'a signalés : « 0 kg » affiché
 exercice au poids du corps, des tirets de colonne orphelins sous la date d'une fiche, et
 des colonnes qui ne s'alignaient pas d'une ligne à l'autre — chaque fiche étant sa propre
 grille, une piste `auto` s'y résolvait selon son seul contenu.
+
+### Outillage
+
+**`make dev-lan`** expose le frontend sur le réseau local, pour ouvrir l'application depuis
+un téléphone — ce que la passe tactile réclamait sans qu'aucune commande ne le permette.
+
+Seul Vite est exposé : son proxy relaie `/api` vers `127.0.0.1:8000`, donc l'API et ses
+secrets restent hors du réseau. Port dédié **5180 en `--strictPort`** et non le 5173
+habituel : Vite ne cherche un port libre que sur l'adresse qu'il va écouter, si bien qu'un
+autre projet tenant `[::1]:5173` laisse `*:5173` libre — les deux serveurs démarrent et
+l'application obtenue dépend de l'adresse tapée. Le cas s'est produit pendant la mise au
+point, et sur un téléphone il aurait été indémêlable.
+
+Le drapeau se passe par une **chaîne, pas un tableau** : sous `set -u`, bash 3.2 — celui
+que macOS livre — traite l'expansion d'un tableau vide comme une variable non définie.
+Écrit en tableau, `make dev` serait tombé. C'est la deuxième fois que bash 3.2 mord.
 
 ### Non vérifié
 

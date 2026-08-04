@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from app.core.parsing import (
@@ -9,6 +11,7 @@ from app.core.parsing import (
     estimate_one_rep_max,
     format_duration,
     pace_min_per_km,
+    parse_day,
     parse_decimal,
     parse_distance_km,
     parse_duration_minutes,
@@ -102,3 +105,48 @@ def test_bodyweight_has_no_estimated_maximum() -> None:
     """Charge 0 = poids du corps (`ACT-07`) : sans charge, la formule ne dit rien."""
     assert estimate_one_rep_max(0, 12) is None
     assert estimate_one_rep_max(60, 0) is None
+
+
+# ── Dates relatives (`IMP-03`) ────────────────────────
+#
+# La grammaire des dates vit dans le socle, comme celle des durées : l'import Apple et une
+# saisie au clavier doivent lire « hier » de la même façon.
+
+JEUDI = date(2026, 7, 30)
+
+
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        ("2026-07-28", date(2026, 7, 28)),
+        ("aujourd'hui", JEUDI),
+        ("Hier", date(2026, 7, 29)),
+        ("avant-hier", date(2026, 7, 28)),
+        ("il y a 5 jours", date(2026, 7, 25)),
+        ("28/07/2026", date(2026, 7, 28)),
+        ("28-07-26", date(2026, 7, 28)),
+    ],
+)
+def test_a_written_day_becomes_an_absolute_date(written: str, expected: date) -> None:
+    assert parse_day(written, today=JEUDI) == expected
+
+
+def test_a_weekday_names_the_one_that_has_passed() -> None:
+    """Le 30/07/2026 tombe un jeudi."""
+    assert parse_day("lundi", today=JEUDI) == date(2026, 7, 27)
+    assert parse_day("jeudi", today=JEUDI) == JEUDI
+    # « Vendredi » ne peut désigner que celui d'il y a six jours : on relève le passé.
+    assert parse_day("vendredi", today=JEUDI) == date(2026, 7, 24)
+
+
+def test_a_day_without_a_year_takes_the_year_that_is_not_future() -> None:
+    assert parse_day("28/07", today=JEUDI) == date(2026, 7, 28)
+    assert parse_day("28/12", today=JEUDI) == date(2025, 12, 28)
+
+
+@pytest.mark.parametrize(
+    "written", ["2027-01-01", "31/02/2026", "la semaine dernière", "", "récemment"]
+)
+def test_what_cannot_be_a_past_date_stays_empty(written: str) -> None:
+    """`IMP-03` : une valeur absente reste absente. Aucune date par défaut, jamais."""
+    assert parse_day(written, today=JEUDI) is None

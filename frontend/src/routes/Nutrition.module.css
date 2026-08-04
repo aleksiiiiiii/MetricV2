@@ -163,10 +163,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* L'estimation s'ouvre **sous** le repas qu'elle concerne, dans la même fiche : une
+   proposition affichée ailleurs demanderait de retenir à quel repas elle se rapporte. */
+.mealEstimate {
+  margin-top: var(--s3);
+}
+
 .mealActions {
   display: flex;
   gap: 4px;
   flex: none;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .iconButton {
@@ -179,6 +187,15 @@
   font-size: 11px;
   padding: 4px 8px;
   transition: var(--t);
+  /* Le plancher du doigt (`L17-07`) : ces boutons portent la suppression et
+     l'estimation, deux gestes qu'on ne veut pas rater d'un pouce. */
+  min-height: var(--tap);
+  touch-action: manipulation;
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .iconButton:hover {

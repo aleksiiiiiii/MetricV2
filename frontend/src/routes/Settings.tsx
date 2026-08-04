@@ -8,6 +8,7 @@ import {
   type SettingsValues,
   type SettingsView,
 } from '@/features/settings/api';
+import { useAiStatus } from '@/features/ai/useAiStatus';
 import { ApiError } from '@/lib/api';
 import { num } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
@@ -284,7 +285,45 @@ export function Settings() {
 
       <Tracks />
 
+      <AiSection />
+
       <div style={{ height: 40 }} />
     </div>
+  );
+}
+
+/**
+ * L'état de l'assistance IA (`IA-07`).
+ *
+ * Il se dit **ici** et pas sur les écrans qui s'en servent : une carte d'import
+ * définitivement inerte sur l'écran Activité serait du bruit à chaque visite, alors que
+ * l'absence de clé est un fait de configuration — et les réglages sont l'endroit où l'on
+ * vient chercher pourquoi quelque chose ne s'affiche pas.
+ *
+ * Le message vient du serveur : lui seul sait s'il a une clé, et il le dit en français.
+ */
+function AiSection() {
+  const ai = useAiStatus();
+
+  return (
+    <>
+      <Rule>Assistance</Rule>
+      <Card>
+        <div className="spread">
+          <h3>Estimations et import</h3>
+          <Badge tone={ai.enabled ? 'effort' : 'recover'}>
+            {ai.enabled ? 'disponible' : 'hors service'}
+          </Badge>
+        </div>
+        <p className={styles.note} style={{ marginTop: 10 }}>
+          {ai.message ||
+            'État inconnu : le serveur n’a pas répondu. Tout se saisit à la main, sans rien perdre.'}
+        </p>
+        <p className={styles.note} style={{ marginTop: 10 }}>
+          Ce qu’une estimation propose n’est jamais enregistré sans validation, et se corrige au
+          doigt avant de l’être.
+        </p>
+      </Card>
+    </>
   );
 }

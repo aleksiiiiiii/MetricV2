@@ -342,3 +342,57 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* ── Import d'une capture (`IMP-01`) ──────────────── */
+
+/* Même vocabulaire que la photo de repas : le trait discontinu annonce une zone à
+   remplir, pas un contenu manquant. */
+.drop {
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  padding: 18px;
+  min-height: var(--tap-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition: var(--t);
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.drop:hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+/* Une capture de téléphone est très haute : la borner évite qu'elle pousse le
+   formulaire hors de l'écran, sur mobile où c'est justement le geste suivant. */
+.shot {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  object-position: top;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  display: block;
+}
+
+/* L'avertissement de doublon (`IMP-04`) : un signal, pas un refus. Il se lit, il ne
+   bloque rien — d'où le ton d'une note et non celui d'une erreur. */
+.duplicate {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-mid);
+  border: 1px solid rgb(var(--load-rgb) / var(--badge-border-a));
+  background: rgb(var(--load-rgb) / var(--badge-bg-a));
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+}

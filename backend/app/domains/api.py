@@ -20,6 +20,7 @@ from app.core.deps import require_auth
 from app.domains import (
     activity,
     aggregates,
+    ai,
     app_settings,
     auth,
     body,
@@ -50,6 +51,7 @@ for domain in (
     planning,
     goals,
     imports,
+    ai,
     app_settings,
 ):
     protected_router.include_router(domain.router)
@@ -69,6 +71,7 @@ PROTECTED_PREFIXES = tuple(
         planning,
         goals,
         imports,
+        ai,
         app_settings,
     )
 )

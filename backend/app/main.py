@@ -23,6 +23,7 @@ from app.config import Settings, get_settings
 from app.core.errors import register_error_handlers
 from app.core.security import PasswordChecker, TokenIssuer
 from app.core.throttle import LoginThrottle
+from app.domains.ai.service import AiProvider
 from app.domains.api import protected_router, public_router
 from app.domains.heatmap.cache import GridCache
 from app.storage.provider import StorageProvider
@@ -57,7 +58,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         provider = StorageProvider(settings)
         await provider.start()
 
+        # Même cycle de vie, pour la même raison : un pool de connexions. Sans clé,
+        # `start` ne construit rien et le fournisseur reste inerte (`IA-07`).
+        ai = AiProvider(settings)
+        await ai.start()
+
         app.state.storage = provider
+        app.state.ai = ai
         app.state.password_checker = PasswordChecker(settings)
         app.state.token_issuer = TokenIssuer(settings)
         app.state.login_throttle = LoginThrottle()
@@ -68,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await ai.stop()
             await provider.stop()
 
     app = FastAPI(

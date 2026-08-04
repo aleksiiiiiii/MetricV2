@@ -207,6 +207,7 @@ export function Stepper({
   hint,
   placeholder,
   inputMode = 'decimal',
+  proposed = false,
 }: {
   label: string;
   value: string;
@@ -218,6 +219,17 @@ export function Stepper({
   hint?: ReactNode | undefined;
   placeholder?: string | undefined;
   inputMode?: 'decimal' | 'numeric' | undefined;
+  /**
+   * Valeur **proposée** par l'IA et pas encore validée (`NUT-04`, `IMP-02`).
+   *
+   * Le trait devient discontinu : une estimation n'a pas le même statut qu'un chiffre lu
+   * sur une balance, et rien à l'écran ne doit laisser croire le contraire. La marque
+   * disparaît dès que la valeur est retouchée — corriger, c'est s'approprier.
+   *
+   * Elle ne change **rien** au comportement du champ : une valeur proposée se corrige,
+   * s'efface et s'envoie comme une autre.
+   */
+  proposed?: boolean | undefined;
 }) {
   const fieldId = useId();
   const current = readOwn(value);
@@ -251,10 +263,17 @@ export function Stepper({
         </button>
         <input
           id={fieldId}
-          className={cx(styles.stepperInput, error !== undefined && styles.inputInvalid)}
+          className={cx(
+            styles.stepperInput,
+            proposed && styles.stepperProposed,
+            error !== undefined && styles.inputInvalid,
+          )}
           inputMode={inputMode}
           value={value}
           placeholder={placeholder}
+          // Le trait discontinu ne se voit pas d'un lecteur d'écran : le statut de la
+          // valeur doit être dit, pas seulement dessiné.
+          aria-description={proposed ? 'valeur proposée, à valider' : undefined}
           aria-invalid={error !== undefined ? true : undefined}
           aria-describedby={error !== undefined ? `${fieldId}-error` : undefined}
           onChange={(event) => {

@@ -60,6 +60,26 @@ export interface MealFormValues {
   added_sugar_g: string;
   calories: string;
   photo: File | null;
+  /** `ai` quand les macros viennent d'une estimation acceptée (`NUT-04`). */
+  source: 'manual' | 'ai';
+}
+
+/**
+ * Ce qu'un modèle **propose** pour une assiette (`NUT-04`).
+ *
+ * Tout est nullable, et ce n'est pas une facilité de typage : un champ que le modèle n'a
+ * pas su estimer reste vide à l'écran. Le remplir d'un zéro le ferait passer pour une
+ * mesure.
+ */
+export interface MealEstimate {
+  comment: string | null;
+  protein_g: number | null;
+  added_sugar_g: number | null;
+  calories: number | null;
+  /** Faux quand le modèle annonce lui-même ne pas voir de nourriture. */
+  readable: boolean;
+  /** Vrai quand la réponse ne porte aucun chiffre. */
+  empty: boolean;
 }
 
 export function photoPath(relative: string): string {
@@ -75,6 +95,7 @@ function multipart(values: MealFormValues): FormData {
     if (raw) form.set(field, raw);
   }
   if (values.photo) form.set('photo', values.photo);
+  form.set('source', values.source);
   return form;
 }
 
@@ -85,6 +106,17 @@ export const nutritionApi = {
   create: (values: MealFormValues) =>
     request<Meal>('/api/nutrition', { method: 'POST', form: multipart(values) }),
 
+  /** Propose des macros depuis une photo. **N'écrit rien** (`NUT-04`). */
+  analyze: (photo: File) => {
+    const form = new FormData();
+    form.set('photo', photo);
+    return request<MealEstimate>('/api/nutrition/analyze', { method: 'POST', form });
+  },
+
+  /** Même proposition, pour un repas déjà enregistré avec sa photo. */
+  analyzeMeal: (id: number) =>
+    request<MealEstimate>(`/api/nutrition/${id}/analyze`, { method: 'POST' }),
+
   update: (
     id: number,
     token: string,
@@ -94,6 +126,8 @@ export const nutritionApi = {
       protein_g?: number | null;
       added_sugar_g?: number | null;
       calories?: number | null;
+      /** À ne passer que si la provenance change réellement (`NUT-04`, `NUT-09`). */
+      source?: 'manual' | 'ai';
     },
   ) =>
     request<Meal>(`/api/nutrition/${id}`, {

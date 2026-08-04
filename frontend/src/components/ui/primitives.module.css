@@ -307,6 +307,16 @@
   color: var(--ink-low);
 }
 
+/* Valeur proposée par l'IA, pas encore validée (`NUT-04`, `IMP-02`).
+   Le trait discontinu est le même vocabulaire que l'état vide de la charte : ce qui n'est
+   pas plein est ce qui n'est pas acquis. La teinte reprend celle du bloc IA, pour qu'on
+   lise d'où vient le chiffre sans avoir à le chercher. */
+.stepperProposed {
+  border-style: dashed;
+  border-color: rgb(var(--signal-rgb) / 0.55);
+  background: linear-gradient(180deg, rgb(var(--signal-rgb) / 0.08), transparent), var(--bg);
+}
+
 /* ── Pastilles ────────────────────────────────────── */
 
 .chip {

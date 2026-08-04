@@ -90,8 +90,9 @@ class RunService:
             raise StorageNotFoundError("Cette course n'existe pas.")
         return self.to_schema(rows[index])
 
-    async def create(self, payload: RunPayload) -> Run:
-        return self.to_schema(await self._repo.append(self._to_row(payload)))
+    async def create(self, payload: RunPayload, *, source: str = "manual") -> Run:
+        """Enregistre une course. `source` reste `manual` sauf import (`IMP-05`)."""
+        return self.to_schema(await self._repo.append(self._to_row(payload, source)))
 
     async def update(self, index: int, token: str, payload: RunPayload) -> Run:
         rows = await self._repo.read_all(fresh=True)
@@ -289,7 +290,8 @@ class WorkoutService:
         ]
         return self._to_schema(row, entries)
 
-    async def create(self, payload: WorkoutPayload) -> Workout:
+    async def create(self, payload: WorkoutPayload, *, source: str = "manual") -> Workout:
+        """Enregistre une séance. `source` reste `manual` sauf import (`IMP-05`)."""
         row = await self._repo.append(
             WorkoutRow(
                 date=payload.date,
@@ -298,6 +300,7 @@ class WorkoutService:
                 calories=payload.calories,
                 rpe=payload.rpe,
                 note=payload.note,
+                source=source,
                 id=new_id(),
             )
         )

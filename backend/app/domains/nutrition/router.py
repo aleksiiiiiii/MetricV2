@@ -8,11 +8,13 @@ from fastapi import APIRouter, File, Form, Header, Path, Query, Response, Upload
 
 from app.core.dates import today_local
 from app.core.deps import StoreDep
+from app.domains.ai.deps import AiServiceDep
 from app.domains.nutrition.photos import MAX_BYTES, PhotoError
 from app.domains.nutrition.schemas import (
     Favorite,
     FavoritePayload,
     Meal,
+    MealEstimate,
     MealPayload,
     NutritionView,
 )
@@ -61,11 +63,17 @@ async def create(
     protein_g: Annotated[float | None, Form(ge=0, le=500)] = None,
     added_sugar_g: Annotated[float | None, Form(ge=0, le=1000)] = None,
     calories: Annotated[int | None, Form(ge=0, le=10000)] = None,
+    source: Annotated[str, Form(pattern="^(manual|ai)$")] = "manual",
 ) -> Meal:
     """Photo et/ou description, au moins l'un des deux (`NUT-01`).
 
     Le formulaire est en multipart : un fichier ne se transporte pas en JSON. Le type
     déclaré par le client est ignoré — c'est la signature du contenu qui décide.
+
+    `source=ai` marque un repas dont les macros viennent d'une estimation **acceptée**
+    (`NUT-04`). Elle le reste même corrigée au doigt avant l'enregistrement : ce que la
+    colonne raconte, c'est d'où vient la ligne, et une estimation retouchée n'est pas une
+    valeur qu'on a lue sur un emballage. Refuser l'estimation la ramène à `manual`.
     """
     data = await photo.read() if photo is not None else None
     if photo is not None:
@@ -82,7 +90,44 @@ async def create(
         protein_g=protein_g,
         added_sugar_g=added_sugar_g,
         calories=calories,
+        source=source,
     )
+
+
+# ── Estimation assistée (`NUT-04`) ────────────────────
+
+
+@router.post("/analyze", response_model=MealEstimate, summary="Estimer une assiette")
+async def analyze(
+    ai: AiServiceDep,
+    photo: Annotated[UploadFile, File()],
+) -> MealEstimate:
+    """Propose protéines, sucres ajoutés et calories depuis une photo (`NUT-04`).
+
+    **Rien n'est écrit** : ni ligne, ni fichier photo. La photo n'est même pas rangée sur
+    Nextcloud — elle est réduite, envoyée, et oubliée. C'est l'enregistrement du repas,
+    ensuite, qui décide de ce qui reste.
+
+    `200` seulement si l'on a une proposition. Sans clé, cet endpoint ne s'exécute pas et
+    rend `ai_unavailable` : l'écran continue de proposer la saisie manuelle (`IA-07`).
+    """
+    data = await photo.read()
+    await photo.close()
+    return await NutritionService.estimate(ai, data)
+
+
+@router.post(
+    "/{row_id}/analyze",
+    response_model=MealEstimate,
+    summary="Estimer un repas déjà enregistré",
+)
+async def analyze_meal(row_id: RowId, store: StoreDep, ai: AiServiceDep) -> MealEstimate:
+    """Même estimation, depuis la photo déjà rangée d'un repas (`NUT-04`).
+
+    Ne modifie pas le repas : la proposition remonte à l'écran, qui la fait valider par
+    une correction ordinaire (`PATCH`) — sous garde de jeton comme toute écriture.
+    """
+    return await NutritionService(store).estimate_meal(ai, row_id)
 
 
 @router.patch("/{row_id}", response_model=Meal, summary="Corriger un repas")
