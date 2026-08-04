@@ -35,6 +35,11 @@ l'application disparaît.
 | `backlogV2.md` | Domaine métier complet, 13 sections, annexe CSV | Référence globale |
 | `GuidelinesUI.html` | Tokens, composants, motifs visuels | Référence UI exclusive |
 
+Un quatrième document n'a pas d'autorité mais se lit avant de livrer :
+[`docs/verifications-manuelles.md`](verifications-manuelles.md) — **ce que `make check` ne
+peut pas vérifier**, accumulé lot après lot, avec ce qu'on lance et ce qui compte comme
+échec.
+
 En cas de contradiction entre les deux backlogs, `heat_backlog.md` gagne. Les
 contradictions connues sont **tranchées et consignées** au [§3 du ROADMAP](../ROADMAP.md#3-points-de-spécification-à-trancher)
 (décisions D1 à D11, validées le 2026-07-26). Ne pas les rouvrir sans raison.
@@ -328,6 +333,12 @@ make check        # lint + types + tests, des deux côtés — ce que rejoue la 
 `make check` doit être vert avant tout commit. Il couvre `ruff`, `mypy --strict`,
 `pytest`, `prettier`, `eslint`, `tsc --noEmit` et `vitest`.
 
+**Et il ne suffit pas.** Ce qu'il ne peut pas voir — un vrai téléphone, une vraie capture,
+une grille après un mois d'historique — vit dans
+[`docs/verifications-manuelles.md`](verifications-manuelles.md), avec pour chaque entrée le
+geste à faire et ce qui compte comme échec. Trois lots de suite, ce sont ces
+vérifications-là qui ont trouvé les défauts, pas la batterie de tests.
+
 La console choisit un port libre si le port habituel est pris, et le proxy du frontend
 suit via `METRIC_API_PORT`.
 
@@ -450,7 +461,9 @@ manuelle comme la validation d'un import écrivent normalement.
 6 vision. Le filtrage tient — et il a fallu le corriger deux fois, voir plus bas.
 
 **Ce qui reste** : passer une vraie capture dans un vrai modèle. C'est la seule chose que
-la simulation ne peut pas dire, et elle **demande un accord préalable**, chaque fois.
+la simulation ne peut pas dire, et elle **demande un accord préalable**, chaque fois. Le
+geste exact, et ce qui compte comme échec, sont au §1 de
+[`verifications-manuelles.md`](verifications-manuelles.md).
 
 **Le modèle configuré est payant, et c'est voulu.** `OPENROUTER_MODEL` vaut
 `anthropic/claude-sonnet-5` : il passe en tête de cascade, il lit une capture bien mieux
