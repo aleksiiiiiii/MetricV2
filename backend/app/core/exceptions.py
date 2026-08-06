@@ -139,13 +139,16 @@ class AiQuotaError(MetricError):
 
 
 class AiUnreadableError(MetricError):
-    """Le modèle a répondu, mais l'image ne portait pas ce qu'on y cherchait (`IMP-06`).
+    """Le modèle a répondu, mais rien d'exploitable n'en est sorti (`IMP-06`, `PLAN-03`).
 
-    Distinct de `ai_unavailable` : la chaîne a fonctionné de bout en bout, c'est la
-    **capture** qui ne convient pas. La conduite à tenir n'est donc pas d'attendre mais de
-    refaire la capture — ou de saisir à la main, ce qui reste toujours possible.
+    Distinct de `ai_unavailable` : la chaîne a fonctionné de bout en bout, c'est
+    l'**entrée ou la sortie** qui ne convient pas — une capture qui n'est pas une capture
+    sportive, une proposition de planning dont pas une séance n'a survécu à la relecture.
+    La conduite à tenir n'est donc pas d'attendre mais de refaire, ou de saisir à la main,
+    ce qui reste toujours possible.
 
-    `422` et non `503` : rien n'est en panne, l'entrée ne convient pas.
+    `422` et non `503` : rien n'est en panne, l'entrée ne convient pas. Le message par
+    défaut parle de captures ; les autres appelants passent le leur.
     """
 
     code = "ai_unreadable"

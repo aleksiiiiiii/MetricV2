@@ -22,6 +22,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #: (RFC 7518 §3.2), et le développement croulerait sous les avertissements.
 DEV_JWT_SECRET = "developpement-uniquement-a-remplacer-en-production"
 
+#: Longueur minimale de la clé d'abonnement iCal (`PLAN-05`).
+#:
+#: Cette clé est le **seul** rempart d'une URL publique qui expose un planning personnel :
+#: aucun jeton ne l'accompagne, aucun anti-brute-force ne la protège — un client de
+#: calendrier ne saurait ni porter l'un ni encaisser l'autre. 32 caractères, c'est ce que
+#: rend `secrets.token_urlsafe(24)`, et c'est le plancher en deçà duquel une clé se
+#: devine. En dessous, le flux n'est simplement pas publié.
+ICAL_SECRET_MIN_LENGTH = 32
+
 
 class Settings(BaseSettings):
     """Réglages du service, lus depuis l'environnement puis `.env`."""
@@ -72,6 +81,8 @@ class Settings(BaseSettings):
     openrouter_model: str = ""
 
     # ── Export iCal (`PLAN-05`) ───────────────────────
+    # Sans clé, le flux public n'est pas publié du tout — et le planning reste
+    # consultable, modifiable et téléchargeable sous jeton.
     ical_secret: str = ""
 
     @property
@@ -88,6 +99,16 @@ class Settings(BaseSettings):
     def ai_enabled(self) -> bool:
         """Vrai si une clé OpenRouter est configurée (`IA-07`)."""
         return bool(self.openrouter_api_key)
+
+    @property
+    def ical_enabled(self) -> bool:
+        """Vrai si le flux `.ics` public peut être servi (`PLAN-05`).
+
+        Une clé trop courte vaut une clé absente : accepter `ICAL_SECRET=metric`
+        publierait un an de planning derrière un mot de six lettres, et l'utilisateur
+        croirait avoir posé une protection. Mieux vaut ne rien publier et le dire.
+        """
+        return len(self.ical_secret.strip()) >= ICAL_SECRET_MIN_LENGTH
 
     @property
     def storage_configured(self) -> bool:

@@ -1,0 +1,341 @@
+/* Écran Objectif (`L14-09`, `L17-07`).
+
+   Écrit **mobile d'abord** : les règles de base valent pour 390 px, les `min-width`
+   ajoutent ce que la place permet.
+
+   L'écran a un sujet unique — l'anneau et la phrase chiffrée — et deux compléments : le
+   bilan de la semaine, l'historique. L'ordre est celui-là à toute largeur, y compris
+   quand la place permettrait de mettre l'historique à côté : c'est la leçon du calendrier
+   du L13, où trois tuiles d'indicateurs repoussaient le sujet de l'écran sous le pli.
+
+   Toute cible se touche à `--tap` au minimum, l'action qui **termine** un geste à
+   `--tap-lg`. */
+
+/* Conteneur de page. `screen` est **combiné à `wrap`** dans le TSX, la primitive globale
+   de `base.css` qui plafonne la largeur de lecture et pose les marges latérales.
+
+   L'oublier laissait les cartes toucher les bords de la fenêtre pendant que l'en-tête de
+   la coquille, lui, restait aligné sur 1080 px : deux alignements sur une même page, et
+   le titre collé à zéro. Défaut trouvé en **regardant** la page à 1280 px, pas en la
+   mesurant — la batterie ne vérifiait que les cibles tactiles et le débordement
+   horizontal, tous deux corrects. */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* ── L'objectif en cours (`GOAL-04`, `GOAL-05`) ────── */
+
+/* L'anneau au-dessus de la phrase au pouce, à côté dès qu'il y a la place : à 390 px,
+   les mettre côte à côte laisse moins de deux cents pixels au libellé chiffré, qui est
+   précisément ce qu'on vient lire. */
+.current {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s4);
+  margin-top: var(--s4);
+  text-align: center;
+}
+
+.figures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+/* Ce qui remplace l'anneau quand l'avancement est indéterminé.
+
+   Mêmes dimensions que `Ring` — 86 px — pour que la carte ne se réorganise pas selon
+   qu'il y a un chiffre ou non, et creux plutôt que rempli à zéro : un anneau vide se lit
+   « tu n'as rien fait », un disque creux se lit « on ne sait pas ». Ce n'est pas la même
+   chose, et c'est tout l'objet de « aucune valeur inventée à l'écran ». */
+.noRing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 86px;
+  height: 86px;
+  flex: none;
+  border: 2px dashed var(--line);
+  border-radius: 50%;
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: 22px;
+}
+
+.summary {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.basis {
+  font-size: 12px;
+  color: var(--ink-low);
+}
+
+@media (min-width: 560px) {
+  .current {
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+  }
+}
+
+/* ── Chiffres d'accompagnement ─────────────────────── */
+
+/* Trois chiffres courts sur trois colonnes **y compris à 390 px**, et non trois tuiles
+   `Stat` empilées : mesuré au L13, l'empilement repoussait le sujet de l'écran au-delà
+   du pli sur un iPhone. Même forme, même raison. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.statKey {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--ink-low);
+  text-transform: uppercase;
+}
+
+.statValue {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--ink);
+}
+
+/* ── Actions ───────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+.actions button {
+  min-height: var(--tap);
+  width: 100%;
+}
+
+/* L'action qui **termine** le geste : plus haute, pleine largeur au pouce. */
+.submit {
+  min-height: var(--tap-lg);
+  width: 100%;
+}
+
+@media (min-width: 560px) {
+  .actions {
+    flex-direction: row;
+  }
+
+  .actions button {
+    width: auto;
+    flex: initial;
+  }
+
+  .submit {
+    width: auto;
+    min-width: 220px;
+  }
+}
+
+/* ── Proposition (`GOAL-01`, `GOAL-03`) ────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+
+.note {
+  font-size: 13px;
+  color: var(--ink-mid);
+}
+
+.proposed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  margin: var(--s3) 0;
+}
+
+.proposedTitle {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.target {
+  font-family: var(--mono);
+  font-size: 20px;
+  color: var(--ink);
+}
+
+/* Le condensé envoyé au modèle (`GOAL-02`), replié : il est là pour être vérifiable,
+   pas pour être lu à chaque fois. Le `summary` reste une cible tactile à part entière —
+   c'est un contrôle, pas un titre. */
+.facts {
+  margin-top: var(--s3);
+  font-size: 12px;
+  color: var(--ink-low);
+}
+
+.facts summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  cursor: pointer;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.facts ul {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--s3);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  list-style: none;
+}
+
+.dropped {
+  margin-top: var(--s3);
+  font-size: 12px;
+  color: var(--ink-low);
+}
+
+/* ── Bilan hebdomadaire (`IA-08`) ──────────────────── */
+
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin: var(--s3) 0;
+}
+
+.reviewGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.reviewGroup ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding-left: var(--s4);
+}
+
+/* L'action de la semaine : c'est la seule ligne sur laquelle on peut agir, et elle se
+   perd si elle a la même graisse que les constats qui la précèdent. */
+.action {
+  padding: var(--s3);
+  background: var(--surface-2);
+  border-left: 2px solid var(--signal);
+  border-radius: var(--r-sm);
+  font-size: 15px;
+}
+
+/* ── Historique (`GOAL-06`) ────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+}
+
+.itemBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-mid);
+}
+
+.itemActions {
+  display: flex;
+  gap: var(--s2);
+}
+
+.itemActions button {
+  flex: 1;
+  min-height: var(--tap);
+}
+
+@media (min-width: 640px) {
+  .item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .itemActions button {
+    flex: initial;
+  }
+}
+
+/* Porte de l'écran Assistant, qui n'a pas d'entrée de navigation. Un lien, mais qui se
+   touche comme un bouton : le plancher de `--tap` ne connaît pas d'exception. */
+.assistant {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  color: var(--ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.assistant:hover {
+  border-color: var(--signal);
+}

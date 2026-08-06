@@ -4,11 +4,14 @@ import { RequireAuth } from '@/app/RequireAuth';
 import { Shell } from '@/app/Shell';
 import { Activity } from '@/routes/Activity';
 import { Assiduity } from '@/routes/Assiduity';
+import { Assistant } from '@/routes/Assistant';
 import { Body } from '@/routes/Body';
 import { Dashboard } from '@/routes/Dashboard';
+import { Goals } from '@/routes/Goals';
 import { KitchenSink } from '@/routes/KitchenSink';
 import { Login } from '@/routes/Login';
 import { Nutrition } from '@/routes/Nutrition';
+import { Planning } from '@/routes/Planning';
 import { Routine } from '@/routes/Routine';
 import { Settings } from '@/routes/Settings';
 import { NotFound } from '@/routes/NotFound';
@@ -39,6 +42,11 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/corps" element={<Body />} />
         <Route path="/activite" element={<Activity />} />
+        <Route path="/planning" element={<Planning />} />
+        <Route path="/objectif" element={<Goals />} />
+        {/* Sans entrée de navigation : la barre demandait déjà 806 px pour 695
+            disponibles. On y arrive depuis le tableau de bord et l'écran Objectif. */}
+        <Route path="/assistant" element={<Assistant />} />
         <Route path="/assiduite" element={<Assiduity />} />
         <Route path="/routine" element={<Routine />} />
         <Route path="/nutrition" element={<Nutrition />} />

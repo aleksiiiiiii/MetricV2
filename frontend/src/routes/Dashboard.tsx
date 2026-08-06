@@ -321,6 +321,28 @@ export function Dashboard() {
 
       <Numbers data={data} />
 
+      {/* La porte de l'assistant. Il n'a **pas** d'entrée de navigation — la barre
+          demandait déjà 806 px pour 695 disponibles — et cette carte est donc son accès
+          principal : elle vient tout de suite après les chiffres du jour, avant la
+          tendance, parce qu'une question se pose en regardant ce qu'on vient de lire. */}
+      <Rule>Demander</Rule>
+      <Card>
+        <div className="spread">
+          <div>
+            <h3>Une question sur tes chiffres ?</h3>
+            <p className={styles.empty}>
+              L’assistant lit ton poids, tes séances, tes macros, ton objectif et ton planning — et
+              ce que tu lui as dit de retenir.
+            </p>
+          </div>
+        </div>
+        <div className="row mt">
+          <Link className={styles.assistant} to="/assistant">
+            Ouvrir l’assistant
+          </Link>
+        </div>
+      </Card>
+
       <Rule>Tendance</Rule>
       <div className={styles.split}>
         <Graph shipped={data.series} />

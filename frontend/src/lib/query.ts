@@ -71,10 +71,22 @@ export const keys = {
   planning: {
     all: () => ['planning'] as const,
     month: (month: string) => ['planning', 'month', month] as const,
+    adherence: () => ['planning', 'adherence'] as const,
+    /** Adresse d'abonnement (`PLAN-05`) — elle vient d'un réglage serveur, elle ne
+     *  change pas en cours de session. */
+    subscription: () => ['planning', 'subscription'] as const,
+  },
+  assistant: {
+    all: () => ['assistant'] as const,
+    /** Le carnet de mémoire (`IA-11`). Le fil de conversation, lui, n'est jamais mis en
+     *  cache : il n'existe pas côté serveur. */
+    memory: () => ['assistant', 'memory'] as const,
   },
   goals: {
     all: () => ['goals'] as const,
     active: () => ['goals', 'active'] as const,
+    /** Historique des bilans hebdomadaires (`IA-08`). */
+    weekly: () => ['goals', 'weekly'] as const,
   },
   settings: {
     all: () => ['settings'] as const,

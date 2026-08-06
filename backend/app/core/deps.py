@@ -27,6 +27,21 @@ def _from_state(request: Request, name: str, expected: type[object]) -> object:
     return value
 
 
+def get_app_settings(request: Request) -> Settings:
+    """Réglages **de cette application**, et non ceux du processus.
+
+    `create_app(settings)` existe pour permettre des applications isolées — un test qui
+    veut une clé d'abonnement iCal, un autre qui n'en veut pas. Lire `get_settings()`
+    dans une route rendrait ce paramètre à moitié faux : l'application serait construite
+    avec les réglages reçus et se comporterait selon ceux du fichier `.env`.
+
+    Le repli sur `get_settings()` couvre une application montée sans passer par
+    `create_app` ; il ne devrait jamais servir en production.
+    """
+    settings = getattr(request.app.state, "settings", None)
+    return settings if isinstance(settings, Settings) else get_settings()
+
+
 def get_storage_provider(request: Request) -> StorageProvider:
     """Fournisseur de stockage attaché à l'application par le `lifespan`."""
     provider = _from_state(request, "storage", StorageProvider)
@@ -75,7 +90,7 @@ def require_auth(
     return issuer.read(credentials.credentials)
 
 
-SettingsDep = Annotated[Settings, Depends(get_settings)]
+SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 StoreDep = Annotated[FileStore, Depends(get_store)]
 CheckerDep = Annotated[PasswordChecker, Depends(get_password_checker)]
 IssuerDep = Annotated[TokenIssuer, Depends(get_token_issuer)]

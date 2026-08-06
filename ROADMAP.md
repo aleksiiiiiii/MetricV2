@@ -124,11 +124,12 @@ papier.
 | L11c | `v0.12.2` | Passe tactile : charte + écran Activité — *avance `L17-07`* | L11b |
 | **Jalon IV — Intelligence** | | | |
 | L12 | `v0.13.0` | Couche IA OpenRouter + analyse de repas + import Apple | L07 |
-| L13 | `v0.14.0` | Planning sport & export iCal | L12 |
-| L14 | `v0.15.0` | Objectifs IA & bilan hebdomadaire | L12, L13 |
+| L13 | `v0.14.0` | Planning sport & export iCal — **livré** | L12 |
+| L14 | `v0.15.0` | Objectifs IA & bilan hebdomadaire — **livré** | L12, L13 |
+| L14b | `v0.16.0` | Assistant conversationnel & mémoire de santé — **livré** | L14 |
 | **Jalon V — Production** | | | |
-| L15 | `v0.16.0` | PWA & notifications push | L11 |
-| L16 | `v0.17.0` | Export, hors-ligne, recherche, corrélations | L11 |
+| L15 | `v0.17.0` | PWA & notifications push | L11 |
+| L16 | `v0.18.0` | Export, hors-ligne, recherche, corrélations | L11 |
 | L17 | `v1.0.0` | Durcissement, déploiement, documentation | tous |
 
 Ordre motivé : le socle d'abord parce que tout en dépend ; **le Corps en premier
@@ -766,41 +767,272 @@ dire : si les modèles gratuits du jour lisent réellement un écran Apple Fitne
 
 ## L13 · `v0.14.0` — Planning sport & export iCal
 
-- [ ] `L13-01` `planning/plan.csv`, repository, calendrier mensuel navigable, semaine au lundi (`PLAN-01`)
-- [ ] `L13-02` Planifier / modifier / supprimer une séance : date, heure, type, titre suggéré, durée, note (`PLAN-02`)
-- [ ] `L13-03` Génération IA : fréquence réelle des 4 dernières semaines + groupes travaillés (`ACT-16`) + objectif actif + contraintes libres → 1 ou 2 semaines, alternance des groupes, récupération, pas de doublon (`PLAN-03`)
-- [ ] `L13-04` Aperçu avant écriture, retrait individuel, adoption en une fois marquée source IA (`PLAN-04`)
-- [ ] `L13-05` Flux `.ics` protégé par clé secrète stable, abonnable Apple/Google, téléchargeable (`PLAN-05`)
-- [ ] `L13-06` Écart plan / réalisé par semaine + taux de respect du planning (`PLAN-06`)
-- [ ] `L13-07` UI : calendrier mensuel, prévu vs effectué, aperçu de proposition IA
-- [ ] `L13-08` Tests : flux iCal valide dans un vrai client de calendrier, clé invalide → refus
+- [x] `L13-01` `planning/plan.csv`, repository, calendrier mensuel navigable, semaine au lundi (`PLAN-01`)
+- [x] `L13-02` Planifier / modifier / supprimer une séance : date, heure, type, titre suggéré, durée, note (`PLAN-02`)
+- [x] `L13-03` Génération IA : fréquence réelle des 4 dernières semaines + groupes travaillés (`ACT-16`) + objectif actif + contraintes libres → 1 ou 2 semaines, alternance des groupes, récupération, pas de doublon (`PLAN-03`)
+- [x] `L13-04` Aperçu avant écriture, retrait individuel, adoption en une fois marquée source IA (`PLAN-04`)
+- [x] `L13-05` Flux `.ics` protégé par clé secrète stable, abonnable Apple/Google, téléchargeable (`PLAN-05`)
+- [x] `L13-06` Écart plan / réalisé par semaine + taux de respect du planning (`PLAN-06`)
+- [x] `L13-07` UI : calendrier mensuel, prévu vs effectué, aperçu de proposition IA
+- [x] `L13-08` Tests : flux iCal valide dans un vrai client de calendrier, clé invalide → refus
 
 **DoD** — le flux `.ics` s'abonne réellement dans Apple Calendar ; une proposition IA
 n'écrit rien avant adoption explicite.
+
+**Seconde moitié ✅ vérifiée**, des deux côtés et sans se croire sur parole :
+`test_planning_ai.py` constate qu'après une proposition **le fichier n'existe toujours
+pas**, et `Planning.test.tsx` constate qu'aucune requête d'écriture n'est partie de
+l'écran. Le retrait individuel est vérifié sur la charge utile réellement envoyée.
+
+**Première moitié ⏳ non vérifiée.** Le flux est conforme à la RFC 5545 et la garde de sa
+clé est testée — mais **aucun client de calendrier réel ne s'y est abonné**. C'est
+exactement la situation du L12 : un `.ics` peut satisfaire la spec et être refusé par
+Apple Calendar sans un mot. Le geste, et ce qui compte comme échec, sont au §0 de
+[`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+
+> **Décision — le flux `.ics` est public, protégé par une clé et non par le JWT.** Un
+> abonnement Apple Calendar va chercher son fichier tout seul, périodiquement, sans
+> interface où saisir quoi que ce soit et **sans pouvoir porter d'en-tête
+> `Authorization`**. Exiger le jeton livrerait une fonctionnalité incapable de
+> fonctionner. La route est donc montée au niveau de l'application, avec la santé et la
+> documentation, et ne figure pas dans le schéma publié — l'y déclarer demanderait une
+> exception permanente dans la garde de `AUTH-05`, c'est-à-dire une porte ouverte dans le
+> mécanisme même qui les interdit.
+>
+> En contrepartie : clé d'au moins **32 caractères** — en deçà, le flux n'est pas publié
+> du tout et l'écran dit pourquoi —, comparaison à temps constant, et le même `404` pour
+> une clé fausse que pour un flux inexistant.
+
+> **Décision — un taux de respect de plus, et il ne fusionne avec aucun autre.** `AGG-03`
+> mesure l'assiduité de *suivi*, `HEAT-27` le respect d'un *engagement* de cadence,
+> `PLAN-06` le respect d'un *rendez-vous* : la séance prévue mardi a-t-elle eu lieu mardi.
+> Le rapprochement se fait par **jour** et compte `min(prévu, réalisé)` — trois sorties un
+> mardi n'honorent pas trois séances prévues le jeudi. Ni la nature ni la durée ne sont
+> comparées : une muscu remplacée par une sortie reste une séance faite.
+
+> **Décision — `plan.csv` est un fichier de planning, pas de mesure.** Toutes ses colonnes
+> portent un défaut, `date` comprise, et `time` est facultative **par conception**
+> (`PLAN-02`). Une ligne sans identifiant ou sans date est écartée des vues et **survit
+> dans le fichier**. C'est le défaut qui avait fait tomber le tableau de bord entier en
+> `502` au premier usage réel, sur un fichier de la même famille.
+
+> **Décision — le planning n'utilise pas `PastDate`.** C'est le seul domaine à porter des
+> dates futures. Il garde un garde-fou propre, `PlannedDate` : ±400 jours, parce qu'une
+> faute de frappe sur l'année poserait une séance qu'aucun écran ne montre jamais et qui
+> traînerait dans le flux iCal pour toujours.
+
+> **Décision — une durée proposée sous 5 minutes est écartée.** La grammaire du projet lit
+> `1:00` comme **une minute** — c'est du `mm:ss`, celui qui fait de `28:45` vingt-huit
+> minutes trois quarts (`ACT-01`). Un modèle qui l'écrit en pensant « une heure »
+> produirait une séance fausse d'un facteur soixante, et rien à l'écran ne la
+> distinguerait d'une minute voulue. On n'écrit pas une seconde grammaire et on ne devine
+> pas l'intention : on écarte, et le motif est affiché.
+
+> **Écart assumé — l'objectif actif est fourni par l'appelant, pas lu dans `goals.csv`.**
+> Ce fichier et son domaine arrivent au lot L14 (`GOAL-01`). `PLAN-03` reçoit donc
+> l'objectif en clair depuis l'écran ; quand le domaine existera, le serveur le remplira
+> lui-même et le champ deviendra un simple remplacement ponctuel.
+
+> **Conséquence hors périmètre — la barre de navigation déborde aussi sur ordinateur.**
+> « Planning » est la neuvième entrée : la barre demande 790 px et n'en obtient jamais
+> plus de 695, la largeur de lecture étant plafonnée à `--wrap`. Elle défilait déjà par
+> conception, mais seulement sur téléphone jusqu'ici. Un dégradé de bord a été ajouté pour
+> que la dernière entrée se lise comme « ça continue » plutôt que comme un affichage
+> coupé. Raccourcir un libellé, retirer « Charte » ou passer à un tiroir sont des
+> décisions de produit — elles appartiennent à `L17-07`.
 
 ---
 
 ## L14 · `v0.15.0` — Objectifs IA & bilan hebdomadaire
 
-- [ ] `L14-01` `goals/goals.csv`, `insights/weekly.csv`, repositories
-- [ ] `L14-02` Génération d'objectif : unique, chiffré, daté 4–8 semaines, justifié par les données ; données maigres → repli sur objectif de régularité (`GOAL-01`)
-- [ ] `L14-03` Résumé factuel envoyé au modèle, **jamais les fichiers entiers** (`GOAL-02`)
-- [ ] `L14-04` Adopter / régénérer / abandonner, conservation avec date et statut (`GOAL-03`)
-- [ ] `L14-05` Calcul de progression selon la métrique : poids, séances/sem, km/sem, protéines/j, hydratation/j (`GOAL-04`)
-- [ ] `L14-06` Trois états exposés : aucune proposition, en attente, actif avec échéance (`GOAL-05`)
-- [ ] `L14-07` Historique avec résultat final atteint / partiel / abandonné, réinjecté dans la génération suivante (`GOAL-06`)
-- [ ] `L14-08` Bilan hebdomadaire : ce qui progresse, ce qui décroche, une action concrète ; à la demande, historisé (`IA-08`)
-- [ ] `L14-09` UI : écran Objectif — anneau de progression, bloc IA, historique
-- [ ] `L14-10` Tests : progression sur les 5 métriques, repli sans données, objectif expiré
+- [x] `L14-01` `goals/goals.csv`, `insights/weekly.csv`, repositories
+- [x] `L14-02` Génération d'objectif : unique, chiffré, daté 4–8 semaines, justifié par les données ; données maigres → repli sur objectif de régularité (`GOAL-01`)
+- [x] `L14-03` Résumé factuel envoyé au modèle, **jamais les fichiers entiers** (`GOAL-02`)
+- [x] `L14-04` Adopter / régénérer / abandonner, conservation avec date et statut (`GOAL-03`)
+- [x] `L14-05` Calcul de progression selon la métrique : poids, séances/sem, km/sem, protéines/j, hydratation/j (`GOAL-04`)
+- [x] `L14-06` Trois états exposés : aucune proposition, en attente, actif avec échéance (`GOAL-05`)
+- [x] `L14-07` Historique avec résultat final atteint / partiel / abandonné, réinjecté dans la génération suivante (`GOAL-06`)
+- [x] `L14-08` Bilan hebdomadaire : ce qui progresse, ce qui décroche, une action concrète ; à la demande, historisé (`IA-08`)
+- [x] `L14-09` UI : écran Objectif — anneau de progression, bloc IA, historique
+- [x] `L14-10` Tests : progression sur les 5 métriques, repli sans données, objectif expiré
 
 **DoD** — un objectif se génère, s'adopte et affiche une progression réelle issue des
 données ; le résumé envoyé au modèle est vérifiable et borné.
+
+> **DoD vérifiée à moitié — le lot n'est pas clos.** La seconde moitié l'est des deux
+> côtés : une note personnelle de repas n'atteint pas la consigne, et l'écran publie le
+> condensé ligne à ligne. La première demande un vrai modèle **et** six semaines : un
+> objectif ne se juge « atteint » qu'une fois son échéance passée, sur des données qui
+> n'existent pas encore. Le geste exact est au §2 de
+> [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+
+> **Décision — les cinq métriques de `GOAL-04` sont entrées dans le registre `METRICS`,
+> pas dans le domaine Objectifs.** Il en manquait trois : séances par semaine, kilomètres
+> par semaine, protéines par jour. Les écrire dans une seconde table aurait donné deux
+> définitions de « séances par semaine » à tenir en phase, et « la même constante écrite à
+> deux endroits tient jusqu'au premier oubli ». `/api/aggregates/series` y gagne trois
+> courbes au passage. Le domaine Objectifs n'ajoute que ce que le registre n'a pas à
+> savoir : comment réduire une série en valeur courante, et entre quelles bornes une cible
+> reste plausible.
+
+> **Décision — la progression se mesure depuis un point de départ, pas depuis zéro.**
+> `courant / cible` serait faux dès le premier objectif de poids : viser 78 kg quand on en
+> pèse 82 donnerait 105 % d'avancement le jour de l'adoption. Le point de départ est la
+> valeur qu'avait la métrique le jour de l'adoption, **redéduite** de `created` et jamais
+> stockée — rien n'est ajouté aux onze colonnes de l'annexe. Une seule formule couvre alors
+> les cinq métriques, qu'elles doivent monter ou descendre.
+>
+> Coin assumé et épinglé par un test : la formule tire le *sens* de l'objectif de l'écart
+> entre départ et cible. Elle ne sait pas qu'une cadence est un plancher (« au moins trois
+> séances ») là où un poids est une valeur. Se fixer trois séances alors qu'on en fait
+> quatre se lit donc « redescendre à trois ». Déclarer un sens par métrique ajouterait une
+> donnée qui peut mentir ; le libellé chiffré — « 4 sur 3 séances » — dit déjà la situation.
+
+> **Décision — ce n'est pas un quatrième taux de respect.** `AGG-03` mesure l'assiduité de
+> *suivi*, `HEAT-27` le respect d'un *engagement* de cadence, `PLAN-06` le respect d'un
+> *rendez-vous*. `GOAL-04` mesure la distance parcourue entre le chiffre qu'on avait et le
+> chiffre qu'on s'est fixé. Quatre questions, quatre algorithmes, et ils ne fusionneront
+> pas plus que les trois premiers.
+
+> **Décision — les fenêtres d'observation s'arrêtent à la période révolue.** Sept jours
+> jusqu'à hier, quatre semaines jusqu'à dimanche dernier. Compter le mardi en cours dans
+> une moyenne hebdomadaire ferait ressembler chaque lundi matin à un effondrement, pour
+> remonter le dimanche soir. C'est la règle de `AGG-03`, dont la série ne casse pas sur la
+> journée en cours.
+>
+> Corollaire : une cadence se divise par le **nombre de périodes de la fenêtre**, jamais
+> par le nombre de périodes qui portent une donnée. Quatre semaines de repos suivies d'une
+> semaine à six séances font 1,5 séance par semaine, pas six. C'est déjà ce que fait la
+> moyenne d'hydratation du domaine Hydratation, et répondre autrement ici aurait donné deux
+> moyennes différentes selon l'écran ouvert.
+
+> **Décision — un seul objectif à la fois, et le refus tombe avant l'appel.** `GOAL-01` dit
+> « objectif unique » : proposer comme adopter sont refusés tant qu'un objectif est en
+> cours. Le refus est vérifié **avant** d'interroger le modèle — proposer pour refuser
+> ensuite serait payer pour apprendre une règle que le serveur connaissait déjà.
+
+> **Décision — une échéance passée ne clôt rien toute seule.** L'objectif reste `active`
+> dans le fichier jusqu'à un geste ; l'écran affiche « échéance passée » et propose de
+> clore. Un `GET` qui écrirait fausserait le cache autant que la promesse « rien sans
+> validation », et rendrait la clôture invisible. Le résultat, lui, est **calculé** par le
+> serveur : laisser l'écran cocher « atteint » reviendrait à laisser cocher « atteint » un
+> objectif qui ne l'est pas.
+
+> **Décision — une semaine, un bilan.** `week` est la clé naturelle de `insights/weekly.csv` :
+> reconserver la même semaine remplace la ligne existante. Deux lignes rendraient « le bilan
+> de la semaine du 3 août » ambigu, et un fichier destiné à un tableur ne porte pas deux
+> vérités pour une même ligne.
+
+> **Dette du L13 soldée — le serveur remplit lui-même l'objectif d'une proposition de
+> planning.** `ProposalRequest.objective` était fourni par l'écran en texte libre, faute de
+> `goals.csv` : un objectif qu'on venait d'adopter devait être retapé, et l'oublier une fois
+> suffisait à obtenir une semaine qui l'ignorait sans le dire. Le champ reste un
+> **remplacement ponctuel** — « cette semaine je prépare une course » n'a pas vocation à
+> devenir un objectif de six semaines.
+
+> **Conséquence hors périmètre — la navigation échange « Charte » contre « Objectif ».**
+> Une dixième entrée aurait porté la barre à 874 px pour 695 disponibles ; l'échange la
+> laisse à **806** — seize de plus que les 790 du L13, parce qu'« Objectif » est un mot plus
+> long que « Charte ». Le chiffre est mesuré, pas estimé. `/_kitchen-sink` reste publique et
+> atteignable par son adresse : elle quitte la navigation **utilisateur**, où une référence
+> de charte n'avait pas grand sens. C'était le dernier coup gratuit ; ce qui reste — raccourcir
+> « Tableau de bord », qui pèse 139 px à lui seul, ou passer à un tiroir — appartient à
+> `L17-07`.
+
+> **Trois défauts trouvés dans le navigateur, aucun par les tests.** Le plus grave était une
+> violation d'invariant : quand l'avancement est indéterminé faute de point de départ,
+> l'anneau affichait un « 0% » lisible en son centre. Le schéma rendait `null`, le test le
+> vérifiait, l'écran choisissait de ne pas colorer — et le composant dessinait quand même le
+> pourcentage, parce qu'un anneau dessine un pourcentage. L'écran n'affiche plus d'anneau du
+> tout dans ce cas. Les deux autres : une redite — « 2,4 sur 3 séances · séances par
+> semaine » — et un texte d'invite copié du mauvais champ.
+
+---
+
+## L14b · `v0.16.0` — Assistant conversationnel & mémoire de santé
+
+**C'est un lot, pas une correction.** La lettre le distingue de `L11b` et `L11c`, qui
+étaient des versions correctives : celui-ci ajoute un domaine, un fichier, un écran et
+quatre identifiants de backlog. Elle évite surtout de renuméroter `L15` → `L18`, ce qui
+casserait `L17-07` — référencé dans les tokens, trois feuilles de style et cinq documents.
+Les versions des lots suivants glissent d'une mineure ; leurs identifiants ne bougent pas.
+
+- [x] `L14b-01` `insights/memory.csv`, modèle et dépôt — famille *planning*, tout défaut
+- [x] `L14b-02` Condensé de contexte : les cinq métriques, l'objectif actif, l'assiduité, le respect du planning, les bilans récents, la mémoire (`IA-09`)
+- [x] `L14b-03` Conversation multi-tours : question en français, réponse appuyée sur le condensé, historique borné (`IA-09`)
+- [x] `L14b-04` Mémoire **proposée** à chaque tour, jamais retenue sans validation (`IA-10`)
+- [x] `L14b-05` Lire, corriger, retirer la mémoire à la main — **sans clé API** (`IA-11`)
+- [x] `L14b-06` Garde-fou médical dans la consigne **et** à l'écran (`IA-12`)
+- [x] `L14b-07` UI : écran Assistant — fil de conversation, bloc IA, carnet de mémoire
+- [x] `L14b-08` Accès depuis le tableau de bord et l'écran Objectif, **sans entrée de navigation**
+- [x] `L14b-09` Tests : rien de retenu sans validation, condensé borné, mémoire utilisable sans clé
+
+**DoD** — une question sur ses propres données reçoit une réponse qui s'y appuie ; ce qu'on
+dit d'important sur sa santé est proposé, validé, et réutilisé au tour suivant.
+
+> **DoD vérifiée à moitié — le lot n'est pas clos.** La seconde moitié l'est des deux
+> côtés : rien n'est écrit avant validation, le condensé est borné et publié, et une note
+> personnelle de repas n'atteint pas la consigne. La première demande un vrai modèle — la
+> simulation ne peut pas dire si une réponse *s'appuie* réellement sur les chiffres qu'on
+> lui a donnés, ni si ce qu'il propose de retenir vaut d'être retenu. Le geste est au §3 de
+> [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md), et l'appel réel se
+> demande avant.
+
+> **Défaut d'usage réel — un fichier de planning rempli de travers levait au lieu de se
+> replier.** Un `goals/goals.csv` d'une version antérieure, avec un horodatage dans une
+> colonne de date, rendait l'écran Objectif **et** l'assistant inaccessibles en `502`. La
+> promesse du §2 — « une cellule vide, un nombre illisible, une source mal orthographiée y
+> sont des possibilités normales » — n'était tenue que pour le vide : un défaut de colonne
+> ne s'applique qu'à une cellule absente. `CsvDate` et `CsvNumber` la rendent vraie pour
+> `plan.csv`, `goals.csv`, `weekly.csv` et `memory.csv`, et dix-sept tests l'épinglent.
+
+> **Trois défauts trouvés dans le navigateur, aucun par les tests.** Le plus coûteux était
+> une question qui devenait de plus en plus difficile à poser : le champ descendait de
+> **289 px par échange** — 726, puis 1015, puis 1304 — sur l'écran dont c'est le seul objet.
+> Le formulaire est passé **avant** le fil, et le fil au décroissant, qui est de toute façon
+> la convention du projet : le champ tient désormais à 375 px, quel que soit le nombre de
+> questions. Les deux autres étaient deux boutons « Retenir » pour deux gestes différents,
+> et deux boutons « Corriger » que rien ne distinguait à la synthèse vocale.
+
+> **Décision — la conversation est éphémère, la mémoire est durable.** Le fil vit dans
+> l'écran et se perd au rechargement ; rien n'est écrit côté serveur. Ce qui mérite de
+> durer est **extrait, proposé, et validé** — c'est `NUT-04`, `PLAN-04` et `GOAL-03`
+> appliqués à du texte. Historiser les échanges entiers coûterait un fichier qui grossit
+> sans fin, illisible dans un tableur, pour une valeur que trois lignes de mémoire
+> couvrent mieux.
+
+> **Décision — la mémoire est un carnet, pas une fonction IA.** Lire, ajouter, corriger et
+> retirer une note marchent **sans clé OpenRouter**. C'est `IA-07` pris au mot : l'IA est
+> un confort. Ce qu'elle apporte ici est de *proposer* ce qu'on aurait noté soi-même.
+
+> **Décision — l'assistant n'est pas un médecin, et c'est écrit à trois endroits.** La
+> consigne le lui interdit, la relecture n'y change rien — on ne censure pas une réponse
+> qu'on a demandée —, et l'écran porte la mention en permanence. Une application de santé
+> qui laisse un modèle interpréter une douleur au genou rend un service négatif : le
+> conseil paraît sûr parce qu'il est bien écrit.
+
+> **Décision — le condensé est publié, comme celui d'un objectif.** `GOAL-02` a posé la
+> règle « condensé factuel, jamais les fichiers entiers » ; elle vaut ici avec plus de
+> force, parce qu'une conversation invite à tout envoyer « au cas où ». Ce qui part est
+> affiché sous le fil, ligne à ligne. C'est ce qui rend la promesse vérifiable.
+
+> **Décision — la mémoire porte ce que l'utilisateur a dit, pas ce que les CSV savent.**
+> Une note qui répète « 2,4 séances par semaine » serait fausse le mois suivant et
+> contredirait le condensé, qui, lui, est recalculé. La relecture écarte donc ce qui
+> ressemble à une mesure : la mémoire est faite pour ce qu'aucun fichier ne porte — une
+> blessure, un sommeil qui se dégrade, une contrainte de travail.
+
+> **Conséquence assumée — aucune entrée de navigation.** L'écran s'ouvre depuis une carte
+> du tableau de bord et un lien de l'écran Objectif. La barre demandait 806 px pour 695
+> disponibles ; une dixième entrée l'aurait portée à ~897. Le coût est réel — c'est l'écran
+> qu'on ouvre pour poser une question, donc souvent, et il est à deux appuis. À rouvrir
+> avec `L17-07`, où la barre se tranche pour de bon.
 
 ---
 
 # Jalon V — Production
 
-## L15 · `v0.16.0` — PWA & notifications push
+## L15 · `v0.17.0` — PWA & notifications push
 
 - [ ] `L15-01` Manifeste PWA, icônes, installable sur iOS et Android
 - [ ] `L15-02` Service worker : coquille applicative en cache, stratégies par type de ressource
@@ -814,7 +1046,7 @@ application fermée. *(Dépend de HTTPS : à valider avec `L17-01`.)*
 
 ---
 
-## L16 · `v0.17.0` — Export, hors-ligne, recherche, corrélations
+## L16 · `v0.18.0` — Export, hors-ligne, recherche, corrélations
 
 - [ ] `L16-01` Export complet : archive de tous les CSV + photos en option, indépendante de Nextcloud (`DATA-01`)
 - [ ] `L16-02` File d'attente hors-ligne côté client, rejeu à la reconnexion, résolution des `409` (`DATA-02`)
@@ -836,7 +1068,7 @@ l'archive d'export s'ouvre sans l'app.
 - [ ] `L17-04` Passe accessibilité : focus visible, contrastes, navigation clavier, `aria-pressed` des bascules, `prefers-reduced-motion`
 - [ ] `L17-05` Passe performance : budget de chargement, découpage de code, coût réel des grilles `HEAT`
 - [ ] `L17-06` Parcours Playwright de bout en bout sur les 8 écrans principaux
-- [~] `L17-07` Passe responsive mobile — cible d'usage principale · **entamée en `v0.12.2`** : tokens de cible tactile, `Stepper` / `Chip` / `ChipStrip` / `SwipeRow` dans la charte, écran Activité et navigation du shell traités. Restent les sept autres écrans
+- [~] `L17-07` Passe responsive mobile — cible d'usage principale · **entamée en `v0.12.2`** : tokens de cible tactile, `Stepper` / `Chip` / `ChipStrip` / `SwipeRow` dans la charte, écrans Activité, Planning et Objectif traités en émulation, navigation du shell traitée. **Restent sept écrans**, et la barre de navigation à trancher — 806 px demandés pour 695
 - [ ] `L17-08` Journalisation et supervision minimales, `/health` branché
 - [ ] `L17-09` Sauvegarde/restauration répétée en conditions réelles
 - [ ] `L17-10` Revue de traçabilité : chaque ID du backlog est couvert ou explicitement écarté
@@ -860,7 +1092,7 @@ l'archive d'export s'ouvre sans l'app.
 | `SUP` | 01→06 | L06 |
 | `PLAN` | 01→06 | L13 |
 | `GOAL` | 01→06 | L14 |
-| `IA` | 01→08 | L12 (08 → L14) |
+| `IA` | 01→12 | L12 (08 → L14 · 09→12 → L14b) |
 | `IMP` | 01→06 | L12 · **`IMP-07` hors périmètre v1** |
 | `AGG` | 01→04 | L08 |
 | `HEAT` v2 | 01→04, 14, 18→23 | L09 |
@@ -919,7 +1151,7 @@ changement de spec, pas comme une question ouverte.
 | I — Socle | L00 → L03 | `v0.4.0` | ☑ **livré** — L00 `v0.1.0`, L01 `v0.2.0`, L02 `v0.3.0`, L03 `v0.4.0` |
 | II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ✅ **clos** — L09 `v0.10.0`, L10 `v0.11.0`, L11 `v0.12.0` ; dette d'ergonomie soldée en `v0.12.1` |
-| IV — Intelligence | L12 → L14 | `v0.15.0` | ◐ ouvert — L12 livré, DoD à moitié vérifiée |
+| IV — Intelligence | L12 → L14 | `v0.15.0` | ◐ ouvert — les trois lots livrés, **trois DoD vérifiées à moitié** |
 | V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
 
 Mettre à jour ce tableau et les cases des lots à chaque clôture, en même temps que le

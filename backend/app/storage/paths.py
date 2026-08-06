@@ -30,6 +30,7 @@ SUPPLEMENT_LOG = "supplements/intake_log.csv"
 PLAN = "planning/plan.csv"
 GOALS = "goals/goals.csv"
 WEEKLY_INSIGHTS = "insights/weekly.csv"
+MEMORY = "insights/memory.csv"
 
 # Décision **D2** : tout ce qui est réglage vit sous `settings/`, y compris le
 # clé/valeur que l'annexe plaçait à la racine. Un fichier et un dossier homonymes au

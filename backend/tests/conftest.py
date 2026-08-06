@@ -83,6 +83,9 @@ def dav() -> FakeWebDav:
             "Metric/settings",
             "Metric/hydration",
             "Metric/supplements",
+            "Metric/planning",
+            "Metric/goals",
+            "Metric/insights",
         }
     )
     return server
@@ -125,7 +128,18 @@ def store(webdav: WebDavClient, cache: FileCache) -> FileStore:
     store = FileStore(webdav, cache)
     # Les dossiers du double existent déjà : on évite un MKCOL par écriture dans les
     # tests qui comptent les requêtes.
-    store._known_collections.update({"body", "activity", "settings", "hydration", "supplements"})
+    store._known_collections.update(
+        {
+            "body",
+            "activity",
+            "settings",
+            "hydration",
+            "supplements",
+            "planning",
+            "goals",
+            "insights",
+        }
+    )
     return store
 
 

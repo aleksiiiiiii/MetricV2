@@ -168,6 +168,10 @@ comportement observable, pas un écran.
 | IA-06 | Préparation des images | Redimensionnement à 1024 px max, conversion JPEG, encodage data URL, pour réduire coût et latence. |
 | IA-07 | Dégradation propre sans clé | Sans clé API, l'app fonctionne intégralement en saisie manuelle et les fonctions IA renvoient un message clair. L'IA est un confort, jamais un prérequis. |
 | IA-08 | Bilan hebdomadaire | Une fois par semaine, l'IA produit un court bilan factuel : ce qui a progressé, ce qui a décroché, une action concrète pour la semaine suivante. Généré à la demande, historisé. *(nouveau)* |
+| IA-09 | Conversation contextuelle | Poser une question en français sur ses propres données et recevoir une réponse qui s'y appuie. Le modèle reçoit un **condensé factuel** — jamais les fichiers entiers — et le condensé est affiché à l'écran. *(nouveau)* |
+| IA-10 | Mémoire de santé | Ce que l'utilisateur dit d'important sur sa santé — blessure, sommeil, traitement, contrainte — est **proposé** à la conservation, validé par lui, et réinjecté dans les échanges suivants. Rien n'est retenu sans validation. *(nouveau)* |
+| IA-11 | Gestion de la mémoire | Lire, corriger et retirer ce qui a été retenu, à la main. Disponible **sans clé API** : la mémoire est un carnet, pas une fonction IA. *(nouveau)* |
+| IA-12 | Garde-fou médical | L'assistant n'est pas un médecin : ni diagnostic, ni traitement, ni interprétation de symptôme. Devant une plainte physique il le dit et renvoie vers un professionnel. La consigne le porte, l'écran l'affiche. *(nouveau)* |
 | IMP-01 | Analyse d'un screenshot d'entraînement | Capture Apple Fitness / Apple Watch envoyée à un modèle vision qui en extrait les valeurs. L'endpoint analyse seulement : rien n'est écrit sans validation. |
 | IMP-02 | Pré-remplissage | Type, date, distance, temps, FC moyenne, dénivelé, calories, type de séance pré-remplis et tous modifiables avant import. |
 | IMP-03 | Conversion et normalisation | Miles → km, `28:45` → minutes décimales, dates relatives → date absolue non future. Les valeurs absentes restent vides plutôt qu'inventées. |
@@ -231,6 +235,7 @@ les **données calculées**, la façon de les dessiner relevant des guidelines U
 | `planning/plan.csv` | id, date, time, kind, title, duration_min, note, source |
 | `goals/goals.csv` | id, created, title, metric, target, unit, deadline, rationale, source, status, outcome |
 | `insights/weekly.csv` | week, created, summary, source |
+| `insights/memory.csv` | id, created, topic, note, source |
 | `settings.csv` | key, value |
 
 ### Réglages (`settings.csv`)

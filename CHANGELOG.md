@@ -3,6 +3,324 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
 
+## [0.16.0] — 2026-08-06
+
+**Un assistant qui lit tes données, et un carnet qui retient ce qu'elles ne disent pas.**
+Le premier lot où l'IA écrit du texte plutôt qu'une mesure — et le premier où l'on peut
+*voir*, à l'écran, exactement ce qui part vers un service tiers.
+
+1026 tests backend *(978 → +48)*, 230 frontend *(215 → +15)*.
+
+### Ajouté — la conversation
+
+- **`POST /api/assistant/chat`** (`IA-09`) : une question en français, une réponse appuyée
+  sur un **condensé** d'une douzaine de lignes — les cinq métriques et leurs fenêtres,
+  l'objectif en cours et sa progression, la série d'assiduité, le respect du planning, les
+  bilans récents, les objectifs passés. Rien n'est calculé dans ce domaine : chaque ligne
+  vient du service qui en détient la règle.
+- **Le condensé est publié** avec la réponse et affiché sous le fil, ligne à ligne. C'est
+  ce qui rend `IA-09` vérifiable plutôt que déclaratif — et la règle « jamais les fichiers
+  entiers » vaut ici avec plus de force qu'ailleurs, parce qu'une conversation invite à
+  tout joindre « au cas où ».
+- **Le serveur ne se souvient de rien.** Aucune session, aucun fil stocké : le client rend
+  l'historique à chaque question, borné à six échanges. Deux onglets ne se mélangent
+  jamais, et il n'existe aucun fichier de discussions qui grossirait sans fin.
+
+### Ajouté — la mémoire de santé
+
+- **`insights/memory.csv`** (`IA-10`, `IA-11`) : un carnet de faits durables — blessure,
+  sommeil, traitement, contrainte — que le condensé emporte à chaque question.
+- **Proposée, jamais retenue d'office.** Le modèle repère ce qu'on vient de dire sur soi,
+  l'écran le montre dans un `AiBlock`, un appui l'écrit. C'est `NUT-04`, `PLAN-04` et
+  `GOAL-03` appliqués à du texte.
+- **Un carnet, pas une fonction IA** : lire, ajouter, corriger et retirer marchent **sans
+  clé OpenRouter**.
+
+### Ajouté — le garde-fou médical
+
+- **`IA-12`** : la consigne interdit diagnostic, traitement et interprétation de symptôme ;
+  l'écran porte la mention en permanence, sans possibilité de la fermer. La relecture, elle,
+  ne censure rien — filtrer une réponse qu'on a demandée donnerait un texte amputé dont
+  personne ne saurait ce qu'il a perdu.
+
+### Décidé
+
+- **La conversation est éphémère, la mémoire est durable.** Historiser les échanges
+  coûterait un fichier illisible dans un tableur pour une valeur que trois lignes de carnet
+  couvrent mieux.
+- **La mémoire porte ce qu'on a dit, pas ce que les CSV savent.** La relecture écarte une
+  note dont tous les mots porteurs figurent déjà dans une ligne du condensé : elle serait
+  fausse le mois suivant, et contredirait un chiffre recalculé à chaque question.
+- **Aucune entrée de navigation.** La barre demandait 806 px pour 695 disponibles ; une
+  dixième entrée l'aurait portée à ~897. L'écran s'ouvre depuis une carte du tableau de
+  bord et un lien de l'écran Objectif. Le coût est réel et assumé — à rouvrir avec
+  `L17-07`.
+- **`L14b` est un lot, pas une correction.** La lettre évite de renuméroter `L15` → `L18`,
+  ce qui casserait `L17-07`, référencé dans les tokens, trois feuilles de style et cinq
+  documents. Les versions des lots suivants glissent d'une mineure.
+
+### Corrigé
+
+- **Un fichier de planning rempli de travers faisait tomber deux écrans en `502`.** Trouvé
+  en usage réel, sur `/api/assistant/chat` : un `goals/goals.csv` écrit par une version
+  antérieure portait `2026-07-10T16:26` dans une colonne de date, et rendait l'écran
+  Objectif **et** l'assistant inaccessibles.
+
+  La cause est plus large que le symptôme. Le §2 promet qu'un fichier de configuration,
+  de catalogue ou de planning tolère « une cellule vide, **un nombre illisible**, une
+  source mal orthographiée » — mais un défaut de colonne ne couvre que la cellule *vide* :
+  `CsvModel.from_csv` ne l'applique qu'à celle-là. Toute cellule remplie de travers levait
+  encore, dans `plan.csv`, `goals.csv`, `weekly.csv` et `memory.csv` — quatre fichiers,
+  dont un livré au lot L13.
+
+  `CsvDate` et `CsvNumber` (`app/storage/model.py`) retombent désormais sur leur repli au
+  lieu de lever. Un horodatage est **récupéré** — le jour y est écrit, le lire n'est pas
+  l'inventer — et ce qui est relu de travers se réécrit droit.
+
+- **`/planning` et `/objectif` n'avaient ni marge de page ni largeur de lecture.** L'en-tête
+  était plafonné à 1080 px, les cartes touchaient les bords, et le titre collait à zéro —
+  deux alignements sur une même page. Trouvé en écrivant [`docs/front.md`](docs/front.md),
+  qui a mis l'incohérence en tableau.
+
+### Non vérifié
+
+- **Aucune question n'est passée dans un vrai modèle.** La simulation ne peut pas dire si
+  une réponse *s'appuie* réellement sur les chiffres qu'on lui a donnés, ni si ce qu'elle
+  propose de retenir vaut d'être retenu. Geste exact au §3 de
+  [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+- **`/assistant` n'a pas été touché sur un vrai téléphone** — c'est pourtant l'écran où
+  l'on tape le plus, et le clavier système ne s'émule pas.
+
+### La leçon du lot
+
+L'écran était correct partout : aucune cible sous 44 px, aucun débordement, un contenu
+aligné, trente tests verts. Et le champ de question descendait de **289 px à chaque
+échange** — 726, puis 1015, puis 1304 — sur l'écran dont poser une question est le seul
+objet. Il a fallu le mesurer *trois fois de suite* pour le voir : une mesure unique donnait
+un chiffre qui n'avait l'air de rien.
+
+**Quand un écran s'allonge à l'usage, le mesurer une fois revient à ne pas le mesurer.**
+
+Et une seconde, arrivée le lendemain par un `502` en usage réel : **un test qui vérifie une
+cellule vide ne vérifie pas une cellule fausse.** Quatre fichiers promettaient de tolérer
+« un nombre illisible » ; quatre batteries ne testaient que le vide, et la promesse était
+fausse depuis le lot L13 sans que rien ne le dise.
+
+---
+
+## [0.15.0] — 2026-08-05
+
+**Un objectif chiffré, daté, et une progression qui vient des données.** Le lot qui donne
+enfin une réponse à « pour quoi je fais tout ça » — et le premier où l'IA écrit une
+intention plutôt qu'une mesure.
+
+Le lot a aussi une leçon, et elle est nette : **trois défauts trouvés en regardant la page,
+zéro par les tests**, dont une violation d'invariant que quatre-vingt-treize tests d'API et
+dix-neuf tests d'écran laissaient passer.
+
+978 tests backend *(885 → +93)*, 215 frontend *(196 → +19)*.
+
+### Ajouté — les objectifs
+
+- **`goals/goals.csv`**, la deuxième famille de dates futures du projet après le planning.
+  Un objectif : un titre, une métrique, une cible, une échéance à 4–8 semaines, une
+  justification, un statut, un résultat.
+- **Génération** (`GOAL-01`) via `AiService.ask_json`. Le modèle reçoit les cinq métriques
+  mesurables avec leurs bornes, les deux dates entre lesquelles l'échéance doit tomber, et
+  un condensé factuel. La couche IA du L12 a resservi telle quelle — troisième lot de
+  suite, ni modèle à choisir ni cascade à écrire.
+- **Données maigres → objectif de régularité** : sous quatre séances en quatre semaines,
+  la demande impose `weekly_sessions`, et la relecture refuse tout le reste. Proposer
+  « 12 km par semaine » à qui n'a jamais couru n'est pas un objectif mais un vœu.
+- **Aperçu, régénération, adoption, abandon** (`GOAL-03`) — le même `AiBlock` et la même
+  discipline que `NUT-04`, `IMP-01` et `PLAN-04`. Rien n'est écrit avant l'appui.
+- **Progression** (`GOAL-04`) sur les cinq métriques, avec libellé chiffré, fenêtre
+  d'observation dite en français, et un anneau qui **disparaît** quand il n'y a rien à
+  mesurer.
+- **Historique et résultat final** (`GOAL-06`) : atteint, partiel, abandonné. Réinjecté
+  dans la génération suivante — sans cela, le modèle reproposerait indéfiniment ce qu'on
+  vient de refuser.
+
+### Ajouté — le bilan hebdomadaire
+
+- **`IA-08`** et `insights/weekly.csv` : ce qui a progressé, ce qui a décroché, **une**
+  action pour la semaine qui commence. Sur la semaine **révolue** — un « décrochage »
+  constaté le mardi peut se rattraper le samedi.
+- L'écart plan / réalisé lui est **fourni** par `PLAN-06`, jamais recalculé.
+
+### Ajouté — trois métriques au registre
+
+`daily_protein_g`, `weekly_sessions` et `weekly_distance_km` rejoignent `METRICS`. Elles
+manquaient à `GOAL-04` ; les écrire dans le domaine Objectifs aurait donné deux définitions
+de « séances par semaine ». `/api/aggregates/series` y gagne trois courbes au passage.
+
+### Décidé
+
+- **La progression part d'un point de départ, pas de zéro.** `courant / cible` afficherait
+  105 % d'avancement le jour où l'on vise 78 kg en en pesant 82. Le point de départ est la
+  valeur qu'avait la métrique à l'adoption, **redéduite** de `created` : rien n'est stocké
+  en plus des onze colonnes de l'annexe, et une seule formule couvre les cinq métriques.
+- **Ce n'est pas un quatrième taux de respect.** `AGG-03` mesure le suivi, `HEAT-27` un
+  engagement de cadence, `PLAN-06` un rendez-vous. Celui-ci mesure la distance parcourue
+  vers un chiffre qu'on s'est fixé. Quatre questions, quatre algorithmes.
+- **Les fenêtres s'arrêtent à la période révolue**, et une cadence se divise par le nombre
+  de périodes de la fenêtre — jamais par celles qui portent une donnée. Quatre semaines de
+  repos puis une semaine à six séances font 1,5 séance par semaine, pas six.
+- **Un objectif à la fois, et le refus tombe avant l'appel** : proposer pour se faire
+  refuser ensuite serait payer pour apprendre une règle déjà connue du serveur.
+- **Une échéance passée ne clôt rien toute seule.** Un `GET` qui écrirait fausserait le
+  cache autant que la promesse « rien sans validation ». Le résultat, lui, est calculé par
+  le serveur.
+- **Une semaine, un bilan** : `week` est la clé naturelle du fichier, et reconserver
+  remplace.
+- **La navigation échange « Charte » contre « Objectif »** plutôt que de passer à dix
+  entrées. 806 px demandés pour 695 disponibles, mesurés — contre 874 pour une dixième
+  entrée. `/_kitchen-sink` reste publique et atteignable par son adresse.
+
+### Corrigé
+
+- **Dette du L13 soldée** : le serveur remplit lui-même l'objectif d'une proposition de
+  planning depuis `goals.csv`. Le champ de l'écran reste un remplacement ponctuel.
+
+### Non vérifié
+
+- **Aucun objectif n'a encore atteint son échéance.** Le résultat final se calcule sur des
+  données qui n'existent pas encore ; c'est la moitié de DoD qui manque, et elle demande
+  six semaines. Geste exact au §2 de [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+- **Aucun objectif ni bilan n'est sorti d'un vrai modèle.** Développement et tests sur
+  réponses simulées ; chaque appel réel se demande avant.
+- **`/objectif` n'a pas été touché sur un vrai téléphone**, comme les neuf autres écrans.
+
+### La leçon du lot
+
+L'anneau de progression affichait **« 0% »** quand l'avancement était indéterminé faute de
+point de départ. Le schéma rendait `null`, un test vérifiait que `null` remontait, l'écran
+choisissait de ne pas colorer l'anneau — et le composant dessinait quand même le
+pourcentage, parce qu'un anneau dessine un pourcentage. Aucune de ces quatre décisions
+n'était fautive ; la page mentait quand même, et c'était l'invariant le plus ancien du
+projet qui tombait.
+
+**Une valeur inventée à l'écran ne se voit qu'à l'écran.**
+
+---
+
+## [0.14.0] — 2026-08-04
+
+**Planning sport, génération assistée, et un flux `.ics` abonnable.** Le premier lot dont
+une partie du résultat sort de l'application : un calendrier iPhone affiche les séances
+prévues sans que Metric soit ouvert.
+
+C'est aussi le premier domaine à porter des **dates futures**, ce qui suffit à retourner
+deux habitudes prises en douze lots — les bornes de saisie refusaient le futur, et la
+protection des routes exigeait un jeton que personne ne peut fournir ici.
+
+885 tests backend *(775 → +110)*, 196 frontend *(177 → +19)*.
+
+### Ajouté — le planning
+
+- **`planning/plan.csv`** et le calendrier mensuel (`PLAN-01`) : par jour, ce qui est
+  **prévu** et ce qui a été **effectué**, semaine au lundi, mois navigable. Le réalisé est
+  lu chez le domaine Activité, jamais recopié — deux vérités sur ce qui s'est passé un
+  mardi seraient une de trop.
+- **Planifier, corriger, retirer une séance** (`PLAN-02`) : date, heure **facultative**,
+  nature, titre, durée, note. Garde anti-conflit par jeton comme partout ailleurs.
+- **Écart plan / réalisé et taux de respect** (`PLAN-06`), semaine par semaine.
+- **`FileStore.prefetch` sur les trois fichiers** de l'écran : à ~180 ms l'aller-retour
+  mesuré sur l'instance réelle, les lire l'un après l'autre coûterait une demi-seconde de
+  plus par affichage de mois.
+
+### Ajouté — le flux iCal
+
+- **`GET /api/calendar/{clé}.ics`** (`PLAN-05`), abonnable depuis Apple Calendar ou Google
+  Agenda, et **`GET /api/planning/export.ics`** pour un téléchargement ponctuel sous jeton.
+- Le module `ical.py` ne connaît ni dépôt ni HTTP : on lui passe des séances, il rend du
+  texte. Quatre règles du format y sont écrites une fois — CRLF, pliage à 75 **octets**,
+  échappement des quatre caractères spéciaux, heures en UTC.
+
+### Ajouté — la génération assistée
+
+- **`PLAN-03`** via `AiService.ask_json` : fréquence réelle des quatre dernières semaines,
+  groupes musculaires délaissés (`ACT-16`), objectif et contraintes libres → une ou deux
+  semaines proposées. La couche IA du L12 a servi telle quelle — ni modèle à choisir, ni
+  cascade à écrire.
+- **Aperçu, retrait individuel, adoption en une fois** (`PLAN-04`), marquée `source=ai`.
+  L'écran réutilise `AiBlock` : une seconde façon de dire « pas encore validé » aurait
+  affaibli la première.
+- **`CsvRepository.extend`** — plusieurs lignes ajoutées en **une** écriture. Adopter huit
+  séances en huit `PUT` coûterait plus d'une seconde et laisserait le fichier à moitié
+  rempli si la coupure survient à la cinquième.
+
+### Décidé
+
+- **Le flux `.ics` est public, protégé par une clé et non par le JWT.** Un abonnement va
+  chercher son fichier tout seul, sans interface où saisir quoi que ce soit et **sans
+  pouvoir porter d'en-tête `Authorization`** : exiger le jeton livrerait une fonctionnalité
+  incapable de fonctionner. La route est montée au niveau de l'application, avec la santé
+  et la documentation, et **ne figure pas dans le schéma publié** — l'y déclarer
+  demanderait une exception permanente dans la garde de `AUTH-05`, c'est-à-dire une porte
+  ouverte dans le mécanisme même qui les interdit.
+  En contrepartie : clé d'au moins **32 caractères** — en deçà le flux n'est pas publié du
+  tout, et l'écran dit pourquoi —, comparaison à temps constant, et le même `404` pour une
+  clé fausse que pour un flux inexistant. Distinguer les deux confirmerait qu'il y a
+  quelque chose à trouver.
+- **`plan.csv` est un fichier de planning, pas de mesure.** Toutes ses colonnes portent un
+  défaut, `date` comprise, et `time` est facultative **par conception**. C'est le défaut
+  qui avait fait tomber le tableau de bord entier en `502` au premier usage réel, sur un
+  fichier de la même famille — sauf qu'ici la cellule vide est le cas *normal*, pas
+  l'accident.
+- **Le planning n'utilise pas `PastDate`** : c'est le seul domaine à porter des dates
+  futures. Il a sa borne à lui, `PlannedDate`, à ±400 jours — accepter l'avenir n'est pas
+  accepter n'importe quoi, et une faute de frappe sur l'année poserait une séance
+  qu'aucun écran ne montre jamais et qui traînerait dans le flux pour toujours.
+- **Un troisième taux, et il ne fusionne avec aucun des deux autres.** `AGG-03` mesure
+  l'assiduité de *suivi*, `HEAT-27` le respect d'un *engagement* de cadence, `PLAN-06` le
+  respect d'un *rendez-vous*. Le rapprochement se fait par **jour** et compte
+  `min(prévu, réalisé)` : trois sorties un mardi n'honorent pas trois séances prévues le
+  jeudi. Une semaine sans planning n'a pas un taux de 0 % — elle n'a **pas de taux**.
+- **Une durée proposée sous 5 minutes est écartée.** La grammaire du projet lit `1:00`
+  comme une minute — c'est du `mm:ss`, celui qui fait de `28:45` vingt-huit minutes trois
+  quarts. Un modèle qui l'écrit en pensant « une heure » produirait une séance fausse d'un
+  facteur soixante, indiscernable à l'œil d'une minute voulue. On n'écrit pas une seconde
+  grammaire et on ne devine pas l'intention : on écarte, et le motif s'affiche.
+- **Hors fenêtre, on écarte ; on ne recale pas.** Une date que le modèle a inventée ne se
+  corrige pas en une autre. C'est la règle du L12 sur les bornes, appliquée au temps.
+- **Ce qui est écarté se dit.** Une proposition amputée en silence laisserait croire que le
+  modèle n'a suggéré que cela.
+
+### Corrigé
+
+- **`SettingsDep` rendait les réglages du *processus*, pas ceux de l'application.**
+  `create_app(settings)` existe pour permettre des applications isolées ; une route qui
+  appelle `get_settings()` rend ce paramètre à moitié faux. Sans clé d'abonnement, le
+  défaut restait invisible — il ne le serait plus.
+- **Deux défauts d'affichage trouvés en regardant la page, aucun par les tests** : un lien
+  de téléchargement à **17 px** de haut, et trois tuiles d'indicateurs qui repoussaient le
+  calendrier — le sujet de l'écran — à 492 px du haut d'une fenêtre de 844. Le second
+  n'était pas une erreur de code : aucun test ne sait ce qu'un écran est censé montrer en
+  premier.
+
+### Non vérifié
+
+- **Aucun client de calendrier réel ne s'est abonné au flux.** Il est conforme à la
+  RFC 5545 et la garde de sa clé est testée, mais un `.ics` peut satisfaire la spec et
+  être refusé par Apple Calendar sans un mot. C'est la moitié de DoD qui manque, et le
+  geste est au §0 de [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+- **Aucune proposition réelle n'a été demandée à un modèle.** Développement et tests sur
+  réponses simulées, via `tests/fake_openrouter.py` ; aucun test de `make check` n'appelle
+  OpenRouter.
+- **L'écran n'a pas été touché sur un vrai téléphone.** La passe en émulation est faite —
+  case de calendrier 47,1 × 44 px, aucune cible sous le plancher, aucun débordement à
+  390 px — mais 47 × 44 est la cible la plus serrée du projet.
+
+### Conséquence assumée
+
+- **La barre de navigation déborde désormais aussi sur ordinateur.** « Planning » est la
+  neuvième entrée : la barre demande 790 px et n'en obtient jamais plus de 695, la largeur
+  de lecture étant plafonnée à `--wrap`. Elle défilait déjà par conception, mais seulement
+  sur téléphone. Un dégradé de bord la fait lire comme « ça continue » plutôt que comme un
+  affichage coupé ; raccourcir un libellé ou passer à un tiroir sont des décisions de
+  produit, et elles appartiennent à `L17-07`.
+
 ## [0.13.0] — 2026-07-30
 
 **Couche IA OpenRouter, estimation d'une assiette, import d'une capture Apple.** Ouvre le

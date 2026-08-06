@@ -97,6 +97,24 @@ class NutritionService:
         rows = await self._meals.read_all()
         return {local_day_of(row.model.datetime_) for row in rows}
 
+    async def protein_points(self) -> list[tuple[date, float]]:
+        """Protéines consignées par jour, en grammes.
+
+        Seuls les jours portant au moins un repas apparaissent : un jour sans repas
+        consigné n'est pas un jour à zéro gramme, c'est un jour dont on ne sait rien. Un
+        repas noté **sans** ses macros, lui, compte pour zéro — il a été relevé, et
+        deviner ce qu'il contenait serait inventer une mesure.
+
+        Le rattachement au jour suit le fuseau local (`HEAT-32`), comme `meal_days` : deux
+        découpages du même journal donneraient deux totaux.
+        """
+        rows = await self._meals.read_all()
+        per_day: dict[date, float] = {}
+        for row in rows:
+            day = local_day_of(row.model.datetime_)
+            per_day[day] = per_day.get(day, 0.0) + (row.model.protein_g or 0)
+        return sorted((day, round(value, 1)) for day, value in per_day.items())
+
     async def view(self, day: date, *, limit: int | None = None) -> NutritionView:
         rows = await self._meals.read_all()
         today = [row for row in rows if local_day_of(row.model.datetime_) == day]

@@ -3,17 +3,19 @@
 Document d'entrée. À lire en premier pour reprendre le développement de **Metric** sans
 contexte préalable — que ce soit dans trois mois ou dans une nouvelle session.
 
-**Version courante : `v0.13.0`** · treize lots livrés sur dix-huit. Le jalon IV est
-**ouvert** : la couche IA existe, elle estime une assiette et lit une capture Apple. Sa
-DoD est vérifiée **à moitié** — voir le §7, qui dit ce qui reste et pourquoi.
+**Version courante : `v0.16.0`** · seize lots livrés sur dix-neuf. Le jalon IV est
+**complet mais ouvert** : la couche IA existe, elle estime une assiette, lit une capture
+Apple, propose un planning, fixe un objectif, rend un bilan et répond aux questions.
+**Ses quatre lots ont une DoD vérifiée à moitié** — L12, L13, L14, L14b — et le §7 dit
+lesquelles, ce qui reste, et pourquoi cela ne peut pas se vérifier autrement qu'à la main.
 
-| Mesure | Valeur *(vérifiée le 2026-07-30)* |
+| Mesure | Valeur *(vérifiée le 2026-08-06)* |
 |---|---|
-| Tests backend | **775**, dont 35 de sécurité sur les photos, **135 sur le moteur d'assiduité** et **120 sur la couche IA** |
-| Tests frontend | **177**, dont 28 sur les parcours d'estimation et d'import |
+| Tests backend | **1026**, dont 35 de sécurité sur les photos, **135 sur le moteur d'assiduité**, **120 sur la couche IA**, **110 sur le planning**, **93 sur les objectifs** et **48 sur l'assistant** |
+| Tests frontend | **230**, dont 28 sur les parcours d'estimation et d'import, 19 sur le planning, 19 sur les objectifs, 15 sur l'assistant |
 | Couverture du moteur | **100 %** de `heatmap/engine.py` |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
-| Build de production | 120 ko gzip |
+| Build de production | 127 ko gzip |
 | Affichage d'assiduité, Nextcloud réel | 751 ms à froid, **6 ms ensuite** |
 
 ---
@@ -35,10 +37,11 @@ l'application disparaît.
 | `backlogV2.md` | Domaine métier complet, 13 sections, annexe CSV | Référence globale |
 | `GuidelinesUI.html` | Tokens, composants, motifs visuels | Référence UI exclusive |
 
-Un quatrième document n'a pas d'autorité mais se lit avant de livrer :
+Deux documents n'ont pas d'autorité mais se lisent avant de livrer :
 [`docs/verifications-manuelles.md`](verifications-manuelles.md) — **ce que `make check` ne
 peut pas vérifier**, accumulé lot après lot, avec ce qu'on lance et ce qui compte comme
-échec.
+échec — et [`docs/front.md`](front.md), la carte des onze pages et des cinq couches de
+l'interface, avec ce qu'une refonte a le droit de changer et ce qu'elle ne doit pas casser.
 
 En cas de contradiction entre les deux backlogs, `heat_backlog.md` gagne. Les
 contradictions connues sont **tranchées et consignées** au [§3 du ROADMAP](../ROADMAP.md#3-points-de-spécification-à-trancher)
@@ -108,11 +111,19 @@ dans `grids.py`, dans un routeur — échapperait à cette batterie. Ne pas en �
 Deux familles de fichiers, deux comportements, et la frontière est la question « est-ce
 que l'utilisateur ouvre ce fichier dans un tableur ? ».
 
-**Configuration, catalogue, planning** — `settings.csv`, les trois fichiers de pistes,
-`schedule.csv`, `exercises.csv`, `favorites.csv`. Une cellule vide, un nombre illisible,
+**Configuration, catalogue, planning, carnet** — `settings.csv`, les trois fichiers de
+pistes, `supplements/schedule.csv`, `planning/plan.csv`, `goals/goals.csv`,
+`insights/weekly.csv`, `insights/memory.csv`, `exercises.csv`, `favorites.csv`. Une cellule vide, un nombre illisible,
 une source mal orthographiée y sont des possibilités **normales**. Chaque colonne porte
 donc un défaut, chaque lecture typée retombe sur son propre repli, et l'erreur reste
-locale : une piste abîmée rend une grille vide, elle n'emporte pas les huit autres. Une
+locale : une piste abîmée rend une grille vide, elle n'emporte pas les huit autres.
+
+> **Un défaut de colonne ne suffit pas à tenir cette promesse**, et il a fallu un `502` en
+> usage réel pour le voir. `CsvModel.from_csv` n'applique le défaut qu'aux cellules
+> **vides** ; une cellule *remplie de travers* — un horodatage dans une colonne de date —
+> lève encore. Les colonnes de ces fichiers s'annotent donc `CsvDate` et `CsvNumber`
+> (`app/storage/model.py`), qui retombent sur leur repli au lieu de lever. Un horodatage
+> est **récupéré** — le jour y est écrit, le lire n'est pas l'inventer. Une
 ligne sans identifiant est écartée des listes mais **survit dans le fichier** — on
 n'efface pas ce qu'on ne comprend pas.
 
@@ -124,6 +135,10 @@ Cette règle a coûté deux incidents avant d'être comprise. Au L08, une cellul
 vide de `schedule.csv` faisait tomber le tableau de bord — et c'était aussi une violation
 de `STO-04`, dont la promesse « ajouter une colonne n'invalide aucune ligne ancienne » ne
 peut pas tenir si la colonne ajoutée est obligatoire.
+
+`planning/plan.csv` est le cas limite de la famille, et il vaut d'être connu : sa colonne
+`time` est vide **par conception** — `PLAN-02` dit l'heure facultative. Là où la cellule
+vide de `schedule.csv` était un accident, celle-ci est le cas normal.
 
 **Avant d'ajouter une colonne à un modèle, demandez-vous dans quelle famille il est.**
 
@@ -216,6 +231,21 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 > les routeurs inclus — et ne vérifiait donc rien pendant deux lots. Si vous ajoutez une
 > garde structurelle, vérifiez qu'elle échoue quand elle doit échouer.
 
+**Une seule route de données échappe au groupe**, et elle porte sa propre garde : le flux
+`.ics` du planning (`PLAN-05`). Un abonnement Apple Calendar va chercher son fichier tout
+seul, périodiquement, **sans pouvoir porter d'en-tête `Authorization`** — exiger le jeton
+livrerait une fonctionnalité incapable de fonctionner.
+
+Elle est donc montée au niveau de l'application, avec la santé et la documentation, et
+**hors du schéma publié** : l'y déclarer demanderait d'inscrire une exception permanente
+dans la garde de `AUTH-05`, c'est-à-dire d'ouvrir une porte dans le mécanisme même qui les
+interdit. Ce qu'elle doit en échange est écrit dans `app/domains/planning/router.py` — clé
+d'au moins 32 caractères, comparaison à temps constant, rien de publié sans clé, et le même
+refus pour une clé fausse que pour un flux inexistant.
+
+**Si une deuxième route demande un jour la même exception, elle n'y a pas droit.** C'est
+la forme du besoin qui l'a justifiée ici, pas la commodité.
+
 ---
 
 ## 3. Ce qui est construit
@@ -237,6 +267,9 @@ chaque exécution ; un second test interroge réellement chaque lecture sans jet
 | L11b | `v0.12.1` | Refonte de l'écran Activité — *dette soldée, pas un lot* |
 | L11c | `v0.12.2` | Passe tactile : charte + écran Activité — *avance `L17-07`* |
 | L12 | `v0.13.0` | Couche IA OpenRouter, estimation d'assiette, import Apple — **ouvre le jalon IV** |
+| L13 | `v0.14.0` | Planning sport, génération assistée, flux iCal abonnable |
+| L14 | `v0.15.0` | Objectifs IA, progression réelle, bilan hebdomadaire |
+| L14b | `v0.16.0` | Assistant conversationnel, mémoire de santé, garde-fou médical |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -244,8 +277,15 @@ Le détail de chaque lot — tâches cochées, écarts assumés, décisions — 
 
 ### Écrans disponibles
 
-`/connexion` · `/` tableau de bord · `/corps` · `/activite` · `/routine` · `/nutrition` ·
-`/assiduite` · `/reglages` · `/_kitchen-sink` *(référence de charte, publique)*
+`/connexion` · `/` tableau de bord · `/corps` · `/activite` · `/planning` · `/objectif` ·
+`/routine` · `/nutrition` · `/assiduite` · `/reglages` · `/assistant` *(**hors navigation**
+depuis le L14b — on y entre par le tableau de bord et l'écran Objectif)* ·
+`/_kitchen-sink` *(référence de charte, publique — **hors navigation** depuis le L14)*
+
+La barre s'arrête à neuf entrées, et ce n'est plus une commodité : elle demande **806 px
+pour 695 disponibles**, mesurés entrée par entrée. Deux écrans sont donc atteints
+autrement. La carte du front — [`docs/front.md`](front.md) — porte le détail et les deux
+leviers qui restent.
 
 Le **réglage des pistes** vit dans `/reglages` et non dans `/assiduite` : la piste mise en
 avant *est* le réglage `heatmap_metric`, et les séparer aurait obligé à expliquer deux fois
@@ -284,6 +324,27 @@ backend/app/domains/imports/   n'écrit que dans les fichiers du domaine Activit
 ├── analysis.py        consigne au modèle, relecture, conversions (`IMP-03`)
 ├── service.py         `analyze` ne sait pas écrire, `confirm` ne lit aucune image
 └── schemas.py         brouillon (tout nullable) et charge utile (bornée)
+
+backend/app/domains/assistant/  conversation et carnet de santé
+├── context.py         **rassemble** le condensé — ne calcule rien, publie tout
+├── conversation.py    consigne, relecture, garde-fou médical — pur, sans fichier
+├── service.py         `ask` ne sait pas écrire, `remember` ne sait pas interroger
+└── router.py          compose deux domaines : il va chercher `PLAN-06` lui-même
+
+backend/app/domains/goals/      objectifs et bilans hebdomadaires
+├── metrics.py         désigne cinq métriques du registre, n'en définit aucune
+├── progress.py        **juge** — pur, sans fichier ni horloge. L'avancement vit ici
+├── generation.py      consigne, condensé factuel, relecture (`GOAL-01`, `GOAL-02`)
+├── weekly.py          consigne et relecture du bilan (`IA-08`) — pur lui aussi
+├── service.py         `propose` ne sait pas écrire, `adopt` ne sait pas interroger
+└── router.py          compose les deux domaines : il va chercher `PLAN-06` lui-même
+
+backend/app/domains/planning/   le premier domaine à porter des dates futures
+├── models.py          famille *planning* : chaque colonne a un défaut, `time` comprise
+├── ical.py            RFC 5545 — sans dépôt ni HTTP, donc vérifiable sur des valeurs fixes
+├── generation.py      consigne, calendrier écrit en clair, relecture (`PLAN-03`)
+├── service.py         lit trois fichiers, n'en écrit qu'un ; `propose` ne sait pas écrire
+└── router.py          deux routeurs — le protégé, et le flux `.ics` public par clé
 
 backend/app/domains/heatmap/   le domaine le plus découpé, et la frontière compte
 ├── engine.py          **juge** — pur, sans fichier ni horloge. Toute règle vit ici
@@ -411,7 +472,7 @@ mais ce qu'ils disent vaut d'être retenu.
 pas en la testant. Lancer `make dev` et saisir une vraie séance après chaque lot vaut mieux
 que dix tests de plus.
 
-**Et elle s'est confirmée deux fois de suite.** La refonte de l'écran Activité (`v0.12.1`)
+**Et elle s'est confirmée quatre fois de suite.** La refonte de l'écran Activité (`v0.12.1`)
 est partie avec vingt-quatre tests d'écran verts ; deux défauts n'en sont sortis qu'en
 regardant la page — une date écrite deux fois, et une phrase promettant d'ouvrir « la
 séance la plus récente » sur un écran qui n'en avait aucune. La passe tactile (`v0.12.2`)
@@ -419,10 +480,15 @@ en a produit trois de plus, dont un qu'aucun test ne pouvait voir : **les colonn
 l'historique ne s'alignaient pas d'une ligne à l'autre**, chaque fiche étant sa propre
 grille où une piste `auto` se résout selon son seul contenu.
 
+Le lot L13 en a produit deux de plus, le L14 trois — dont **une violation d'invariant** :
+un anneau de progression qui affichait « 0% » là où l'avancement était indéterminé, sous
+quatre-vingt-treize tests d'API et dix-neuf tests d'écran verts.
+
 Un test vérifie ce qu'on a pensé à vérifier ; l'œil voit ce qu'on n'avait pas prévu. Une
 mesure automatisée voit encore autre chose : c'est en interrogeant le DOM sur la hauteur
 de chaque contrôle qu'on a trouvé la navigation à 33 px, que personne n'avait remarquée en
-onze lots.
+onze lots — et c'est en la réinterrogeant au L14 qu'on a su que la barre demandait 806 px
+pour 695, entrée par entrée.
 
 ### La dette d'ergonomie de l'écran Activité — soldée en `v0.12.1`
 
@@ -447,11 +513,92 @@ référence exclusive.
 
 ---
 
-## 7. Où en est le lot L12, et ce qu'il reste
+## 7. Où en sont les lots L12 à L14b, et ce qu'il reste
 
-**Couche IA + estimation de repas + import Apple** — livré en `v0.13.0`, DoD vérifiée
-**à moitié**. Le lot n'est donc pas clos : la convention du projet ne connaît pas le
-« clos à 90 % ».
+**Quatre lots livrés, quatre DoD vérifiées à moitié, et pour la même raison.** Aucun n'est
+clos : la convention du projet ne connaît pas le « clos à 90 % ».
+
+Ce qui manque aux quatre tient en une phrase — **la chaîne n'a jamais été branchée sur le
+vrai monde**. Un modèle réel n'a pas lu de capture, un client de calendrier réel ne s'est
+pas abonné au flux, aucun objectif n'a atteint son échéance, aucune question n'a reçu de
+vraie réponse. Tous demandent un geste manuel, tous consignés dans
+[`verifications-manuelles.md`](verifications-manuelles.md), et l'appel à un modèle réel
+demande en plus **un accord préalable, à chaque fois**.
+
+### Le lot L14b — assistant et mémoire de santé (`v0.16.0`)
+
+**Vérifié** : rien n'est écrit avant validation, des deux côtés. Le condensé est borné,
+publié à l'écran, et une note personnelle de repas n'y entre pas — un test le constate sur
+le texte réellement envoyé. Le carnet fonctionne entièrement sans clé.
+
+**Ce qui reste** : poser une vraie question à un vrai modèle. C'est la seule chose que la
+simulation ne peut pas dire — si la réponse *s'appuie* sur les chiffres qu'on lui a donnés
+plutôt que d'en inventer de plausibles, et si ce qu'elle propose de retenir vaut d'être
+retenu. Le geste est au §3 de
+[`verifications-manuelles.md`](verifications-manuelles.md).
+
+**Deux pièces de ce lot resserviront ailleurs :**
+
+| Pièce | Où | Ce qu'elle fait |
+|---|---|---|
+| `context.build` | `domains/assistant/` | tout ce que l'app sait, en une douzaine de lignes, sans rien recalculer |
+| `_echoes` | `domains/assistant/conversation.py` | écarte une note qui ne fait que redire une ligne du condensé |
+
+**Ce que sa passe navigateur a appris**, et qui vaut pour tout le projet : l'écran était
+correct partout — aucune cible sous 44 px, aucun débordement, contenu aligné — et le champ
+de question descendait de **289 px par échange**, sur l'écran dont poser une question est
+le seul objet. Une mesure unique donnait un chiffre qui n'avait l'air de rien ; il a fallu
+mesurer trois fois de suite. **Quand un écran s'allonge à l'usage, le mesurer une fois
+revient à ne pas le mesurer.**
+
+### Le lot L14 — objectifs et bilan hebdomadaire (`v0.15.0`)
+
+**Vérifié** : rien n'est écrit avant adoption, des deux côtés — le fichier n'existe
+toujours pas après une proposition, aucune requête d'écriture ne part de l'écran. Et
+`GOAL-02` est vérifiable plutôt que déclaratif : une note personnelle de repas
+**n'atteint pas** la consigne, un test le constate sur le texte réellement envoyé, et
+l'écran publie le condensé ligne à ligne.
+
+**Ce qui reste** : qu'une échéance passe. Le résultat final — atteint, partiel — se calcule
+sur des données qui n'existent pas encore, et c'est le seul endroit du projet où une moitié
+de DoD demande six semaines plutôt qu'un geste. Un raccourci existe pour vérifier la
+clôture sans attendre : antidater `created` et `deadline` dans un tableur. Il ne vérifie
+pas la progression réelle.
+
+**Trois pièces de ce lot resserviront ailleurs :**
+
+| Pièce | Où | Ce qu'elle fait |
+|---|---|---|
+| `progress.py` | `domains/goals/` | avancement vers une cible — pur, sans fichier ni horloge |
+| Trois métriques | `aggregates/service.py` | séances/sem, km/sem, protéines/j, servies aussi par `AGG-04` |
+| `Call.prompt` | `tests/fake_openrouter.py` | ce qui est **réellement** envoyé au modèle, journalisé |
+
+**Ce que sa passe navigateur a appris**, et qui vaut pour tout le projet : l'anneau de
+progression affichait « 0% » là où l'avancement était indéterminé. Le schéma rendait
+`null`, un test le vérifiait, l'écran ne colorait pas l'anneau — et le composant dessinait
+quand même le pourcentage, parce qu'un anneau dessine un pourcentage. Quatre décisions
+correctes, une page qui ment. **Une valeur inventée à l'écran ne se voit qu'à l'écran.**
+
+### Le lot L13 — planning sport et flux iCal (`v0.14.0`)
+
+**Vérifié** : rien n'est écrit avant adoption. Deux batteries le constatent depuis deux
+angles — côté serveur, le fichier **n'existe toujours pas** après une proposition ; côté
+écran, aucune requête d'écriture n'est partie. Le retrait individuel est vérifié sur la
+charge utile réellement envoyée, pas sur l'état du composant.
+
+**Ce qui reste** : abonner Apple Calendar au flux. Un `.ics` peut satisfaire la RFC 5545 et
+être refusé sans un mot — les symptômes d'un pliage de ligne fautif ou d'un `UID` instable
+sont un calendrier vide, ou un doublon **par modification**, indéfiniment.
+
+Trois pièces de ce lot resserviront ailleurs :
+
+| Pièce | Où | Ce qu'elle fait |
+|---|---|---|
+| `CsvRepository.extend` | `storage/csv_repo.py` | plusieurs lignes en **une** écriture |
+| `ical.py` | `domains/planning/` | RFC 5545, sans dépôt ni HTTP |
+| `PlannedDate` | `core/validation.py` | la borne de ce qui a le droit d'être futur |
+
+### Le lot L12 — couche IA, estimation de repas, import Apple (`v0.13.0`)
 
 **Ce qui est vérifié** : sans clé, aucune fonctionnalité n'est bloquée. L'état répond en
 disant ce qui manque, les endpoints IA refusent avec un code du catalogue, et la saisie
@@ -472,8 +619,11 @@ repli. Vider le réglage suffit à revenir au tout-gratuit.
 
 ### Ce que la couche IA a posé, et qui resservira
 
-Trois lots l'attendent : le planning (`PLAN-03`), les objectifs (`GOAL-*`) et le bilan
-hebdomadaire (`IA-08`). Ils n'auront ni modèle à choisir ni cascade à écrire.
+Trois lots l'attendaient — le planning (`PLAN-03`), les objectifs (`GOAL-*`), le bilan
+hebdomadaire (`IA-08`). **Les trois sont livrés, plus un quatrième qui n'était pas prévu :
+l'assistant conversationnel (`IA-09`).** Aucun n'a eu de modèle à choisir ni de cascade à
+écrire. La couche a tenu telle quelle sur cinq usages, dont quatre qu'elle n'avait pas vus
+venir — et le cinquième, la conversation, ne lui a pas demandé une ligne de plus.
 
 | Pièce | Où | Ce qu'elle fait |
 |---|---|---|
@@ -553,9 +703,15 @@ lecture du code, ce qui est une raison de les traiter plus tard, pas plus tôt.
 Chrome émulant un iPhone 14, en évènements tactiles réels : cibles, débordement,
 glissements, tout est vérifié. Mais l'émulation ne reproduit ni l'imprécision du pouce, ni
 le clavier système qui remonte sur le champ actif, ni la latence. **Ouvrir `/activite` sur
-le téléphone et consigner une vraie série est le test qui manque.**
+le téléphone et consigner une vraie série est le test qui manque** — et depuis le L13,
+**viser un jour dans le calendrier du mois** est le second.
 
-Et `L17-07` n'est pas clos : sept écrans sur huit n'ont pas eu la passe.
+Et `L17-07` n'est pas clos : **sept écrans sur dix** n'ont pas eu la passe. `/planning` et
+`/objectif` l'ont reçue en même temps que leur livraison, et chacune a produit des défauts
+qu'aucun test du lot n'avait vus — un lien à 17 px et un calendrier repoussé sous le pli
+pour le premier, un anneau affichant « 0% » sur un avancement indéterminé pour le second.
+La grille du planning est par ailleurs la **cible la plus serrée du
+projet** : 47,1 × 44 px à 390 px, sans un pixel à céder.
 
 **Aucune grille n'a encore un an d'historique réel derrière elle.** Les pistes ayant été
 amorcées le jour de la livraison, `HEAT-07` les rend `off` sur tout le passé et le taux de
@@ -563,5 +719,15 @@ respect vaut `null` — comportement correct, mais qui laisse le rendu d'une gri
 le calcul des longues séries vérifiés sur données simulées uniquement. **Rouvrir
 `/assiduite` dans un mois est le vrai test de ce lot.**
 
-> `AGG-03` et `HEAT-27` sont **deux algorithmes distincts et le resteront** : le premier
-> mesure l'assiduité de suivi, le second le respect d'un engagement. Ne pas les fusionner.
+> **Trois taux distincts, et ils le resteront.** `AGG-03` mesure l'assiduité de *suivi* —
+> a-t-on relevé quelque chose ce jour-là. `HEAT-27` mesure le respect d'un *engagement* de
+> cadence — « deux fois par semaine ». `PLAN-06` mesure le respect d'un *rendez-vous* — la
+> séance prévue mardi a-t-elle eu lieu mardi.
+>
+> Trois questions différentes, trois algorithmes. Les fusionner donnerait un chiffre dont
+> personne ne saurait dire ce qu'il compte.
+>
+> **Et `GOAL-04` n'est pas le quatrième.** Il ne mesure pas un respect mais un
+> *avancement* : la distance parcourue entre le chiffre qu'on avait et celui qu'on s'est
+> fixé. Il se borne à `[0, 1]` comme les trois autres, il s'affiche comme eux en
+> pourcentage, et c'est exactement ce qui rend la confusion tentante.

@@ -22,6 +22,7 @@ from app.domains import (
     aggregates,
     ai,
     app_settings,
+    assistant,
     auth,
     body,
     goals,
@@ -52,6 +53,7 @@ for domain in (
     goals,
     imports,
     ai,
+    assistant,
     app_settings,
 ):
     protected_router.include_router(domain.router)
@@ -72,6 +74,7 @@ PROTECTED_PREFIXES = tuple(
         goals,
         imports,
         ai,
+        assistant,
         app_settings,
     )
 )

@@ -133,18 +133,39 @@ class CsvRepository[TModel: CsvModel]:
         simultanés n'a pas d'importance, alors qu'un `409` obligerait l'utilisateur à
         ressaisir.
         """
+        return (await self.extend([item]))[0]
+
+    async def extend(self, items: Sequence[TModel]) -> list[Row[TModel]]:
+        """Ajoute plusieurs lignes en fin de fichier, en **une seule écriture**.
+
+        Le besoin vient de `PLAN-04` : adopter une proposition de planning enregistre
+        huit séances d'un coup. Les ajouter une par une coûterait huit `PUT` complets —
+        soit, à ~180 ms l'aller-retour, plus d'une seconde — et laisserait surtout le
+        fichier dans un état intermédiaire si la coupure survient à la cinquième. Une
+        adoption est un geste, elle mérite une écriture.
+
+        Même rejeu que `append` et pour la même raison : les ajouts commutent.
+        """
+        if not items:
+            return []
+
         last: StorageConflictError | None = None
 
         for _ in range(APPEND_RETRIES):
             sheet = await self.load(fresh=True)
             raws = [dict(row.raw) for row in sheet.rows]
-            raws.append(item.to_csv())
+            added = [item.to_csv() for item in items]
+            raws.extend(added)
             try:
                 await self._save(raws, sheet)
             except StorageConflictError as exc:
                 last = exc
                 continue
-            return Row(index=len(raws) - 1, model=item, raw=item.to_csv())
+            first = len(sheet.rows)
+            return [
+                Row(index=first + offset, model=item, raw=raw)
+                for offset, (item, raw) in enumerate(zip(items, added, strict=True))
+            ]
 
         raise last or StorageConflictError()
 

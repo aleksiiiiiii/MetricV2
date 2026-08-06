@@ -16,6 +16,8 @@ Il n'y a pas de base de données.
 | [ROADMAP.md](ROADMAP.md) | Lots de livraison, versioning, décisions arrêtées |
 | [docs/etat-du-projet.md](docs/etat-du-projet.md) | **Reprise à froid** — invariants, état, prochaine étape |
 | [docs/patron-domaine.md](docs/patron-domaine.md) | Patron à recopier pour ajouter un domaine |
+| [docs/front.md](docs/front.md) | **Carte du front** — les onze pages, les cinq couches, par où passer pour modifier |
+| [docs/verifications-manuelles.md](docs/verifications-manuelles.md) | Ce que `make check` ne peut pas voir |
 
 `heat_backlog.md` **remplace** la partie `HEAT` de la section 12 de `backlogV2.md`.
 En cas de contradiction, c'est lui qui fait autorité.

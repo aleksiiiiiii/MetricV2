@@ -10,7 +10,7 @@ attrapent la faute de frappe et le champ mal rempli, pas la performance inhabitu
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Annotated
 
 from pydantic import AfterValidator, Field
@@ -44,6 +44,31 @@ def reject_future_datetime(value: datetime) -> datetime:
 
 PastDate = Annotated[date, AfterValidator(reject_future_date)]
 PastDateTime = Annotated[datetime, AfterValidator(reject_future_datetime)]
+
+#: Amplitude d'un planning, de part et d'autre d'aujourd'hui (`PLAN-02`).
+#: Vers l'arrière : on replanifie la semaine en cours, pas l'an dernier. Vers l'avant :
+#: une préparation de marathon se pose à un an, jamais à dix.
+PLAN_PAST_DAYS = 400
+PLAN_FUTURE_DAYS = 400
+
+
+def reject_implausible_plan_date(value: date) -> date:
+    """Borne une date de planning, sans lui interdire l'avenir.
+
+    Le planning est le **seul** domaine du projet à porter des dates futures : il
+    n'utilise donc pas `PastDate`. Il n'est pas pour autant sans garde-fou — une faute de
+    frappe sur l'année (`2062` pour `2026`) poserait une séance qu'aucun écran ne montre
+    jamais et qui traînerait dans le flux iCal pour toujours.
+    """
+    today = today_local()
+    if value < today - timedelta(days=PLAN_PAST_DAYS):
+        raise ValueError("cette date est trop ancienne pour un planning")
+    if value > today + timedelta(days=PLAN_FUTURE_DAYS):
+        raise ValueError("cette date est trop lointaine pour un planning")
+    return value
+
+
+PlannedDate = Annotated[date, AfterValidator(reject_implausible_plan_date)]
 
 # ── Corps (`BODY`) ────────────────────────────────────
 

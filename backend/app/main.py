@@ -3,8 +3,14 @@
 Ce module assemble l'application : cycle de vie des ressources partagées, gestionnaires
 d'erreurs, découpage en routeurs par domaine (`API-01`) et route de santé (`API-04`).
 
-Les routes publiques sont énumérées ici, et elles sont trois : la santé, la documentation
-(`API-05`) et la connexion. Tout le reste exige un jeton (`AUTH-05`).
+Les routes publiques sont énumérées ici, et elles sont quatre : la santé, la documentation
+(`API-05`), la connexion, et le flux iCal du planning (`PLAN-05`). Tout le reste exige un
+jeton (`AUTH-05`).
+
+Le flux iCal est le seul des quatre à servir des données personnelles, et le seul à porter
+sa propre garde : une clé secrète dans son URL, parce qu'un abonnement Apple Calendar va
+chercher son fichier tout seul et ne peut pas porter d'en-tête `Authorization`. Le
+raisonnement complet, et ce qu'il impose, sont dans `app/domains/planning/router.py`.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from app.core.throttle import LoginThrottle
 from app.domains.ai.service import AiProvider
 from app.domains.api import protected_router, public_router
 from app.domains.heatmap.cache import GridCache
+from app.domains.planning import calendar_router
 from app.storage.provider import StorageProvider
 
 
@@ -90,6 +97,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Les réglages de **cette** application, pour les routes qui en dépendent. Posés ici
+    # et non dans le `lifespan` : ce n'est pas une ressource à ouvrir et à refermer, et
+    # une route ne doit pas dépendre du démarrage complet pour savoir comment elle est
+    # configurée.
+    app.state.settings = settings
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
@@ -117,6 +130,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ai_enabled=settings.ai_enabled,
         )
 
+    # Le flux iCal se monte ici, à côté de la santé, et non dans le groupe protégé :
+    # il porte sa propre garde et n'a pas de jeton à exiger (`PLAN-05`).
+    app.include_router(calendar_router)
     app.include_router(public_router)
     app.include_router(protected_router)
 

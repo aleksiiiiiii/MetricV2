@@ -92,6 +92,12 @@ def _catalogue() -> dict[str, Metric]:
 
     Les mensurations sont dépliées depuis `MEASUREMENT_FIELDS` plutôt qu'énumérées :
     ajouter une mesure au domaine Corps l'ajoute à ce catalogue sans y toucher.
+
+    `daily_protein_g`, `weekly_sessions` et `weekly_distance_km` sont arrivées avec les
+    objectifs (`GOAL-04`), qui avaient besoin de les mesurer. Elles ont leur place **ici**
+    et non dans le domaine Objectifs : une seconde table de métriques aurait donné deux
+    définitions de « séances par semaine » à tenir en phase, et les séries génériques de
+    `AGG-04` y gagnent trois courbes qu'elles n'avaient pas.
     """
     metrics: list[Metric] = [
         Metric(
@@ -109,11 +115,32 @@ def _catalogue() -> dict[str, Metric]:
             load=lambda store, _: _hydration_points(store),
         ),
         Metric(
+            key="daily_protein_g",
+            label="Protéines",
+            unit="g",
+            granularity="day",
+            load=lambda store, _: NutritionService(store).protein_points(),
+        ),
+        Metric(
             key="weekly_minutes",
             label="Volume hebdomadaire",
             unit="min",
             granularity="week",
             load=lambda store, _: ActivityStats(store).weekly_minutes(),
+        ),
+        Metric(
+            key="weekly_sessions",
+            label="Séances par semaine",
+            unit="séances",
+            granularity="week",
+            load=lambda store, _: ActivityStats(store).weekly_sessions(),
+        ),
+        Metric(
+            key="weekly_distance_km",
+            label="Distance hebdomadaire",
+            unit="km",
+            granularity="week",
+            load=lambda store, _: ActivityStats(store).weekly_distance(),
         ),
         Metric(
             key="weekly_volume_kg",

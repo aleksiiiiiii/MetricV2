@@ -9,7 +9,7 @@ import pytest
 from app.storage.csv_repo import CsvRepository
 from app.storage.errors import StorageConflictError, StorageSchemaError, StorageUnavailableError
 from app.storage.files import FileStore
-from app.storage.model import CsvModel
+from app.storage.model import CsvDate, CsvModel, CsvNumber
 from tests.fake_webdav import FakeWebDav
 
 PATH = "body/weight.csv"
@@ -349,3 +349,56 @@ async def test_a_date_in_the_future_is_still_stored_as_written(store: FileStore)
     await repo.append(Weight(date=tomorrow, weight_kg=68.4))
 
     assert (await repo.read_all())[0].model.date == tomorrow
+
+
+# ── Colonnes tolérantes de la famille *planning* ──────
+
+
+class Planned(CsvModel):
+    """Une ligne de la famille *planning* : toutes les colonnes portent un défaut."""
+
+    id: str = ""
+    day: CsvDate = None
+    amount: CsvNumber = 0
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-07-10", date(2026, 7, 10)),
+        # Le cas réel : un fichier écrit par une version antérieure portait un horodatage
+        # dans une colonne de date, et il a fait tomber deux écrans en `502`.
+        ("2026-07-10T16:26", date(2026, 7, 10)),
+        ("2026-07-10T23:30:00+02:00", date(2026, 7, 10)),
+        ("10/07/2026", None),
+        ("bientôt", None),
+        ("", None),
+    ],
+)
+def test_a_planning_date_falls_back_instead_of_raising(raw: str, expected: date | None) -> None:
+    """« Une cellule vide, un nombre illisible, une source mal orthographiée y sont des
+    possibilités normales » (§2).
+
+    Une valeur par défaut ne suffit pas à tenir cette promesse : elle ne couvre que les
+    cellules **vides**. Un horodatage est récupéré — le jour y est écrit, le lire n'est pas
+    l'inventer —, tout le reste rend « pas de date », qui est une réponse.
+    """
+    assert Planned.from_csv({"id": "a", "day": raw, "amount": "1"}).day == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("12", 12.0), ("12,5", 12.5), ("12.5", 12.5), ("douze", 0.0), ("", 0.0)],
+)
+def test_a_planning_number_falls_back_instead_of_raising(raw: str, expected: float) -> None:
+    """La virgule française est acceptée : c'est ce qu'un tableur écrit, et refuser sa
+    propre sortie serait absurde pour un fichier censé y rester exploitable."""
+    assert Planned.from_csv({"id": "a", "day": "", "amount": raw}).amount == expected
+
+
+def test_a_tolerant_column_still_writes_back_a_clean_value() -> None:
+    """Ce qui est relu de travers se réécrit droit : le fichier se répare en s'écrivant,
+    plutôt que de propager la valeur qui l'avait cassé."""
+    row = Planned.from_csv({"id": "a", "day": "2026-07-10T16:26", "amount": "12,5"})
+
+    assert row.to_csv() == {"id": "a", "day": "2026-07-10", "amount": "12.5"}

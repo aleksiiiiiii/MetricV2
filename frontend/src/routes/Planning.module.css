@@ -1,0 +1,379 @@
+/* Écran Planning (`L13-07`, `L17-07`).
+
+   Écrit **mobile d'abord** : les règles de base valent pour 390 px, les `min-width`
+   ajoutent ce que la place permet. C'est l'écran qui rend cette discipline obligatoire
+   plutôt que souhaitable — un calendrier a sept colonnes, et sept colonnes dans 390 px
+   ne pardonnent aucun pixel accordé au hasard.
+
+   Le budget, **mesuré dans un Chrome émulant un iPhone 14** et non estimé : à 390 px, une
+   case de calendrier fait 47,1 × 44 px, gouttières de 3 px comprises. Les deux dimensions
+   passent le plancher de `--tap`, de justesse en largeur.
+
+   « De justesse » veut dire qu'il n'y a rien à prendre : ajouter une gouttière, une
+   bordure ou du rembourrage à `.days` repasse sous 44 px, et rien à l'écran ne le
+   signalera. La hauteur est donc fixée en dur à `--tap` plutôt que laissée au contenu —
+   c'est la seule des deux dimensions qu'on contrôle, un mois ayant sept jours quoi qu'on
+   en pense. */
+
+/* Conteneur de page. `screen` est **combiné à `wrap`** dans le TSX, la primitive globale
+   de `base.css` qui plafonne la largeur de lecture et pose les marges latérales.
+
+   L'oublier laissait les cartes toucher les bords de la fenêtre pendant que l'en-tête de
+   la coquille, lui, restait aligné sur 1080 px : deux alignements sur une même page, et
+   le titre collé à zéro. Défaut trouvé en **regardant** la page à 1280 px, pas en la
+   mesurant — la batterie ne vérifiait que les cibles tactiles et le débordement
+   horizontal, tous deux corrects. */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+/* ── En-tête et navigation ─────────────────────────── */
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.month {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-transform: capitalize;
+}
+
+.nav {
+  display: flex;
+  gap: var(--s2);
+}
+
+/* Les flèches de mois sont des cibles à part entière : elles se touchent en marchant,
+   d'une main, et rater « mois suivant » renvoie deux mois en arrière au coup d'après. */
+.nav button {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  flex: 1;
+}
+
+@media (min-width: 640px) {
+  .head {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  .nav button {
+    flex: initial;
+  }
+}
+
+/* ── Grille du mois (`PLAN-01`) ────────────────────── */
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.weekdays,
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.weekdays {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--ink-low);
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+
+  /* Le plancher tactile tenu dans la dimension qu'on peut choisir. La largeur, elle,
+     est celle d'un septième de mois — ni la charte ni le pouce n'y peuvent rien. */
+  min-height: var(--tap);
+  padding: var(--s1) 0;
+
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast);
+}
+
+.day:hover {
+  border-color: var(--line);
+}
+
+/* Débordement de semaine : présent, atteignable, mais visiblement pas ce mois-ci. */
+.dayOutside {
+  background: transparent;
+  color: var(--ink-low);
+}
+
+.dayToday {
+  border-color: rgb(var(--signal-rgb) / 0.55);
+}
+
+.daySelected {
+  background: rgb(var(--signal-rgb) / 0.18);
+  border-color: var(--signal);
+}
+
+.dayNumber {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ── Marques « prévu » et « effectué » ─────────────── */
+
+/* Deux marques, jamais un nombre : à 41 px de large, « 2 séances » ne tient pas, et un
+   chiffre collé à un quantième se lit comme une date.
+
+   La différence entre les deux ne repose pas que sur la couleur — l'une est creuse,
+   l'autre pleine. Le prévu est un contour parce qu'il n'a pas encore eu lieu ; c'est la
+   même grammaire que le trait discontinu d'une valeur proposée (`NUT-04`). */
+
+.marks {
+  display: flex;
+  gap: 3px;
+  min-height: 6px;
+}
+
+.markPlanned,
+.markDone {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.markPlanned {
+  border: 1px solid var(--signal);
+}
+
+.markDone {
+  background: var(--effort);
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: 11px;
+  color: var(--ink-low);
+}
+
+.legend .markPlanned,
+.legend .markDone {
+  margin-left: var(--s3);
+}
+
+.legend .markPlanned:first-child {
+  margin-left: 0;
+}
+
+/* ── Listes du jour et des propositions ────────────── */
+
+.list,
+.proposed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+}
+
+.itemBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Une séance retirée d'une proposition reste visible et grisée plutôt que de disparaître :
+   rien n'est écrit, le geste doit donc rester réversible d'un appui — et une ligne qui
+   s'évapore laisse douter de ce qu'on vient de faire. */
+.itemDropped {
+  opacity: 0.45;
+}
+
+.itemDropped .itemBody strong {
+  text-decoration: line-through;
+}
+
+.itemActions {
+  display: flex;
+  gap: var(--s2);
+}
+
+.itemActions button {
+  flex: 1;
+  min-height: var(--tap);
+}
+
+@media (min-width: 640px) {
+  .item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .itemActions button {
+    flex: initial;
+  }
+}
+
+.meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-mid);
+}
+
+.note {
+  font-size: 13px;
+  color: var(--ink-mid);
+}
+
+.dropped {
+  margin-top: var(--s3);
+  font-size: 12px;
+  color: var(--ink-low);
+}
+
+/* ── Formulaire ────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+
+.kinds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/* L'action qui **termine** le geste : `--tap-lg`, pleine largeur au pouce. */
+.submit {
+  min-height: var(--tap-lg);
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .submit {
+    grid-column: 1 / -1;
+    width: auto;
+    justify-self: start;
+    min-width: 200px;
+  }
+}
+
+/* ── Indicateurs et abonnement ─────────────────────── */
+
+/* Trois chiffres courts, et ils restent sur trois colonnes **y compris à 390 px**.
+
+   Première version : des tuiles `Stat` empilées sous 480 px. Mesuré dans le navigateur,
+   cela repoussait le calendrier à 492 px du haut d'une fenêtre de 844 — l'écran s'ouvrait
+   sur trois nombres géants, et le mois, qui est le sujet, arrivait après le pli. Un
+   indicateur de contexte ne doit pas coûter la moitié de la première page. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.statKey {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--ink-low);
+  text-transform: uppercase;
+}
+
+.statValue {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.subscription {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin: var(--s3) 0;
+}
+
+/* L'adresse porte la clé : elle doit se lire en entier pour se recopier à la main quand
+   le presse-papier n'est pas disponible, et ne jamais déborder de la page. */
+.url {
+  padding: var(--s3);
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  color: var(--ink-mid);
+}
+
+.subscription button {
+  min-height: var(--tap);
+}
+
+.download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  color: var(--ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.download:hover {
+  border-color: var(--signal);
+}

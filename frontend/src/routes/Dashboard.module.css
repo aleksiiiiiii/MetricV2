@@ -162,3 +162,26 @@
   margin-bottom: 6px;
   text-transform: uppercase;
 }
+
+/* Porte de l'écran Assistant.
+
+   Un lien reste un lien — c'est une navigation, pas une action d'application — mais il se
+   touche comme un bouton. Le plancher de `--tap` vaut pour lui comme pour le reste : c'est
+   exactement le défaut qu'une mesure du DOM avait trouvé au L13, sur le lien de
+   téléchargement du planning, à 17 px de haut. */
+.assistant {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  color: var(--ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.assistant:hover {
+  border-color: var(--signal);
+}

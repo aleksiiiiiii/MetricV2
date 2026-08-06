@@ -46,6 +46,20 @@
      d'entasser neuf entrées sur une largeur qui n'en tient pas cinq. */
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
+
+  /* Depuis l'entrée « Planning » du lot L13, elle déborde **aussi sur un ordinateur** :
+     mesurée à 806 px pour 695 disponibles au lot L14, la largeur de lecture étant
+     plafonnée à `--wrap`. Le défilement fonctionnait déjà — mais sans souris tactile ni
+     barre visible, la dernière entrée paraissait simplement coupée, ce qui se lit comme
+     un défaut d'affichage et non comme une invitation à faire défiler.
+
+     Le dégradé de bord est la plus petite chose qui dise « ça continue ». Il est posé
+     sans condition, et c'est correct plutôt que paresseux : la barre demande 806 px et
+     n'en obtient jamais plus de 695 quelle que soit la fenêtre. Il n'existe pas de cas
+     où elle tient. Le jour où une
+     entrée disparaîtrait, CSS ne saurait de toute façon pas détecter un débordement —
+     il faudrait le mesurer en JavaScript, ce qui ne vaut pas ce dégradé. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
 }
 
 .nav > * {

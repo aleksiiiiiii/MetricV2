@@ -72,6 +72,12 @@ class Call:
     #: Vrai si une image accompagnait la consigne (`IA-04`, `IA-06`).
     with_image: bool
     image_url: str | None
+    #: Texte réellement envoyé, consigne système comprise.
+    #:
+    #: Journalisé parce que certaines promesses portent sur ce qui **ne** part **pas** :
+    #: `GOAL-02` exige un condensé factuel et jamais les fichiers entiers. Sans cette
+    #: trace, cette exigence ne se vérifierait qu'en relisant le code — c'est-à-dire pas.
+    prompt: str = ""
 
 
 def free_model(
@@ -134,13 +140,42 @@ class FakeOpenRouter:
         request = json.loads(body or b"{}")
         model = str(request.get("model", ""))
         image_url = _image_of(request)
-        self.calls.append(Call(model=model, with_image=image_url is not None, image_url=image_url))
+        self.calls.append(
+            Call(
+                model=model,
+                with_image=image_url is not None,
+                image_url=image_url,
+                prompt=_prompt_of(request),
+            )
+        )
 
         reply = self.replies.pop(0) if self.replies else self.replies_exhausted
         payload = reply.body
         if payload is None:
             payload = {"choices": [{"message": {"content": reply.content or ""}}]}
         await _respond(send, reply.status, payload)
+
+
+def _prompt_of(request: dict[str, Any]) -> str:
+    """Tout le texte de la requête, messages concaténés.
+
+    Les parties image sont ignorées : ce qui intéresse l'appelant est ce qui a été *dit*,
+    et une data URL de trente kilo-octets rendrait toute assertion illisible.
+    """
+    chunks: list[str] = []
+    for message in request.get("messages", []):
+        content = message.get("content")
+        if isinstance(content, str):
+            chunks.append(content)
+            continue
+        if not isinstance(content, list):
+            continue
+        chunks.extend(
+            str(part.get("text", ""))
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+    return "\n".join(chunks)
 
 
 def _image_of(request: dict[str, Any]) -> str | None:

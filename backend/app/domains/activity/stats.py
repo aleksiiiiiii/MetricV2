@@ -143,6 +143,29 @@ class ActivityStats:
         minutes, _ = self._per_day(await self._runs.all(), await self._workouts.all())
         return self._by_week(minutes)
 
+    async def weekly_sessions(self) -> list[tuple[date, float]]:
+        """Nombre de séances par semaine ISO, datées au lundi.
+
+        Toutes catégories confondues, comme `AGG-02` compte les totaux : une sortie de
+        course et une heure de muscu sont deux séances. Sert la métrique `weekly_sessions`
+        du registre, donc aussi bien les séries génériques (`AGG-04`) qu'un objectif de
+        régularité (`GOAL-04`).
+        """
+        _, sessions = self._per_day(await self._runs.all(), await self._workouts.all())
+        return self._by_week({day: float(count) for day, count in sessions.items()})
+
+    async def weekly_distance(self) -> list[tuple[date, float]]:
+        """Kilomètres courus par semaine ISO.
+
+        La course seule : additionner les kilomètres d'une séance de musculation n'aurait
+        pas de sens, et c'est déjà la raison pour laquelle `_week_totals` calcule l'allure
+        moyenne sur les courses uniquement.
+        """
+        per_day: defaultdict[date, float] = defaultdict(float)
+        for row in await self._runs.all():
+            per_day[row.model.date] += row.model.distance_km
+        return self._by_week(per_day)
+
     async def weekly_volume(self) -> list[tuple[date, float]]:
         """Tonnage par semaine ISO : charge × séries × réps (`ACT-14`)."""
         entries = await self._exercises.log_entries()
