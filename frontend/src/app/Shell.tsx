@@ -5,33 +5,29 @@ import { useAuth } from '@/lib/auth';
 import { cx } from '@/lib/cx';
 
 import styles from './Shell.module.css';
+import { TabBar } from './TabBar';
 
 /**
  * Coquille applicative (`L03-09`).
  *
- * Les entrées de navigation suivent les domaines du backlog. Elles pointent vers des
- * écrans construits lot par lot ; celles qui n'ont pas encore d'écran ne sont pas
- * affichées, plutôt que de mener à une page vide.
+ * **Deux navigations, un seul jeu d'écrans.** Sous 960 px, c'est [`TabBar`](./TabBar.tsx)
+ * qui gouverne : cinq cibles en bas de l'écran, là où le pouce est déjà. Au-delà, la barre
+ * horizontale ci-dessous reprend la main — une souris n'a pas de zone difficile à
+ * atteindre, et un écran large a la place d'afficher neuf entrées d'un coup.
  *
- * **La barre reste à neuf entrées, et c'est une décision.** Elle demandait déjà 790 px
- * pour 695 disponibles depuis que « Planning » l'a rejointe au lot L13, la largeur de
- * lecture étant plafonnée à `--wrap` ; une dixième entrée aurait aggravé un débordement
- * déjà relevé sur téléphone **et** sur ordinateur. « Objectif » prend donc la place de
- * « Charte ».
+ * La barre du haut demandait **806 px pour 695 disponibles**, mesurés entrée par entrée au
+ * lot L14. « Tableau de bord » pesait à lui seul le sixième du total : le raccourcir en
+ * « Accueil » rend ~80 px et ramène la demande à ~726, ce que le dégradé de bord couvre
+ * sans qu'on lise un défaut d'affichage. C'était le premier levier identifié, et il ne
+ * coûte qu'un mot.
  *
- * Le compte ne bouge pas, la largeur si : **806 px**, mesurés dans le navigateur, parce
- * qu'« Objectif » est un mot plus long que « Charte » — seize pixels de plus. Le chiffre
- * est noté parce qu'il est le seul argument utilisable le jour où `L17-07` tranchera, et
- * qu'une décision de mise en page qui se croit neutre sans avoir été mesurée n'est qu'un
- * espoir.
- *
- * `/_kitchen-sink` n'en est pas fermée pour autant : elle reste publique et atteignable
- * par son adresse — c'est ce qui la rend consultable depuis n'importe quel appareil et
- * vérifiable par capture automatisée. Ce qu'elle perd est une place dans la navigation
- * **utilisateur**, où une référence de charte n'a jamais eu grand-chose à faire.
+ * L'assistant n'a toujours pas d'entrée **ici** — il en a une sur mobile, dans la feuille
+ * « Plus ». Sur ordinateur on y entre par la carte du tableau de bord et le lien de
+ * l'écran Objectif, comme depuis le lot L14b : ajouter une dixième entrée reporterait la
+ * demande à ~816 px et rendrait le débordement à nouveau visible.
  */
 const NAV = [
-  { to: '/', label: 'Tableau de bord', end: true },
+  { to: '/', label: 'Accueil', end: true },
   { to: '/corps', label: 'Corps', end: false },
   { to: '/activite', label: 'Activité', end: false },
   { to: '/planning', label: 'Planning', end: false },
@@ -87,6 +83,8 @@ export function Shell() {
       <main className={styles.main}>
         <Outlet />
       </main>
+
+      <TabBar />
     </div>
   );
 }

@@ -11,16 +11,29 @@
   position: sticky;
   top: 0;
   z-index: 20;
+  /* Ajoutée à l'écran d'accueil, l'application passe sous l'îlot dynamique : le retrait
+     va sur l'en-tête, pas sur le contenu, pour que le fond flouté monte jusqu'en haut. */
+  padding-top: var(--safe-t);
 }
 
 .headerInner {
   max-width: var(--wrap);
   margin: 0 auto;
-  padding: 0 clamp(20px, 4vw, 56px);
+  /* Même gouttière que `.wrap` : c'est ce qui aligne la marque sur le titre de l'écran.
+     Le défaut a été trouvé deux fois, au L13 et au L14 — il se mesure, il ne se voit pas. */
+  padding: 0 var(--gutter);
   display: flex;
   align-items: center;
   gap: var(--s5);
-  height: 56px;
+  /* Sur téléphone, l'en-tête ne porte plus que la marque : la navigation est en bas.
+     48 px au lieu de 56 rendent 8 px à la première hauteur d'écran. */
+  height: 48px;
+}
+
+@media (min-width: 960px) {
+  .headerInner {
+    height: 56px;
+  }
 }
 
 .brand {
@@ -37,43 +50,54 @@
   touch-action: manipulation;
 }
 
+/* ── Navigation d'ordinateur ──────────────────────── */
+
+/* Sous 960 px, c'est `TabBar` qui gouverne : cette barre-là n'existe pas.
+   `display: none` plutôt qu'un `overflow` masqué — un élément caché ne reçoit pas le
+   focus, et un utilisateur au clavier ne traverse pas neuf liens invisibles. */
 .nav {
-  display: flex;
-  gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  /* La barre déborde à 390 px : elle se parcourt au pouce, avec accroche, plutôt que
-     d'entasser neuf entrées sur une largeur qui n'en tient pas cinq. */
-  scroll-snap-type: x proximity;
-  -webkit-overflow-scrolling: touch;
-
-  /* Depuis l'entrée « Planning » du lot L13, elle déborde **aussi sur un ordinateur** :
-     mesurée à 806 px pour 695 disponibles au lot L14, la largeur de lecture étant
-     plafonnée à `--wrap`. Le défilement fonctionnait déjà — mais sans souris tactile ni
-     barre visible, la dernière entrée paraissait simplement coupée, ce qui se lit comme
-     un défaut d'affichage et non comme une invitation à faire défiler.
-
-     Le dégradé de bord est la plus petite chose qui dise « ça continue ». Il est posé
-     sans condition, et c'est correct plutôt que paresseux : la barre demande 806 px et
-     n'en obtient jamais plus de 695 quelle que soit la fenêtre. Il n'existe pas de cas
-     où elle tient. Le jour où une
-     entrée disparaîtrait, CSS ne saurait de toute façon pas détecter un débordement —
-     il faudrait le mesurer en JavaScript, ce qui ne vaut pas ce dégradé. */
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
-}
-
-.nav > * {
-  scroll-snap-align: center;
-}
-
-.nav::-webkit-scrollbar {
   display: none;
+}
+
+.user {
+  display: none;
+}
+
+@media (min-width: 960px) {
+  .nav {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+
+    /* La barre demande ~726 px depuis que « Tableau de bord » est devenu « Accueil »,
+       pour ~708 disponibles : elle tient à dix-huit pixels près. Le dégradé reste, parce
+       qu'une entrée dont il manque la moitié se lit comme un défaut d'affichage, et que
+       CSS ne sait pas détecter un débordement pour ne l'afficher qu'au besoin. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  }
+
+  .nav > * {
+    scroll-snap-align: center;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+  }
 }
 
 .navLink {
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
+  font-size: var(--t-meta);
+  letter-spacing: var(--ls-meta);
   text-transform: uppercase;
   color: var(--ink-low);
   text-decoration: none;
@@ -81,18 +105,17 @@
   border-radius: var(--r-sm);
   white-space: nowrap;
   transition: var(--t);
-  /* La navigation est le contrôle le plus touché de l'application, et c'était le seul
-     à rester sous le plancher tactile — 33 px de haut (`L17-07`). Le libellé garde sa
-     taille : c'est la zone sensible qui grandit, pas la typographie. */
   display: inline-flex;
   align-items: center;
   min-height: var(--tap);
   touch-action: manipulation;
 }
 
-.navLink:hover {
-  color: var(--ink);
-  background: var(--surface);
+@media (hover: hover) and (pointer: fine) {
+  .navLink:hover {
+    color: var(--ink);
+    background: var(--surface);
+  }
 }
 
 .navActive {
@@ -104,28 +127,26 @@
   flex: 1;
 }
 
-.user {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: none;
-}
-
 .username {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
   letter-spacing: 0.08em;
 }
 
-@media (max-width: 640px) {
-  .username {
-    display: none;
-  }
-}
+/* ── Contenu ──────────────────────────────────────── */
 
 .main {
   flex: 1;
+  /* Rien ne doit finir sous la barre d'onglets. C'est ce dégagement qui rend inutiles
+     les `<div style={{ height: 40 }} />` que les écrans posaient en fin de page. */
+  padding-bottom: calc(var(--tabbar) + var(--safe-b));
+}
+
+@media (min-width: 960px) {
+  .main {
+    padding-bottom: 0;
+  }
 }
 
 .loading {
@@ -134,8 +155,8 @@
   justify-content: center;
   min-height: 100dvh;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--ls-meta);
   text-transform: uppercase;
 }

@@ -1,0 +1,217 @@
+.layer {
+  position: fixed;
+  inset: 0;
+  /* Au-dessus de la barre d'onglets (30) et de l'en-tête (20). */
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+  animation: fade 0.18s ease;
+}
+
+.panel {
+  position: relative;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  border-radius: var(--r) var(--r) 0 0;
+  box-shadow: var(--shadow);
+  /* La feuille ne monte jamais jusqu'en haut : on doit voir qu'il y a un écran derrière,
+     sinon c'est une page et le geste vers le bas n'a plus de sens. */
+  max-height: 86dvh;
+  display: flex;
+  flex-direction: column;
+  /* Le doigt la suit pendant le geste ; à la fin, elle rejoint sa place. */
+  transition: transform var(--t);
+  animation: rise 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  outline: none;
+}
+
+/* Sur grand écran, la feuille cesse d'être une feuille : elle se centre et se plafonne. */
+@media (min-width: 600px) {
+  .layer {
+    justify-content: center;
+    align-items: center;
+    padding: var(--s5);
+  }
+
+  .panel {
+    width: min(480px, 100%);
+    border-radius: var(--r);
+    border: 1px solid var(--line);
+    animation: fade 0.18s ease;
+  }
+}
+
+.grip {
+  flex: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  /* La poignée est une cible à part entière, pas un trait décoratif de 4 px. */
+  min-height: 32px;
+  padding: 14px 0 6px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.gripBar {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: var(--t);
+}
+
+.grip:active .gripBar {
+  background: var(--ink-low);
+}
+
+.grip:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -4px;
+  border-radius: var(--r-sm);
+}
+
+.head {
+  flex: none;
+  padding: 0 var(--card-pad) var(--s4);
+}
+
+.title {
+  font-size: var(--t-title);
+}
+
+.lede {
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  margin-top: 2px;
+}
+
+.body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 var(--card-pad);
+  /* La zone sûre basse tombe dans le contenu et non sur le panneau : la dernière ligne
+     se termine au-dessus de l'indicateur d'accueil, sans bande vide sous elle. */
+  padding-bottom: calc(var(--s5) + var(--safe-b));
+}
+
+/* ── Lignes ───────────────────────────────────────── */
+
+.group + .group {
+  margin-top: var(--s5);
+}
+
+.groupTitle {
+  margin-bottom: var(--s2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  width: 100%;
+  /* Ce sont les cibles d'une feuille qu'on ouvre pour toucher une ligne, et rien
+     d'autre : elles prennent la grande taille. */
+  min-height: var(--tap-lg);
+  padding: 0 var(--s4);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--t-body);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--t);
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.row + .row {
+  margin-top: var(--s2);
+}
+
+.row:active {
+  transform: scale(0.985);
+  background: var(--bg);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .row:hover {
+    border-color: var(--signal);
+  }
+}
+
+.rowRecover {
+  color: var(--recover);
+}
+
+.rowIcon {
+  flex: none;
+  display: inline-flex;
+  color: var(--ink-low);
+}
+
+.rowRecover .rowIcon {
+  color: var(--recover);
+}
+
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowHint {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--ink-low);
+}
+
+/* ── Mouvement ────────────────────────────────────── */
+
+@keyframes rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .scrim {
+    animation: none;
+  }
+
+  .panel {
+    transition: none;
+  }
+}

@@ -503,11 +503,7 @@ export function AiBlock({
         <span className="eyebrow">{tag}</span>
       </div>
       {children}
-      {actions !== undefined && (
-        <div className="row" style={{ marginTop: 16 }}>
-          {actions}
-        </div>
-      )}
+      {actions !== undefined && <div className={cx('row', styles.aiActions)}>{actions}</div>}
     </div>
   );
 }

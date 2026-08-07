@@ -110,4 +110,70 @@
 
   /* Largeur de lecture du contenu. */
   --wrap: 1080px;
+
+  /* ═══ Échelle typographique ════════════════════
+     La charte fixait ses tailles en littéraux, écran large en tête : 57 % des
+     déclarations `font-size` du projet tombaient entre 9 et 12 px. Vu à bout de
+     bras sur un téléphone, c'est illisible — et on n'y revient pas.
+
+     Ces huit valeurs remplacent les littéraux. Elles sont données pour 390 px et
+     grandissent aux points de rupture ; **rien ne descend sous `--t-meta`**. */
+  --t-hero: 30px; /* h1 — un titre de page n'est pas une donnée : il rétrécit */
+  --t-title: 21px; /* h2 */
+  --t-head: 17px; /* h3, titre de carte */
+  --t-body: 16px; /* corps de texte, libellé cliquable */
+  --t-sub: 15px; /* note, détail, texte secondaire */
+  --t-meta: 12px; /* surtitre, unité, horodatage — le plancher absolu */
+  --t-num-xl: 34px; /* le chiffre qu'on vient lire, lui, grandit */
+  --t-num: 17px; /* chiffre en ligne dans une phrase */
+
+  /* Interlettrage des capitales monospace. La charte montait à `.18em` sur des
+     surtitres de 11 px ; à 12 px, la même valeur les élargit de 9 % et fait
+     déborder la barre de navigation et les colonnes de tableau. Baisser
+     l'interlettrage rend exactement ce que la chasse prend. */
+  --ls-meta: 0.12em;
+
+  /* ── Gouttières et gabarit mobile ───────────────
+     `--gutter` est la marge latérale de page, `--card-pad` le retrait intérieur
+     d'une carte. Les deux valaient 20 px partout ; à 16 px sur téléphone, la
+     largeur utile gagne 16 px — ce qui se voit sur `Bars`, dont les colonnes
+     fixes réservent déjà 166 px. */
+  --gutter: 16px;
+  --card-pad: 16px;
+
+  /* Hauteur de la barre d'onglets basse, **hors** zone sûre. */
+  --tabbar: 56px;
+
+  /* Zones sûres. Sur un iPhone 16 Pro : 59 px d'îlot dynamique en haut, 34 px
+     d'indicateur d'accueil en bas. Elles ne valent que si `index.html` déclare
+     `viewport-fit=cover` — sans quoi elles rendent 0 et tout se comporte comme
+     avant. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* ═══ Points de rupture ══════════════════════════
+   Deux valeurs, toutes deux en `min-width` — le projet en comptait cinq, dont
+   trois en `max-width`, c'est-à-dire écrites écran large en tête.
+
+   600 px : la largeur au-delà de laquelle une deuxième colonne de texte tient.
+   960 px : l'ordinateur, où la navigation remonte en haut.
+
+   CSS ne sait pas lire une variable dans une media query : ces deux nombres
+   s'écrivent en clair, et ces deux-là seulement. */
+
+@media (min-width: 600px) {
+  :root {
+    --t-hero: 40px;
+    --t-title: 22px;
+    --t-num-xl: 40px;
+    --gutter: 28px;
+    --card-pad: var(--s5);
+  }
+}
+
+@media (min-width: 960px) {
+  :root {
+    --gutter: 56px;
+  }
 }

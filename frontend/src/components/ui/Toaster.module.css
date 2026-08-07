@@ -1,6 +1,8 @@
 .zone {
   position: fixed;
-  bottom: 20px;
+  /* Au-dessus de la barre d'onglets, jamais derrière : une notification qui confirme un
+     geste doit se lire sans qu'on déplace la main qui vient de le faire. */
+  bottom: calc(var(--tabbar) + var(--safe-b) + var(--s3));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -8,7 +10,13 @@
   gap: 8px;
   z-index: 40;
   pointer-events: none;
-  width: min(420px, calc(100vw - 32px));
+  width: min(420px, calc(100vw - 2 * var(--gutter)));
+}
+
+@media (min-width: 960px) {
+  .zone {
+    bottom: var(--s5);
+  }
 }
 
 .toast {
@@ -18,7 +26,7 @@
   border-left-width: 3px;
   border-radius: var(--r-sm);
   padding: 11px 14px;
-  font-size: 13px;
+  font-size: var(--t-sub);
   color: var(--ink);
   box-shadow: var(--shadow);
   display: flex;
@@ -47,18 +55,33 @@
   border-left-color: var(--recover);
 }
 
+/* La croix était une cible de 18 px de haut. Une notification qu'on n'arrive pas à
+   fermer reste à l'écran jusqu'à sa minuterie, par-dessus ce qu'on essayait de lire. */
 .close {
   margin-left: auto;
+  flex: none;
   background: none;
   border: none;
   color: var(--ink-low);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
-  padding: 2px 4px;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  margin-block: calc(-1 * var(--s3));
+  margin-right: calc(-1 * var(--s2));
+  touch-action: manipulation;
 }
 
-.close:hover {
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .close:hover {
+    color: var(--ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
 }

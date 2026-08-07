@@ -1,0 +1,28 @@
+.wait {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+}
+
+.tally {
+  color: var(--ink-mid);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  margin-top: var(--s3);
+}
+
+.tally b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.confirm {
+  margin-top: var(--s4);
+}
+
+/* L'action qui **termine** le geste : pleine largeur et grande taille, pour se toucher
+   sans regarder — c'est la définition de `--tap-lg`. */
+.save {
+  width: 100%;
+  min-height: var(--tap-lg);
+}

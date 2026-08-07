@@ -4,6 +4,16 @@
 .scroll {
   overflow-x: auto;
   padding-bottom: 6px;
+  /* 53 semaines de 15 px font 795 px : la grille annuelle déborde par construction, sur
+     n'importe quel téléphone. Elle se tire donc au doigt, sans que le rebond entraîne la
+     page derrière elle. */
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .grid {
@@ -25,8 +35,14 @@
   cursor: pointer;
 }
 
-.cell:hover {
-  outline: 1px solid var(--ink-mid);
+@media (hover: hover) and (pointer: fine) {
+  .cell:hover {
+    outline: 1px solid var(--ink-mid);
+  }
+
+  .void:hover {
+    outline: none;
+  }
 }
 
 .cell:focus-visible {
@@ -52,10 +68,6 @@
   background: transparent;
   border-color: transparent;
   cursor: default;
-}
-
-.void:hover {
-  outline: none;
 }
 
 /* `missed` : attendu, non validé. Le seul état qui accuse. */
@@ -136,10 +148,12 @@
   display: grid;
   grid-auto-flow: column;
   font-family: var(--mono);
-  font-size: 10px;
+  /* Un mois tient dans ~4,3 semaines, soit ~64 px : « jan » à 12 px en occupe 22.
+     Le passage de 10 à 12 px ne fait donc chevaucher aucune étiquette. */
+  font-size: var(--t-meta);
   color: var(--ink-low);
   margin-bottom: 8px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   width: max-content;
 }
 
@@ -155,7 +169,7 @@
   justify-content: flex-end;
   margin-top: 12px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
   flex-wrap: wrap;
 }
@@ -186,9 +200,11 @@
   border-radius: 8px;
   padding: 9px 11px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   line-height: 1.7;
-  white-space: nowrap;
+  /* Une infobulle ouverte sur une cellule de bord sortait de l'écran : elle se replie
+     plutôt que de déborder. */
+  max-width: min(220px, 74vw);
   transform: translate(-50%, -115%);
   z-index: 5;
   box-shadow: var(--shadow);

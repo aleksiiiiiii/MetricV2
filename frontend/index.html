@@ -2,9 +2,18 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- `viewport-fit=cover` : sans lui, `env(safe-area-inset-*)` rend 0 et l'îlot
+         dynamique comme l'indicateur d'accueil rognent l'interface.
+         Ni `maximum-scale` ni `user-scalable=no` : le zoom reste possible. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0B0F16" />
+    <!-- Ajoutée à l'écran d'accueil, l'application s'ouvre sans la barre d'adresse
+         de Safari : 745 px utiles deviennent 874 sur un iPhone 16 Pro. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Metric" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta
       name="description"
       content="Metric — le journal instrumenté d'une vie. Suivi sportif personnel."

@@ -13,7 +13,7 @@
   gap: 16px;
   flex-wrap: wrap;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-mid);
   margin-top: var(--s4);
 }
@@ -51,11 +51,42 @@
   touch-action: none;
 }
 
+/*
+ * Les graduations, et le seul endroit du projet où une taille de texte ne veut pas dire
+ * ce qu'elle dit.
+ *
+ * Le graphique est un SVG de `720 × 320` unités posé en `width: 100%` : **le texte est
+ * mis à l'échelle avec le dessin**. Dans une carte de 336 px sur un iPhone, le facteur
+ * vaut 0,47 — les 9 px d'origine arrivaient à l'écran en **4,2 px**. La mesure du DOM ne
+ * l'attrape pas, elle lit 9 ; il faut diviser par la largeur rendue pour le voir.
+ *
+ * Les trois valeurs ci-dessous sont calculées pour rendre ~11 px réels à chaque palier,
+ * à partir de la largeur de carte que la gouttière et le retrait laissent :
+ *
+ *   téléphone   402 − 32 − 32 = 336 px   facteur 0,47   → 24 unités
+ *   tablette    600 − 56 − 40 = 502 px   facteur 0,70   → 16 unités
+ *   ordinateur  la carte du tableau de bord, ~552 px    → 14 unités
+ *
+ * Si le gabarit d'un écran change, ce sont ces trois nombres qu'il faut refaire — pas la
+ * taille apparente, qui est déjà la bonne.
+ */
 .axis {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
+  font-size: 24px;
   fill: var(--ink-low);
   letter-spacing: 0.08em;
+}
+
+@media (min-width: 600px) {
+  .axis {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 960px) {
+  .axis {
+    font-size: 14px;
+  }
 }
 
 .tip {
@@ -68,12 +99,16 @@
   border-radius: 8px;
   padding: 9px 11px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   line-height: 1.7;
   white-space: nowrap;
   transform: translate(-50%, -115%);
   z-index: 5;
   box-shadow: var(--shadow);
+  /* Près d'un bord, l'infobulle sortirait de la carte : elle se replie sur elle-même
+     plutôt que de déborder l'écran. */
+  max-width: min(240px, 80vw);
+  white-space: normal;
 }
 
 .tipVisible {
@@ -94,8 +129,9 @@
 
 .note {
   color: var(--ink-mid);
-  font-size: 13px;
+  font-size: var(--t-sub);
   margin-top: var(--s4);
   border-top: 1px solid var(--line-soft);
   padding-top: var(--s4);
+  text-wrap: pretty;
 }

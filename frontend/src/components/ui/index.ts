@@ -13,6 +13,8 @@ export type { DayReason, DayState, HeatDay, HeatWeek, HeatmapProps, WeekStatus }
 
 export { Toaster } from './Toaster';
 
+export { Sheet, SheetGroup, SheetRow } from './Sheet';
+
 export {
   AiBlock,
   Badge,

@@ -74,6 +74,7 @@ export function Stat({
   direction,
   spark,
   sparkTone = 'signal',
+  compact = false,
 }: {
   label: string;
   value: ReactNode;
@@ -83,11 +84,20 @@ export function Stat({
   direction?: 'up' | 'down' | undefined;
   spark?: readonly number[] | undefined;
   sparkTone?: Tone | undefined;
+  /**
+   * Deux tuiles côte à côte sur un téléphone.
+   *
+   * Le chiffre descend de `--t-num-xl` à 28 px — assez pour rester ce qu'on lit en
+   * premier, assez peu pour que « 82,4 kg » ne déborde pas d'une demi-largeur d'écran.
+   * Rien d'autre ne change : ce n'est pas un composant réduit, c'est le même dans une
+   * colonne plus étroite.
+   */
+  compact?: boolean | undefined;
 }) {
   return (
     <>
       <div className={styles.statKey}>{label}</div>
-      <div className={styles.statValue}>
+      <div className={cx(styles.statValue, compact && styles.statValueCompact)}>
         {value}
         {unit !== undefined && <small className={styles.statUnit}>{unit}</small>}
       </div>
@@ -118,7 +128,12 @@ export function Bars({ rows }: { rows: readonly BarRow[] }) {
     <div className={styles.bars}>
       {rows.map((row) => (
         <div className={styles.barRow} key={row.label}>
-          <span>{row.label}</span>
+          {/* Le libellé est tronqué plutôt que de repousser la barre : sur un téléphone,
+              c'est la barre qui porte l'information, le mot ne fait que la nommer. Le
+              titre complet reste lisible au survol et à la synthèse vocale. */}
+          <span className={styles.barLabel} title={row.label}>
+            {row.label}
+          </span>
           <div className={styles.track}>
             <div
               className={styles.fill}
@@ -128,7 +143,7 @@ export function Bars({ rows }: { rows: readonly BarRow[] }) {
               }}
             />
           </div>
-          <span className={styles.alignRight}>{row.value}</span>
+          <span className={styles.barValue}>{row.value}</span>
         </div>
       ))}
     </div>

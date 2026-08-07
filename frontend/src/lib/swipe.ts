@@ -61,6 +61,79 @@ export interface Swipe {
   handlers: SwipeHandlers;
 }
 
+/**
+ * Glissement vers le bas — le geste qui referme une feuille.
+ *
+ * Il vit **dans ce fichier** et pas dans le composant qui s'en sert : c'est la même règle
+ * que pour l'horizontal, et pour la même raison. Deux implémentations donneraient deux
+ * seuils, et un utilisateur qui referme une feuille d'un geste plus court que celui qui
+ * révèle une suppression ne saurait jamais laquelle des deux il vient de faire.
+ *
+ * La garde est simplement inversée : **un geste plus horizontal que vertical appartient
+ * à ce qu'il y a sous le doigt** — une bande de pastilles qu'on fait défiler dans une
+ * feuille ne doit pas la refermer.
+ *
+ * Et le geste ne compte **que s'il part d'en haut de la feuille ou d'une zone déjà en
+ * haut de son défilement** : c'est au composant de le dire, en n'attachant les gestionnaires
+ * qu'à la poignée.
+ */
+export function useDownwardSwipe({
+  onDown,
+  threshold = SWIPE_THRESHOLD,
+  track = false,
+}: {
+  onDown: () => void;
+  threshold?: number | undefined;
+  track?: boolean | undefined;
+}): Swipe {
+  const origin = useRef<{ x: number; y: number; id: number } | null>(null);
+  const [offset, setOffset] = useState(0);
+
+  function reset(): void {
+    origin.current = null;
+    setOffset(0);
+  }
+
+  return {
+    offset,
+    handlers: {
+      onPointerDown(event) {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        origin.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // jsdom ne l'implémente pas. Le geste fonctionne sans, en moins tolérant.
+        }
+      },
+
+      onPointerMove(event) {
+        const from = origin.current;
+        if (from === null || from.id !== event.pointerId) return;
+
+        const dx = event.clientX - from.x;
+        const dy = event.clientY - from.y;
+        if (Math.abs(dx) > VERTICAL_SLACK && Math.abs(dx) > Math.abs(dy)) {
+          reset();
+          return;
+        }
+        // Vers le haut, la feuille ne bouge pas : tirer dans le vide laisserait croire
+        // qu'on peut l'agrandir.
+        if (track) setOffset(Math.max(0, dy));
+      },
+
+      onPointerUp(event) {
+        const from = origin.current;
+        reset();
+        if (from === null || from.id !== event.pointerId) return;
+        if (event.clientY - from.y >= threshold) onDown();
+      },
+
+      onPointerCancel: reset,
+    },
+  };
+}
+
 export function useHorizontalSwipe({
   onLeft,
   onRight,

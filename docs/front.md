@@ -13,6 +13,91 @@ rend praticables.
 
 ---
 
+## 0. Où en est la refonte mobile
+
+Une refonte mobile d'abord est **en cours** sur la branche `refonte-mobile`, suivant le plan
+de [`refonte-mobile.md`](refonte-mobile.md). Point de retour : `613739b` sur `main`.
+
+Ce tableau est la seule source à jour. **Quand une case change, c'est ici qu'on l'écrit
+d'abord** — les sections suivantes décrivent l'état d'avant et portent la mention
+« dépassé » là où elles ne sont plus vraies.
+
+| | Phase | État |
+|---|---|---|
+| **A** | Socle — échelle typographique, gouttières, zones sûres, points de rupture | ✅ **fait** |
+| **B** | Coquille — barre d'onglets basse, feuille « Plus », saisie rapide | ✅ **fait** |
+| **C** | Primitives — survol protégé, états d'appui, tailles, `Chart`, `Heatmap` | ✅ **fait** |
+| **D** | Les douze écrans, un par un | ⏳ **pas commencé** |
+| **E** | Finition — mouvement, états vides qui portent le geste | ⏳ **pas commencé** |
+| **V** | Vérification dans le navigateur à 402 × 874 | 🚧 **bloquée** — voir plus bas |
+
+### Ce qui est fait, en détail
+
+**Phase A — le socle.** Huit tokens `--t-*` remplacent les littéraux de taille ; **rien ne
+descend plus sous 12 px**, alors que 96 déclarations sur 169 étaient entre 9 et 12. Le corps
+passe de 15 à 16 px, `h1` **descend** de 34 à 30 (un titre n'est pas une donnée). Gouttières
+`--gutter` / `--card-pad` à 16 px sur téléphone — 16 px de largeur utile rendus au contenu.
+`viewport-fit=cover` et `env(safe-area-inset-*)` posés, plus les balises qui font s'ouvrir
+l'application sans la barre d'adresse depuis l'écran d'accueil. **Cinq points de rupture
+ramenés à deux**, tous deux en `min-width` : les grilles `g2`/`g3`/`g4` passent à **deux
+colonnes par défaut** au lieu d'une seule. `.rule` perd 34 px de marge sur mobile —
+**170 px rendus** sur le seul tableau de bord.
+
+**Phase B — la coquille.** Nouveaux fichiers : [Sheet.tsx](../frontend/src/components/ui/Sheet.tsx),
+[icons.tsx](../frontend/src/components/ui/icons.tsx),
+[TabBar.tsx](../frontend/src/app/TabBar.tsx),
+[QuickLog.tsx](../frontend/src/app/QuickLog.tsx). Sous 960 px, la navigation est **en bas**,
+sous le pouce : `Accueil · Activité · ⊕ · Nutrition · Plus`. Le `⊕` écrit un verre d'eau, un
+supplément ou une pesée **sans changer d'écran** ; un repas et une séance restent des liens,
+parce qu'ils demandent un vrai formulaire. Au-delà de 960 px la barre du haut reprend la
+main, avec « Tableau de bord » raccourci en « Accueil » — ~80 px rendus, la demande tombe de
+806 à ~726.
+
+**Phase C — les primitives.** Les 26 `:hover` non protégés sont passés sous
+`@media (hover: hover)` : plus de bouton qui reste allumé après un appui sur iOS. `:active`
+partout à la place, et `-webkit-tap-highlight-color: transparent` pour que le rectangle gris
+du système ne se superpose plus aux états de la charte. `LogButton` et les touches du
+`Stepper` passent à `--tap-lg`, la case à cocher de 16 à 22 px, les lignes de tableau à
+44 px francs.
+
+> **Un défaut trouvé au passage, invisible à la mesure du DOM.** Les étiquettes d'axe de
+> `Chart` sont déclarées à 9 px — mais dans un `viewBox` de 720 unités rendu à ~336 px sur
+> un téléphone, soit un facteur 0,47 : **elles arrivaient à l'écran en 4,2 px**. Une mesure
+> du DOM lit « 9 » et ne voit rien. Il faut diviser par la largeur rendue. Corrigé par trois
+> paliers calculés dans [Chart.module.css](../frontend/src/components/ui/Chart.module.css).
+
+### Ce qui reste
+
+**Phase D — les douze écrans.** Aucun n'a été touché. Ce qui les attend : la convention
+`cx('wrap', styles.screen)` partout, les **60 `style={{…}}`** restants transformés en
+classes, une première hauteur d'écran qui montre un chiffre, et les `:hover` de leurs
+feuilles de style à protéger — **13 fichiers de `routes/` en ont encore**.
+
+**Phase E — la finition.** Transition d'écran, animation des barres et anneaux à
+l'apparition, états vides qui portent le geste au lieu de le décrire.
+
+### Ce qui est vérifié, et ce qui ne l'est pas
+
+| Vérification | État |
+|---|---|
+| `tsc --noEmit` | ✅ vert |
+| `vitest` | ✅ **230 tests verts** — aucun ne dépendait du libellé de navigation |
+| `ruff`, `mypy`, `pytest` (backend) | ⏳ pas rejoués — rien du backend n'a bougé |
+| **La page dans un navigateur** | 🚧 **pas encore regardée** |
+
+**Le blocage.** La recette de la [§5](#5--vérifier-un-changement) demande une session, donc
+un jeton dans `localStorage`. Fabriquer ce jeton en appelant `TokenService.issue()` du
+backend — la même fonction que la connexion — **a été refusé par les permissions**. Les
+douze écrans n'ont donc **pas encore été regardés**, et c'est exactement ce que ce document
+dit être la seule vérification qui trouve des défauts. Trois portes possibles, au choix :
+
+1. autoriser l'appel qui fabrique le jeton ;
+2. donner les identifiants pour passer par `/api/auth/login` ;
+3. se limiter à `/_kitchen-sink`, publique — elle montre tous les composants, donc tout le
+   travail des phases A et C, mais **aucun des douze écrans**.
+
+---
+
 ## 1. Les douze pages
 
 Toutes les adresses de l'application, dans l'ordre de la navigation.
@@ -58,6 +143,10 @@ tableau de bord et un lien de l'écran Objectif. La barre demandait déjà 806 p
 disponibles ; une dixième entrée l'aurait portée à ~897. Le coût est réel — c'est l'écran
 qu'on ouvre pour poser une question, donc souvent — et il est assumé jusqu'à `L17-07`.
 
+> **Dépassé sur mobile depuis la phase B** ([§0](#0--où-en-est-la-refonte-mobile)) :
+> l'assistant a désormais une entrée dans la feuille « Plus », la contrainte des 806 px
+> ayant disparu avec la barre du haut. Sur ordinateur, rien ne change.
+
 ### Le routage
 
 [App.tsx](../frontend/src/App.tsx) — trois niveaux :
@@ -68,10 +157,14 @@ qu'on ouvre pour poser une question, donc souvent — et il est assumé jusqu'à
 tout le reste      RequireAuth → Shell → <Outlet />
 ```
 
-Ajouter une page = une ligne dans `App.tsx`, et **peut-être** une entrée dans `NAV`
-([Shell.tsx:31](../frontend/src/app/Shell.tsx#L31)). Peut-être seulement : la barre demande
-806 px pour 695 disponibles, et les deux dernières pages ajoutées s'en sont passées — voir
-[§6](#6--létat-des-lieux-mesuré).
+Ajouter une page = une ligne dans `App.tsx`, et **deux entrées à décider, pas une** depuis
+la phase B :
+
+* `NAV` dans [Shell.tsx](../frontend/src/app/Shell.tsx) — la barre d'ordinateur, au-delà de
+  960 px. Elle demande ~726 px pour ~708 : une entrée de plus se paie.
+* `TABS` ou `MORE` dans [TabBar.tsx](../frontend/src/app/TabBar.tsx) — le téléphone.
+  `TABS` est **plein à trois destinations** et le restera ; toute page nouvelle va dans
+  `MORE`, qui n'a pas de limite parce qu'une feuille défile.
 
 ---
 
@@ -115,6 +208,12 @@ sans toucher aux douze écrans.
 **Gros composants** — `Chart` (séries, superpositions, bande, contexte) · `Heatmap`
 (grille annuelle, cadences hebdomadaires, infobulle) · `Toaster`
 
+**Ajoutés en phase B** — `Sheet` · `SheetRow` · `SheetGroup`
+([Sheet.tsx](../frontend/src/components/ui/Sheet.tsx)), et les treize pictogrammes de
+[icons.tsx](../frontend/src/components/ui/icons.tsx). Les icônes sont **le seul module de
+`components/ui/` qui ne s'importe pas par `index.ts`** : elles ne sont pas des composants
+de charte mais le vocabulaire d'une seule surface, la barre d'onglets.
+
 Quatre tons partout, et ils ont un sens fixé par la charte : `signal` (mesure, neutre),
 `effort` (série tenue), `load` (seuil approché), `recover` (dette, alerte).
 
@@ -132,7 +231,11 @@ Quatre tons partout, et ils ont un sens fixé par la charte : `signal` (mesure, 
 | Le comportement d'un composant | `components/ui/primitives.tsx` | tous les écrans |
 | **Ajouter** un composant | `primitives.tsx` + son CSS + `index.ts` | — |
 | Un anneau, un tableau, des barres | `components/ui/data.tsx` + `data.module.css` | tous les écrans |
-| La barre du haut, le pied, la navigation | `app/Shell.tsx` + `Shell.module.css` | toute l'application |
+| La barre du haut (**ordinateur seulement**) | `app/Shell.tsx` + `Shell.module.css` | ≥ 960 px |
+| La barre d'onglets basse, la feuille « Plus » | `app/TabBar.tsx` + `TabBar.module.css` | < 960 px |
+| Ce que le bouton `⊕` sait écrire | `app/QuickLog.tsx` | < 960 px |
+| Une taille de texte | **`styles/tokens.css`**, bloc `--t-*` | toute l'application |
+| Une marge de page, un retrait de carte | `--gutter` / `--card-pad` dans les tokens | toute l'application |
 | La mise en page **d'un seul écran** | `routes/<Écran>.module.css` | cet écran |
 | Ce qu'un écran affiche | `routes/<Écran>.tsx` | cet écran |
 | Une adresse, une nouvelle page | `App.tsx` + `Shell.tsx` (`NAV`) | — |
@@ -191,9 +294,17 @@ traduit par des chiffres, plus par une intention.
 | Seuil de glissement | `--swipe-threshold` = **56 px** | en deçà, c'est un appui qui a bougé |
 
 **Les feuilles de style s'écrivent mobile d'abord** : les règles de base valent pour
-390 px, les `min-width` ajoutent ce que la place permet. Les points de rupture employés
-aujourd'hui sont `560`, `640`, `900` et `960 px` — quatre valeurs pour douze écrans, ce qui
-est déjà une de trop (voir [§6](#6--létat-des-lieux-mesuré)).
+390 px, les `min-width` ajoutent ce que la place permet.
+
+> **Dépassé depuis la phase A.** Les points de rupture sont maintenant **deux**, tous deux
+> en `min-width` : **600 px** et **960 px**, définis en tête de
+> [tokens.css](../frontend/src/styles/tokens.css). Les cinq valeurs d'avant — `560`, `640`,
+> `760`, `900`, `960`, dont trois en `max-width` — n'existent plus dans `styles/`,
+> `components/` ni `app/`. Elles subsistent dans les feuilles de `routes/`, que la phase D
+> n'a pas encore traitées.
+>
+> S'ajoutent quatre chiffres qui décrivent l'appareil cible, un iPhone 16 Pro :
+> **402 × 874 px CSS**, 59 px d'îlot dynamique, 34 px d'indicateur d'accueil.
 
 **Trois règles encadrent le glissement**, et elles ont chacune coûté quelque chose :
 
@@ -261,7 +372,21 @@ document.documentElement.scrollWidth > document.documentElement.clientWidth
 // 4. alignement du contenu sur l'en-tête — c'est celle qui manquait
 document.querySelector('header a').getBoundingClientRect().left
   === document.querySelector('main h2').getBoundingClientRect().left
+
+// 5. texte d'un SVG mis à l'échelle : la seule taille qui ment (phase C)
+//    Une déclaration `font-size: 9px` dans un `viewBox` de 720 rendu à 336 arrive à
+//    l'écran en 4,2 px. `getComputedStyle` lit 9 et ne voit rien.
+[...document.querySelectorAll('svg')].map(s => {
+  const vb = s.viewBox.baseVal.width;
+  if (!vb) return null;
+  const facteur = s.getBoundingClientRect().width / vb;
+  return [...s.querySelectorAll('text')].map(t =>
+    parseFloat(getComputedStyle(t).fontSize) * facteur);
+}).flat().filter(px => px !== null && px < 10)
 ```
+
+Émuler en **402 × 874 à DPR 3** — la géométrie réelle d'un iPhone 16 Pro. Les feuilles de
+style, elles, continuent de s'écrire pour 390 px : c'est le plancher, pas la cible.
 
 **Et ensuite, regarder la capture.** Les trois défauts du L14 étaient une redite, un texte
 d'invite copié du mauvais champ, et un pourcentage inventé : aucune mesure ne les
@@ -278,7 +403,10 @@ l'utilisateur.
 Ce qui est vrai aujourd'hui, chiffres à l'appui. À traiter ou à assumer pendant une
 refonte — ce sont des faits, pas des reproches.
 
-### La barre de navigation déborde
+> **Cette section décrit l'état d'avant la refonte.** Les quatre constats ci-dessous
+> restent utiles comme point de comparaison ; chacun porte l'état où il en est.
+
+### La barre de navigation déborde — ✅ traité (phase B)
 
 **806 px demandés pour 695 disponibles**, mesurés entrée par entrée à 1280 px. Elle défile
 horizontalement par conception, avec un dégradé de bord qui dit « ça continue ».
@@ -296,7 +424,13 @@ le raccourcir en « Accueil » rendrait ~80 px. Passer à un tiroir est l'autre 
 deux sont des **décisions de produit** réservées à `L17-07`, pas des ajustements de mise en
 page.
 
-### Sept écrans sur douze n'ont pas eu la passe tactile
+> **Les deux ont été prises.** Sous 960 px la barre n'existe plus : c'est
+> [TabBar](../frontend/src/app/TabBar.tsx) qui gouverne, cinq cibles en bas de l'écran, et
+> le reste dans une feuille. Au-dessus de 960 px, la barre demeure avec « Accueil » à la
+> place de « Tableau de bord » : **~726 px demandés pour ~708 disponibles**, ce que le
+> dégradé de bord couvre. Les 806 px ne sont plus un argument valable nulle part.
+
+### Sept écrans sur douze n'ont pas eu la passe tactile — ⏳ phase D
 
 Traités en émulation : `/activite` (v0.12.2), `/planning` (L13), `/objectif` (L14),
 `/assistant` (L14b). Restent `/`, `/corps`, `/routine`, `/nutrition`, `/assiduite`,
@@ -310,17 +444,18 @@ latence.
 
 ### Trois incohérences à trancher
 
-1. **63 styles en ligne** (`style={{…}}`) dans les écrans, dont une trentaine de
-   `marginTop: 10` et de `<div style={{ height: 40 }} />` en guise d'espaceur. Ils
-   contournent l'échelle `--s1`…`--s8`. Une refonte est le bon moment pour les remplacer
-   par des classes.
-2. **Quatre points de rupture** — 560, 640, 900, 960 px — pour douze écrans, dont deux en
-   `max-width` (l'héritage) et deux en `min-width` (mobile d'abord). Deux valeurs
-   suffiraient.
+1. **60 styles en ligne** (`style={{…}}`) dans les écrans — le document en annonçait 63,
+   le compte exact est 60 —, dont une trentaine de `marginTop: 10` et de
+   `<div style={{ height: 40 }} />` en guise d'espaceur. Ils contournent l'échelle
+   `--s1`…`--s8`. — ⏳ **phase D**, sauf les deux de `primitives.tsx` et le `height: 40` de
+   fin de page, que le dégagement de la barre d'onglets rend inutile.
+2. ~~**Quatre points de rupture**~~ — ✅ **traité en phase A** : deux valeurs, `600` et
+   `960`, toutes deux en `min-width`. Reste à propager dans `routes/` (phase D).
 3. **Deux conventions de conteneur de page** : neuf écrans posent `className="wrap"` sur
    plusieurs blocs, trois (`/planning`, `/objectif`, `/assistant`) combinent `wrap` et un
    `styles.screen` qui gère l'empilement. La seconde est la plus récente et la plus
-   lisible.
+   lisible. — ⏳ **phase D**. En attendant, `.wrap .wrap` neutralise le retrait imbriqué,
+   pour qu'un écran qui empile plusieurs blocs ne double pas sa marge latérale.
 
 ### Le poids des écrans
 

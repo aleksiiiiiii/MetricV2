@@ -1,0 +1,108 @@
+.bar {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 30;
+  display: flex;
+  align-items: stretch;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  /* La zone sûre s'ajoute **sous** les cibles : l'indicateur d'accueil ne mange pas
+     44 px de bouton, il ajoute 34 px de vide sous eux. */
+  padding-bottom: var(--safe-b);
+}
+
+/* Au-delà de 960 px, la navigation de l'en-tête reprend la main. */
+@media (min-width: 960px) {
+  .bar {
+    display: none;
+  }
+}
+
+.tab {
+  flex: 1 1 0;
+  min-width: 0;
+  /* `--tabbar` est un plancher, pas une hauteur : un libellé qui passerait à la ligne
+     dans une autre langue pousserait la barre au lieu d'être coupé. */
+  min-height: var(--tabbar);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 2px;
+  background: none;
+  border: none;
+  color: var(--ink-low);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--t);
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -3px;
+  border-radius: var(--r-sm);
+}
+
+/* Le retour d'appui remplace le survol, qui n'existe pas au doigt. */
+.tab:active {
+  transform: scale(0.94);
+}
+
+.tabActive {
+  color: var(--signal);
+}
+
+.label {
+  font-family: var(--display);
+  font-size: var(--t-meta);
+  line-height: 1.1;
+  /* Cinq libellés sur 402 px : 80 px chacun. « Nutrition » y tient sans capitales ni
+     interlettrage — c'est pour ça qu'il n'en a pas, contrairement au reste de la charte. */
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+/* ── Le bouton central ────────────────────────────── */
+
+/* Il n'est pas surélevé : un disque plein au milieu de quatre traits se distingue déjà,
+   et une pastille qui dépasse de la barre recouvre la fin du contenu. */
+.action {
+  color: var(--ink-mid);
+}
+
+.actionDisc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--signal);
+  color: var(--bg);
+  transition: var(--t);
+}
+
+.action:active .actionDisc {
+  background: #93b8c3;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover {
+    color: var(--ink);
+  }
+
+  .action:hover .actionDisc {
+    background: #93b8c3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab:active {
+    transform: none;
+  }
+}

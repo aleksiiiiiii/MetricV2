@@ -26,12 +26,15 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--display);
-  font-size: 15px;
+  font-size: var(--t-body);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* Le fond couvre le rebond de défilement sur mobile. */
   min-height: 100dvh;
+  /* iOS peint un rectangle gris sur chaque appui, par-dessus les états que la
+     charte dessine déjà. Deux retours pour un geste : on garde le nôtre. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 #root {
@@ -40,21 +43,29 @@ body {
 
 /* ── Typographie ──────────────────────────────────── */
 
+/* Les tailles viennent des tokens et non plus de littéraux. C'est le seul
+   endroit où la refonte s'écarte volontairement de `GuidelinesUI.html` : la
+   charte a été dessinée pour un écran large, et son échelle vue à bout de bras
+   sur un téléphone demandait de plisser les yeux. Les rapports entre niveaux
+   sont conservés ; c'est le point de départ qui change. */
+
 h1 {
-  font-size: clamp(34px, 6vw, 54px);
+  font-size: var(--t-hero);
   font-weight: 700;
   letter-spacing: -0.035em;
-  line-height: 1.02;
+  line-height: 1.05;
+  text-wrap: balance;
 }
 
 h2 {
-  font-size: 22px;
+  font-size: var(--t-title);
   font-weight: 600;
   letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 h3 {
-  font-size: 16px;
+  font-size: var(--t-head);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -62,9 +73,9 @@ h3 {
 /* Surtitre monospace en capitales — motif récurrent de la charte. */
 .eyebrow {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   font-weight: 500;
-  letter-spacing: 0.18em;
+  letter-spacing: var(--ls-meta);
   text-transform: uppercase;
   color: var(--ink-low);
 }
@@ -72,7 +83,7 @@ h3 {
 .lede {
   color: var(--ink-mid);
   max-width: 56ch;
-  font-size: 16px;
+  font-size: var(--t-body);
 }
 
 /* Tout ce qui est chiffre, unité, horodatage. La chasse fixe aligne les colonnes
@@ -117,31 +128,74 @@ a {
 .wrap {
   max-width: var(--wrap);
   margin: 0 auto;
-  padding: clamp(20px, 4vw, 56px);
+  padding-inline: var(--gutter);
+  padding-block: var(--s5);
+}
+
+@media (min-width: 600px) {
+  .wrap {
+    padding-block: var(--s7);
+  }
+}
+
+/* Deux `wrap` imbriqués doublaient la marge latérale — neuf écrans en posaient
+   un par bloc. Le retrait est neutralisé à l'intérieur ; l'écran qui empile
+   plusieurs blocs n'a plus besoin de le savoir. */
+.wrap .wrap {
+  padding-inline: 0;
+  max-width: none;
 }
 
 .grid {
   display: grid;
-  gap: var(--s4);
+  gap: var(--s3);
 }
 
-.g2 {
+@media (min-width: 600px) {
+  .grid {
+    gap: var(--s4);
+  }
+}
+
+/* Mobile d'abord : **deux colonnes par défaut**, et non une.
+
+   La règle précédente était un `max-width: 760px` qui faisait retomber les
+   quatre grilles à une seule colonne — les quatre chiffres du tableau de bord
+   devenaient quatre grandes cartes empilées, et il fallait faire défiler pour
+   lire son poids **et** sa semaine. Deux tuiles côte à côte tiennent très bien
+   dans 390 px : c'est exactement ce que fait l'écran d'accueil d'un téléphone. */
+.g2,
+.g3,
+.g4 {
   grid-template-columns: repeat(2, 1fr);
 }
 
-.g3 {
-  grid-template-columns: repeat(3, 1fr);
-}
+@media (min-width: 960px) {
+  .g3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
 
-.g4 {
-  grid-template-columns: repeat(4, 1fr);
-}
-
-@media (max-width: 760px) {
-  .g2,
-  .g3,
   .g4 {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Une grille dont chaque cellule porte une phrase, pas un chiffre : elle reste
+   sur une colonne tant qu'il n'y a pas la place de lire deux textes de front. */
+.g2-text,
+.g3-text {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 600px) {
+  .g2-text {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 960px) {
+  .g3-text {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
@@ -175,11 +229,26 @@ a {
 
 /* ── Règle graduée : motif signature de la charte ─── */
 
+/* La respiration de la charte — 52 px au-dessus, 26 px en dessous — était celle
+   d'une page large. Le tableau de bord en compte cinq : 390 px de séparateur
+   pur, plus de la moitié d'un écran de téléphone, pour un trait de 1 px. Le
+   motif reste ; sa marge suit la taille de l'écran. */
 .rule {
   position: relative;
   height: 1px;
   background: var(--line);
-  margin: var(--s8) 0 var(--s6);
+  margin: var(--s6) 0 var(--s5);
+}
+
+@media (min-width: 600px) {
+  .rule {
+    margin: var(--s8) 0 var(--s6);
+  }
+}
+
+/* Une règle qui ouvre un écran n'a rien à séparer : elle ne pousse pas. */
+.rule:first-child {
+  margin-top: 0;
 }
 
 /* Les graduations verticales, tous les 16 px. */
@@ -199,8 +268,8 @@ a {
   background: var(--bg);
   padding-right: var(--s4);
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.18em;
+  font-size: var(--t-meta);
+  letter-spacing: var(--ls-meta);
   text-transform: uppercase;
   color: var(--ink-low);
 }
