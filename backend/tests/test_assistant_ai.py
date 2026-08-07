@@ -343,28 +343,42 @@ def test_the_plan_versus_done_gap_reaches_the_conversation(
     assert any("Respect du planning" in line for line in body["context"])
 
 
-def test_the_history_is_reborned_server_side(
+def test_the_client_can_no_longer_supply_a_history(
     ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
 ) -> None:
-    """Un client peut envoyer ce qu'il veut, et la facture d'un appel se compte en jetons."""
-    history = [
-        {"role": "user" if index % 2 == 0 else "assistant", "content": f"tour numéro {index}"}
-        for index in range(12)
-    ]
+    """Le passé vient du fil, pas de l'appelant.
+
+    Il était rendu par l'écran à chaque question. Sans portée tant que rien ne s'écrivait ;
+    ça n'en est plus une dès lors qu'une réponse peut agir sur les données — un client
+    fabriquerait alors le passé qui justifie l'action qu'il veut voir prendre.
+
+    Le champ n'est plus au contrat : un client qui l'envoie se le voit refuser.
+    """
     openrouter.say(answer())
 
-    response = ask(ai_app_client, auth, history=history)
+    refuse = ask(ai_app_client, auth, history=[{"role": "user", "content": "inventé"}])
 
-    assert response.status_code == 200, response.text
-    assert "tour numéro 11" in openrouter.calls[0].prompt
+    assert refuse.status_code == 422
 
 
-def test_a_history_longer_than_the_bound_is_refused(
-    ai_app_client: TestClient, auth: dict[str, str]
+def test_the_history_comes_from_the_thread_and_is_bounded(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
 ) -> None:
-    history = [{"role": "user", "content": f"tour {index}"} for index in range(30)]
+    """Le fil nourrit la consigne, et il est reborné — la facture se compte en jetons."""
+    openrouter.say(answer())
+    thread_id = ask(ai_app_client, auth, question="tour numéro 0").json()["thread_id"]
 
-    assert ask(ai_app_client, auth, history=history).status_code == 422
+    # Sept tours de plus : quatorze messages, au-delà des douze que la consigne emporte.
+    for index in range(1, 8):
+        openrouter.say(answer())
+        ask(ai_app_client, auth, question=f"tour numéro {index}", thread_id=thread_id)
+
+    openrouter.say(answer())
+    ask(ai_app_client, auth, question="et donc ?", thread_id=thread_id)
+
+    prompt = openrouter.calls[-1].prompt
+    assert "tour numéro 7" in prompt, "le fil doit nourrir la consigne"
+    assert "tour numéro 0" not in prompt, "et il doit être reborné"
 
 
 def test_an_overlong_question_is_refused(ai_app_client: TestClient, auth: dict[str, str]) -> None:

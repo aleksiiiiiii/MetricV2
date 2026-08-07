@@ -3,12 +3,7 @@ import { useState } from 'react';
 
 import { AiBlock, Badge, Button, Card, Chip, ChipStrip, Empty, Field, Rule } from '@/components/ui';
 import { useAiStatus } from '@/features/ai/useAiStatus';
-import {
-  assistantApi,
-  type MemoryEntry,
-  type Message,
-  type ProposedMemory,
-} from '@/features/assistant/api';
+import { assistantApi, type MemoryEntry, type ProposedMemory } from '@/features/assistant/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
 import { shortDate } from '@/lib/format';
@@ -49,19 +44,6 @@ const EXAMPLES = [
 interface Exchange {
   question: string;
   reply: string;
-}
-
-/**
- * L'historique tel que le serveur l'attend : **du plus ancien au plus récent**.
- *
- * L'écran affiche l'inverse ; le modèle, lui, lit une conversation dans son ordre. Le
- * retournement vit ici, en un seul endroit, plutôt que dans les deux qui en ont besoin.
- */
-function historyOf(exchanges: Exchange[]): Message[] {
-  return [...exchanges].reverse().flatMap((item): Message[] => [
-    { role: 'user', content: item.question },
-    { role: 'assistant', content: item.reply },
-  ]);
 }
 
 function useInvalidateMemory() {
@@ -353,9 +335,14 @@ export function Assistant() {
     queryFn: assistantApi.memory,
   });
 
+  // L'identifiant du fil courant. Le passé n'est plus reconstruit par l'écran : le
+  // serveur le lit dans le fil, et l'écran ne lui donne que de quoi le retrouver.
+  const [threadId, setThreadId] = useState<string | null>(null);
+
   const ask = useMutation({
-    mutationFn: (asked: string) => assistantApi.ask(asked, historyOf(exchanges)),
+    mutationFn: (asked: string) => assistantApi.ask(asked, threadId),
     onSuccess: (result, asked) => {
+      setThreadId(result.thread_id);
       setExchanges((current) => [{ question: asked, reply: result.reply }, ...current]);
       setProposed(result.remember);
       setContext(result.context);

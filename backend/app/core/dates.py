@@ -49,6 +49,19 @@ def local_day_of(moment: datetime) -> date:
     return moment.astimezone(tz()).date()
 
 
+def local_moment(moment: datetime) -> datetime:
+    """Le même instant, toujours situé dans un fuseau.
+
+    Pendant de `local_day_of`, et **même convention** : un horodatage sans fuseau est
+    supposé local. Elle est ici pour une raison plus étroite — comparer deux horodatages
+    dont l'un serait naïf lève une `TypeError` en Python, ce qui suffirait à faire tomber
+    une liste entière parce qu'une seule ligne a été retapée dans un tableur sans son
+    décalage. C'est exactement le genre de panne que la famille *planning* du §2 de
+    `docs/etat-du-projet.md` promet de ne pas avoir.
+    """
+    return moment.replace(tzinfo=tz()) if moment.tzinfo is None else moment
+
+
 def day_bounds(day: date) -> tuple[datetime, datetime]:
     """Instants de début et de fin d'une journée locale, fin exclue."""
     zone = tz()

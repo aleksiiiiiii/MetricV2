@@ -1,14 +1,10 @@
 /**
  * Assistant conversationnel et mémoire de santé (`IA-09` → `IA-12`).
  *
- * Aucun calcul ici, comme partout ailleurs — mais surtout **aucune mémoire ici non plus**.
- * Le serveur ne stocke pas le fil : c'est l'écran qui lui rend l'historique à chaque
- * question, et qui le perd au rechargement. Deux onglets ouverts ne se mélangent donc
- * jamais.
- *
- * Deux appels ne se rejoignent jamais : `chat` rend des notes que personne n'a validées,
- * `adopt` écrit celles qu'on a gardées. Un écran qui enchaînerait les deux tout seul
- * romprait `IA-10`.
+ * Aucun calcul ici, comme partout ailleurs. **Et l'écran ne tient plus l'historique** :
+ * le fil vit sur le serveur, on lui donne son identifiant et il sait ce qui a été dit.
+ * Un client pouvait envoyer le passé qu'il voulait — sans portée tant que rien ne
+ * s'écrivait, ce qui n'est plus le cas.
  */
 
 import { request } from '@/lib/api';
@@ -18,12 +14,38 @@ export interface Message {
   content: string;
 }
 
+export interface ThreadSummary {
+  thread_id: string;
+  title: string;
+  created: string | null;
+  updated: string | null;
+  messages: number;
+}
+
+export interface ThreadMessage {
+  seq: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created: string | null;
+}
+
+export interface ThreadDetail {
+  thread_id: string;
+  title: string;
+  created: string | null;
+  updated: string | null;
+  messages: ThreadMessage[];
+}
+
 export interface ProposedMemory {
   topic: string;
   note: string;
 }
 
 export interface ChatReply {
+  /** Le fil, ouvert ou poursuivi. À redonner à la question suivante. */
+  thread_id: string;
+  title: string;
   reply: string;
   /** Ce qui mérite d'être retenu, **en attente de validation**. */
   remember: ProposedMemory[];
@@ -57,8 +79,21 @@ function ifMatch(token: string): Record<string, string> {
 export const assistantApi = {
   memory: () => request<AssistantView>('/api/assistant/memory'),
 
-  ask: (question: string, history: Message[]) =>
-    request<ChatReply>('/api/assistant/chat', { method: 'POST', body: { question, history } }),
+  /** Pose une question. Sans `threadId`, le serveur ouvre un fil et rend son identifiant. */
+  ask: (question: string, threadId: string | null) =>
+    request<ChatReply>('/api/assistant/chat', {
+      method: 'POST',
+      body: threadId === null ? { question } : { question, thread_id: threadId },
+    }),
+
+  threads: () => request<{ threads: ThreadSummary[] }>('/api/assistant/threads'),
+
+  thread: (threadId: string) => request<ThreadDetail>(`/api/assistant/threads/${threadId}`),
+
+  forgetThread: (threadId: string) =>
+    request<undefined>(`/api/assistant/threads/${threadId}`, { method: 'DELETE' }),
+
+  forgetAllThreads: () => request<undefined>('/api/assistant/threads', { method: 'DELETE' }),
 
   /** Écrit une note tapée à la main, marquée `manual`. */
   remember: (topic: string, note: string) =>

@@ -8,7 +8,7 @@ date s'écrit de la même façon dans tous les fichiers.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import Enum
 from typing import Annotated, Any, Self
 
@@ -91,8 +91,41 @@ def lenient_number(value: object) -> object:
         return 0
 
 
+def lenient_datetime(value: object) -> object:
+    """Un horodatage de fichier de planning, ou `None` s'il est illisible.
+
+    Même promesse que `lenient_date`, et pour la même raison — mais dans l'autre sens : ce
+    qui se récupère ici, c'est une **date seule** trouvée dans une colonne d'horodatage.
+    Elle vaut minuit, ce qui est le début du jour écrit et non une invention.
+
+    Un fil de discussion se range à la seconde près, là où une pesée se range au jour :
+    deux questions posées le même matin doivent rester dans l'ordre où elles ont été
+    posées, et `CsvDate` les rendrait indistinguables.
+    """
+    if value is None or isinstance(value, datetime):
+        return value
+
+    if isinstance(value, date):
+        return datetime.combine(value, time.min)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    try:
+        return datetime.combine(date.fromisoformat(text), time.min)
+    except ValueError:
+        return None
+
+
 #: Date d'un fichier de planning. Illisible, elle vaut « pas de date ».
 CsvDate = Annotated[date | None, BeforeValidator(lenient_date)]
+
+#: Horodatage d'un fichier de planning. Illisible, il vaut « on ne sait pas quand ».
+CsvDateTime = Annotated[datetime | None, BeforeValidator(lenient_datetime)]
 
 #: Nombre d'un fichier de planning. Illisible, il vaut zéro.
 CsvNumber = Annotated[float, BeforeValidator(lenient_number)]

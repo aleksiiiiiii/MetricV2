@@ -45,6 +45,8 @@ const EMPTY_MEMORY: AssistantView = {
 };
 
 const REPLY: ChatReply = {
+  thread_id: 'fil-1',
+  title: 'Où j’en suis cette semaine',
   reply: 'Tu tournes à 1,8 séance par semaine, contre 2,4 le mois dernier.',
   remember: [{ topic: 'sommeil', note: 'Je dors mal les soirs de séance tardive' }],
   context: [
@@ -188,7 +190,10 @@ describe('conversation', () => {
     expect(screen.getByText(/aucun fichier/, { selector: 'summary' })).toBeInTheDocument();
   });
 
-  it("renvoie l'historique au tour suivant, parce que le serveur ne s'en souvient pas", async () => {
+  it('poursuit le fil au tour suivant, au lieu de renvoyer le passé', async () => {
+    // L'écran tenait l'historique et le rendait à chaque question. Il ne rend plus qu'un
+    // identifiant : le passé vit dans le fil, côté serveur, et un client ne peut plus le
+    // fabriquer — ce qui était sans portée tant que rien ne s'écrivait.
     const user = userEvent.setup();
     stub();
     renderScreen();
@@ -200,8 +205,12 @@ describe('conversation', () => {
 
     await waitFor(() => {
       const asked = writes().filter((call) => call.url.endsWith('/chat'));
-      const second = JSON.parse(asked[1]?.init?.body as string) as { history: unknown[] };
-      expect(second.history).toHaveLength(2);
+      const first = JSON.parse(asked[0]?.init?.body as string) as Record<string, unknown>;
+      const second = JSON.parse(asked[1]?.init?.body as string) as Record<string, unknown>;
+
+      expect(first).not.toHaveProperty('thread_id');
+      expect(second.thread_id).toBe(REPLY.thread_id);
+      expect(second).not.toHaveProperty('history');
     });
   });
 

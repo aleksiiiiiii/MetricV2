@@ -30,6 +30,8 @@ from app.domains.assistant.schemas import (
     ChatRequest,
     MemoryEntry,
     MemoryPayload,
+    ThreadDetail,
+    ThreadList,
 )
 from app.domains.assistant.service import AssistantService
 from app.domains.planning.service import DEFAULT_ADHERENCE_WEEKS, PlanningService
@@ -38,6 +40,7 @@ from app.storage.errors import StorageConflictError
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
 RowId = Annotated[int, Path(ge=0)]
+ThreadId = Annotated[str, Path(min_length=1, max_length=32)]
 IfMatch = Annotated[str | None, Header(alias="If-Match")]
 
 
@@ -112,12 +115,59 @@ async def forget(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> No
     await AssistantService(store).forget(row_id, _token(if_match))
 
 
+# ── Les fils (`IA-13`) ────────────────────────────────
+
+
+@router.get("/threads", response_model=ThreadList, summary="Les discussions")
+async def threads(store: StoreDep) -> ThreadList:
+    """La liste des fils, du plus récemment actif au plus ancien.
+
+    **Sans dépendance à l'IA**, comme le carnet : relire ce qui a été dit ne demande
+    aucune clé, et une panne de modèle ne doit pas fermer l'accès à ses propres
+    discussions (`IA-07`).
+    """
+    return await AssistantService(store).threads()
+
+
+@router.get("/threads/{thread_id}", response_model=ThreadDetail, summary="Une discussion")
+async def thread(thread_id: ThreadId, store: StoreDep) -> ThreadDetail:
+    return await AssistantService(store).thread(thread_id)
+
+
+@router.delete(
+    "/threads/{thread_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Supprimer une discussion",
+)
+async def forget_thread(thread_id: ThreadId, store: StoreDep) -> None:
+    """Supprime un fil et ses messages.
+
+    Sans garde `If-Match`, contrairement à une note : un fil se désigne par son
+    identifiant stable et non par sa position, et le conflit que la garde protège — deux
+    écrans qui renumérotent la même liste — n'existe pas ici. La confirmation est à
+    l'écran, là où elle se lit.
+    """
+    await AssistantService(store).forget_thread(thread_id)
+
+
+@router.delete(
+    "/threads",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Effacer toutes les discussions",
+)
+async def forget_all_threads(store: StoreDep) -> None:
+    """Vide l'historique des conversations. **Le carnet n'est pas touché** : ce qui a été
+    retenu survit à l'effacement des discussions qui l'ont produit, et c'est bien le
+    partage voulu entre les deux (`IA-11`)."""
+    await AssistantService(store).forget_all_threads()
+
+
 # ── La conversation (`IA-09`, `IA-10`) ────────────────
 
 
 @router.post("/chat", response_model=ChatReply, summary="Poser une question")
 async def chat(payload: ChatRequest, store: StoreDep, ai: AiServiceDep) -> ChatReply:
-    """Répond à partir des données de l'utilisateur. **Rien n'est écrit** (`IA-10`).
+    """Répond à partir des données de l'utilisateur, dans un fil.
 
     Sans clé OpenRouter, `AiServiceDep` fait échouer l'endpoint avec un code du catalogue
     avant même d'entrer ici (`IA-07`) : le carnet, lui, reste entier.

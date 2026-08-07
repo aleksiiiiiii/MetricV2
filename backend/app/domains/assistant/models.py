@@ -26,7 +26,7 @@ lecture-là se fait souvent longtemps après, hors de l'application.
 
 from __future__ import annotations
 
-from app.storage.model import CsvDate, CsvModel
+from app.storage.model import CsvDate, CsvDateTime, CsvModel
 
 #: Sujets proposés à l'écran et suggérés au modèle.
 #:
@@ -78,3 +78,56 @@ class MemoryRow(CsvModel):
     #: elle a été écrite à la main. L'origine reste lisible jusque dans le fichier, comme
     #: pour un repas ou une séance (`IMP-05`).
     source: str = "manual"
+
+
+# ── Les fils de discussion ────────────────────────────
+
+
+#: Longueur d'un titre de fil. Cinq mots tiennent dedans, et c'est ce qu'on demande au
+#: modèle : un fil nommé « Discussion du 7 août » ne se retrouve pas, « Stagnation du
+#: développé couché » si.
+MAX_TITLE = 80
+
+#: Longueur d'un message stocké. La question est déjà bornée à `MAX_QUESTION` et la
+#: réponse à `MAX_REPLY` ; cette borne-ci est la ceinture du fichier, pas du dialogue.
+MAX_CONTENT = 4000
+
+
+class ThreadRow(CsvModel):
+    """Un fil de discussion. `assistant/threads.csv`.
+
+    Famille *planning* du §2 de `docs/etat-du-projet.md` : toutes les colonnes portent un
+    défaut, et une ligne abîmée dans un tableur coûte un fil, jamais un écran en `502`.
+    """
+
+    #: Identifiant stable, et non la position : les fils se suppriment, et un message
+    #: doit rester rattaché au sien après la disparition d'un autre.
+    id: str = ""
+    #: Horodatés avec leur décalage, comme une prise d'eau : c'est ce qui range les fils
+    #: dans le bon ordre quel que soit le fuseau de lecture.
+    created: CsvDateTime = None
+    #: Bougé à chaque message. C'est sur lui que la liste est triée — un fil rouvert
+    #: remonte, ce qu'une date de création ne dirait pas.
+    updated: CsvDateTime = None
+    title: str = ""
+
+
+class MessageRow(CsvModel):
+    """Un tour de conversation. `assistant/messages.csv`.
+
+    Un seul fichier pour tous les fils. Le lire en entier pour en afficher un seul est
+    largement tenable à l'échelle d'un carnet personnel ; le jour où ça pèse, la migration
+    est un partitionnement par année et non un changement de forme.
+    """
+
+    thread_id: str = ""
+    #: Rang dans le fil, à partir de 0. Il ordonne les messages sans dépendre de
+    #: l'horodatage, qui peut se répéter à la seconde près.
+    seq: int = 0
+    role: str = "user"
+    content: str = ""
+    created: CsvDateTime = None
+    #: Les actions du tour, en JSON, avec leur résultat. Vide pour un message de
+    #: l'utilisateur. C'est ce qui permet, en rouvrant un fil, de réafficher « j'ai
+    #: ajouté … » et de proposer encore l'annulation.
+    actions: str = ""

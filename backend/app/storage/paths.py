@@ -32,6 +32,20 @@ GOALS = "goals/goals.csv"
 WEEKLY_INSIGHTS = "insights/weekly.csv"
 MEMORY = "insights/memory.csv"
 
+# Les fils de discussion de l'assistant.
+#
+# Le serveur ne stockait rien : l'écran rendait l'historique à chaque question et le
+# perdait au rechargement. C'était documenté comme voulu, avec trois bénéfices — et deux
+# d'entre eux se retrouvent autrement dès lors qu'un fil a une identité. Le troisième,
+# « aucun fichier ne grossit sans fin », est le prix assumé de pouvoir revenir sur une
+# discussion d'il y a trois mois.
+#
+# Deux fichiers plutôt qu'un par fil : le dépôt CSV est fait pour ça, et un dossier de
+# plusieurs centaines de fichiers minuscules se navigue mal hors de l'application — ce
+# qui est le critère du projet depuis `STO-07`.
+THREADS = "assistant/threads.csv"
+MESSAGES = "assistant/messages.csv"
+
 # Décision **D2** : tout ce qui est réglage vit sous `settings/`, y compris le
 # clé/valeur que l'annexe plaçait à la racine. Un fichier et un dossier homonymes au
 # même niveau est légal mais piégeux.
