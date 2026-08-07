@@ -135,6 +135,11 @@ const PROBE = `(() => {
 
   // 1. cibles sous le plancher tactile — un élément invisible n'est pas une cible
   const visible = (node) => {
+    // « sr-only » masque un champ tout en le gardant dans le document : c'est le motif
+    // d'un input[type=file] dont le vrai bouton est son label. Il mesure 1 x 1 px
+    // et personne ne le vise — le compter comme cible sous plancher est un faux positif,
+    // et un faux positif répété finit par faire ignorer le vrai.
+    if (node.classList.contains('sr-only') || node.closest('.sr-only')) return false;
     const box = node.getBoundingClientRect();
     return box.width > 0 && box.height > 0 && getComputedStyle(node).visibility !== 'hidden';
   };

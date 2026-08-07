@@ -76,13 +76,20 @@
   color: var(--ink-mid);
 }
 
+/* C'est la seule porte vers le réglage des pistes depuis cet écran, et elle faisait
+   22 px de haut. Un lien reste un lien — c'est une navigation, pas une action — mais il
+   se touche comme le reste. */
 .settingsLink {
   font-family: var(--mono);
   font-size: var(--t-meta);
   letter-spacing: 0.04em;
   color: var(--ink-mid);
   border-bottom: 1px solid var(--line);
-  padding-bottom: 2px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  text-decoration: none;
+  touch-action: manipulation;
 }
 
 @media (hover: hover) and (pointer: fine) {

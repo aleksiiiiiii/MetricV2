@@ -131,6 +131,12 @@
   border: 1px solid var(--line);
   border-radius: var(--r);
   padding: var(--card-pad);
+  /* Une carte ne pousse jamais la colonne qui la contient.
+     Sans cette ligne, une carte portant un tableau large prend la largeur du tableau —
+     et comme un élément de grille a pour taille minimale son contenu minimal, la piste
+     s'élargit avec elle et c'est la page entière qui défile de travers. Le tableau, lui,
+     a déjà son propre défilement dans `.tableWrap` : c'est là qu'il doit rester. */
+  min-width: 0;
 }
 
 .cardFlush {

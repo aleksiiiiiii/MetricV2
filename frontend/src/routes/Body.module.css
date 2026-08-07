@@ -56,6 +56,13 @@
   font-family: var(--mono);
   font-size: var(--t-meta);
   padding: 4px 8px;
+  /* Elles faisaient 26 px de haut, et l'une des deux supprime. Le plancher vaut d'abord
+     pour ce qu'on ne veut pas toucher par erreur. */
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
   transition: var(--t);
 }
 

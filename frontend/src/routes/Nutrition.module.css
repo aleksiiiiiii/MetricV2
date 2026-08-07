@@ -18,10 +18,20 @@
   margin-top: var(--s4);
 }
 
+/* Trois pas-à-pas de front demandent 3 × 210 px pour que leurs touches soient à
+   `--tap-lg` et leurs champs lisibles. Dans 304 px ils recevaient 94 px chacun, et le
+   champ tombait sous 20 px de large — la mesure l'a vu, l'œil l'aurait vu aussi. */
 .triple {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: var(--s3);
+  grid-template-columns: 1fr;
+  gap: var(--s4);
+}
+
+@media (min-width: 600px) {
+  .triple {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--s3);
+  }
 }
 
 .error {
@@ -66,9 +76,11 @@
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 11px 13px;
+  min-height: 48px;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: var(--t-sub);
+  /* 16 px : en deçà, iOS zoome à la mise au point et décale la page. */
+  font-size: var(--t-body);
   width: 100%;
 }
 

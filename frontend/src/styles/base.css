@@ -224,6 +224,10 @@ a {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
+  /* Même raison que `.card` : une pile posée dans la grille d'un écran ne doit pas
+     l'élargir. Les modules CSS déclarent leurs propres `.grid`, que la règle générale
+     ci-dessus ne peut pas atteindre. */
+  min-width: 0;
 }
 
 .row {

@@ -7,6 +7,8 @@ import {
   Bars,
   Card,
   Chart,
+  Chip,
+  ChipStrip,
   Empty,
   PageHead,
   Progress,
@@ -60,16 +62,24 @@ function Numbers({ data }: { data: DashboardView }) {
   const { weight, training, hydration, streak } = data;
 
   return (
-    <div className="grid g4">
+    // `tiles` et non `g4` : ces quatre-là sont un libellé, un chiffre et une ligne de
+    // détail — ils tiennent deux de front dès 390 px. Empilés, il fallait faire défiler
+    // pour lire son poids **et** sa semaine, alors que la comparaison est tout l'intérêt.
+    <div className="grid tiles">
       <Card>
         <Stat
+          compact
           label="Poids"
           value={weight.latest_kg !== null ? num(weight.latest_kg, 1) : '—'}
           unit={weight.latest_kg !== null ? 'kg' : undefined}
           detail={
             weight.change_kg !== null
               ? `${delta(weight.change_kg)} kg sur les 8 dernières pesées`
-              : 'Un chiffre le matin, et la courbe commence.'
+              : weight.latest_kg !== null
+                ? // Il y a un chiffre : lui dire d'en poser un se lisait comme un écran
+                  // qui n'a pas vu la pesée qu'il affiche juste au-dessus.
+                  'Première pesée. La tendance vient à la deuxième.'
+                : 'Un chiffre le matin, et la courbe commence.'
           }
           direction={weight.change_kg === null ? undefined : weight.change_kg > 0 ? 'up' : 'down'}
         />
@@ -77,6 +87,7 @@ function Numbers({ data }: { data: DashboardView }) {
 
       <Card>
         <Stat
+          compact
           label="Cette semaine"
           value={training.week.sessions > 0 ? hoursMinutes(training.week.minutes) : '—'}
           detail={
@@ -89,17 +100,26 @@ function Numbers({ data }: { data: DashboardView }) {
 
       <Card>
         <Stat
+          compact
           label="Hydratation"
           value={hydration.today_ml > 0 ? volume(hydration.today_ml) : '—'}
-          detail={`objectif ${volume(hydration.target_ml)} · ${percent(hydration.ratio)}`}
+          // Le pourcentage n'accompagne le tiret que s'il y a bu quelque chose : « — » et
+          // « 0 % » côte à côte disent la même absence de deux façons dont l'une ressemble
+          // à une mesure.
+          detail={
+            hydration.today_ml > 0
+              ? `objectif ${volume(hydration.target_ml)} · ${percent(hydration.ratio)}`
+              : `objectif ${volume(hydration.target_ml)}`
+          }
         />
       </Card>
 
       <Card>
         <Stat
+          compact
           label="Assiduité"
           value={streak.current > 0 ? integer(streak.current) : '—'}
-          unit={streak.current > 0 ? 'jours' : undefined}
+          unit={streak.current > 0 ? (streak.current > 1 ? 'jours' : 'jour') : undefined}
           detail={
             streak.longest > 0
               ? `record ${integer(streak.longest)} jours · ${integer(streak.active_days)} jours suivis`
@@ -162,21 +182,26 @@ function Graph({ shipped }: { shipped: SeriesView }) {
         />
       </div>
 
+      {/* Treize métriques dans une liste qui passe à la ligne prenaient **neuf lignes et
+          470 px** sur un téléphone — plus d'une demi-hauteur d'écran pour un sélecteur —
+          et chaque bouton faisait 28 px de haut. Une bande qui se tire au pouce en prend
+          50, et chaque pastille respecte le plancher tactile. C'est exactement ce pour
+          quoi `ChipStrip` existe ; il n'était employé que sur deux écrans. */}
       {options.length > 1 && (
         <div className={styles.metrics}>
-          {options.map((entry) => (
-            <button
-              key={entry.key}
-              type="button"
-              className={styles.metric}
-              aria-pressed={entry.key === metric}
-              onClick={() => {
-                setChoice({ metric: entry.key, range });
-              }}
-            >
-              {entry.label}
-            </button>
-          ))}
+          <ChipStrip label="Métrique du graphique">
+            {options.map((entry) => (
+              <Chip
+                key={entry.key}
+                selected={entry.key === metric}
+                onClick={() => {
+                  setChoice({ metric: entry.key, range });
+                }}
+              >
+                {entry.label}
+              </Chip>
+            ))}
+          </ChipStrip>
         </div>
       )}
 
