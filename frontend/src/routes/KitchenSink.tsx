@@ -261,7 +261,7 @@ export function KitchenSink() {
 
       {/* ══ 01 COULEURS ══ */}
       <Rule>01 — Couleurs</Rule>
-      <div className="grid g4">
+      <div className="grid tiles">
         {SIGNALS.map((color) => (
           <div className={styles.swatch} key={color.token}>
             <div className={styles.chip} style={{ background: `var(--${color.token})` }} />
@@ -300,7 +300,8 @@ export function KitchenSink() {
           <p className={cx(styles.specimen, styles.specimenDisplay)}>42,7 km</p>
           <p className={styles.note}>
             Titres, libellés, interface. Ses formes légèrement techniques tiennent bien aux grandes
-            tailles et restent lisibles en 13&nbsp;px.
+            tailles. Le corps de texte est à 16&nbsp;px, le plancher à 12 — rien n’est écrit plus
+            petit nulle part.
           </p>
         </Card>
         <Card>
@@ -376,9 +377,9 @@ export function KitchenSink() {
 
       {/* ══ 03b TACTILE ══ */}
       <Rule>03b — Au doigt</Rule>
-      <p className="eyebrow" style={{ marginBottom: 14 }}>
-        Cible minimale 44 px, 56 px pour l'action qui termine un geste. Tout ce qui suit s'utilise
-        sans clavier et sans viser.
+      <p className={cx('lede', styles.sectionLede)}>
+        Cible minimale 44&nbsp;px, 56&nbsp;px pour l’action qui termine un geste. Tout ce qui suit
+        s’utilise sans clavier et sans viser.
       </p>
       <div className="grid g2">
         <Card>
@@ -482,7 +483,7 @@ export function KitchenSink() {
 
       {/* ══ 04 CHIFFRES CLÉS ══ */}
       <Rule>04 — Chiffres clés</Rule>
-      <div className="grid g4">
+      <div className="grid tiles">
         <Card>
           <Stat
             label="Volume · 7 j"

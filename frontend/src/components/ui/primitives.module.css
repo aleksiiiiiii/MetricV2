@@ -245,6 +245,9 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  /* Le pas-à-pas se mesure à la place qu'on lui donne, pas à la taille de la
+     fenêtre : posé dans une colonne étroite, il doit le savoir. */
+  container-type: inline-size;
 }
 
 .stepper label {
@@ -255,14 +258,42 @@
   color: var(--ink-low);
 }
 
+/*
+ * Les deux touches gardent leur taille ; c'est la valeur qui absorbe la place.
+ *
+ * **Le plancher est `--tap`, la récompense est `--tap-lg`.** Écrire `--tap-lg` sans
+ * condition avait un coût mesuré : dans une carte de 131 px — deux colonnes sur un
+ * téléphone — les deux touches et leur gouttière prennent 124 px et le champ tombait à
+ * **18 px de large**. Une cible confortable qui écrase la valeur qu'elle sert à régler
+ * n'est pas un progrès.
+ *
+ * La condition porte sur la largeur **du pas-à-pas**, pas sur celle de la fenêtre : le
+ * même composant peut être large sur un écran étroit et étroit sur un écran large, et
+ * seule une requête de conteneur sait lequel des deux il est.
+ */
 .stepperRow {
   display: grid;
-  /* Les deux touches gardent leur taille ; c'est la valeur qui absorbe la place.
-     Elles prennent `--tap-lg` : ce sont les cibles qu'on touche entre deux séries, les
-     mains moites, sans regarder l'écran — la définition même de la grande taille. */
-  grid-template-columns: var(--tap-lg) minmax(0, 1fr) var(--tap-lg);
+  grid-template-columns: var(--tap) minmax(0, 1fr) var(--tap);
   gap: var(--s2);
   align-items: stretch;
+}
+
+.stepperKey {
+  min-height: var(--tap);
+}
+
+@container (min-width: 210px) {
+  .stepperRow {
+    grid-template-columns: var(--tap-lg) minmax(0, 1fr) var(--tap-lg);
+  }
+
+  .stepperKey {
+    min-height: var(--tap-lg);
+  }
+
+  .stepperInput {
+    min-height: var(--tap-lg);
+  }
 }
 
 .stepperKey {
@@ -273,7 +304,6 @@
   font-family: var(--mono);
   font-size: 22px;
   line-height: 1;
-  min-height: var(--tap-lg);
   cursor: pointer;
   transition: var(--t);
   touch-action: manipulation;
@@ -309,7 +339,7 @@
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 11px 8px;
-  min-height: var(--tap-lg);
+  min-height: var(--tap);
   color: var(--ink);
   font-family: var(--mono);
   /* La valeur qu'on ajuste au pouce se relit d'un coup d'œil : elle est plus grande que
@@ -506,9 +536,18 @@
   border: 1px solid var(--line);
   border-radius: var(--r-btn);
   overflow: hidden;
-  /* Il ne se contente plus de la largeur de ses libellés : posé dans une colonne, il
-     l'occupe, et ses segments deviennent trois cibles franches au lieu de trois mots. */
   max-width: 100%;
+  /* Sur téléphone, il prend toute la largeur qu'on lui donne : quatre segments à
+     44 px serrés à gauche d'une carte deviennent quatre cibles de 84 px. C'est le même
+     contrôle, et il se touche deux fois mieux. Au-delà, il reprend la largeur de ses
+     libellés — un écran large n'a pas besoin qu'on lui étale un choix de quatre mots. */
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .seg {
+    width: auto;
+  }
 }
 
 .seg button {

@@ -42,7 +42,18 @@ const TONE_VAR: Record<Tone, string> = {
 // Géométrie reprise de la charte.
 const VIEW_W = 720;
 const VIEW_H = 320;
-const LEFT = 54;
+/**
+ * Gouttière de gauche : la place réservée aux graduations verticales.
+ *
+ * La charte donnait 54, calibrés sur des étiquettes de 9 unités. Depuis que le texte des
+ * axes est dimensionné pour être **lu** — 26 unités sur téléphone, parce que le SVG est
+ * réduit d'un facteur 0,47 —, « 6:12 » en occupe ~62 : les graduations sortaient du
+ * cadre par la gauche et la première étiquette de dates leur passait dessus.
+ *
+ * 78 est la largeur de la plus longue graduation qu'on écrive — cinq caractères de chasse
+ * fixe — plus les 10 unités qui la séparent de l'axe.
+ */
+const LEFT = 78;
 const RIGHT = 706;
 const TOP = 26;
 const BOTTOM = 196;
@@ -228,13 +239,16 @@ export function Chart({
             </g>
           ))}
 
+          {/* La première étiquette s'aligne par sa gauche et la dernière par sa droite :
+              centrées, elles débordaient d'un côté sur les graduations verticales et de
+              l'autre hors du cadre. Les autres restent centrées sur leur point. */}
           {labels.map((label, index) =>
             index % labelEvery === 0 ? (
               <text
                 key={label}
                 x={x(index)}
-                y={BOTTOM + 16}
-                textAnchor="middle"
+                y={BOTTOM + 24}
+                textAnchor={index === 0 ? 'start' : index === count - 1 ? 'end' : 'middle'}
                 className={styles.axis}
               >
                 {label}

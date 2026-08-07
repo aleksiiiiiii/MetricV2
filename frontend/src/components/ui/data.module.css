@@ -27,7 +27,7 @@
 .statUnit {
   font-size: var(--t-sub);
   color: var(--ink-low);
-  margin-left: 3px;
+  margin-left: 5px;
 }
 
 .statDelta {
@@ -112,6 +112,14 @@
   display: flex;
   align-items: center;
   gap: 18px;
+}
+
+/* L'anneau était un enfant de flex sans `flex: none` : dans une carte étroite, il se
+   laissait comprimer de 86 à ~49 px, et le pourcentage écrit en son centre — 18 unités
+   SVG — arrivait à l'écran en **10,3 px**. Une taille déclarée dans un SVG ne dit rien
+   de ce qu'on lit ; c'est le facteur d'échelle qui décide. */
+.ring > svg {
+  flex: none;
 }
 
 .ringLabel {

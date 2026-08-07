@@ -63,29 +63,30 @@
  * Les trois valeurs ci-dessous sont calculées pour rendre ~11 px réels à chaque palier,
  * à partir de la largeur de carte que la gouttière et le retrait laissent :
  *
- *   téléphone   402 − 32 − 32 = 336 px   facteur 0,47   → 24 unités
- *   tablette    600 − 56 − 40 = 502 px   facteur 0,70   → 16 unités
- *   ordinateur  la carte du tableau de bord, ~552 px    → 14 unités
+ *   téléphone   402 − 32 − 32 = 336 px   facteur 0,47   → 26 unités
+ *   tablette    600 − 56 − 40 = 502 px   facteur 0,70   → 18 unités
+ *   ordinateur  la carte du tableau de bord, ~552 px    → 16 unités
  *
  * Si le gabarit d'un écran change, ce sont ces trois nombres qu'il faut refaire — pas la
- * taille apparente, qui est déjà la bonne.
+ * taille apparente, qui est déjà la bonne. Le vérificateur est la mesure n° 5 de
+ * `docs/front.md` §5, et `scripts/audit-mobile.mjs` la rejoue à chaque passage.
  */
 .axis {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 24px;
+  font-size: 26px;
   fill: var(--ink-low);
   letter-spacing: 0.08em;
 }
 
 @media (min-width: 600px) {
   .axis {
-    font-size: 16px;
+    font-size: 18px;
   }
 }
 
 @media (min-width: 960px) {
   .axis {
-    font-size: 14px;
+    font-size: 16px;
   }
 }
 

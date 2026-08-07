@@ -60,8 +60,10 @@ export function Login() {
   return (
     <div className={styles.page}>
       <div className={styles.panel}>
-        <p className="eyebrow">Metric</p>
-        <h1 style={{ fontSize: 34, marginTop: 8 }}>Connexion</h1>
+        <header className={styles.head}>
+          <p className="eyebrow">Metric</p>
+          <h1>Connexion</h1>
+        </header>
 
         <Card>
           <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>

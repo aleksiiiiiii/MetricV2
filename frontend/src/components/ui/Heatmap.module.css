@@ -166,7 +166,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  justify-content: flex-end;
+  /* Alignée à gauche sur téléphone : à droite, elle se coupait en deux lignes dont la
+     seconde flottait seule au bout de la carte. */
+  justify-content: flex-start;
   margin-top: 12px;
   font-family: var(--mono);
   font-size: var(--t-meta);
@@ -184,6 +186,12 @@
 
 .legendSpacer {
   width: 10px;
+}
+
+@media (min-width: 600px) {
+  .legend {
+    justify-content: flex-end;
+  }
 }
 
 /* ── Infobulle ────────────────────────────────────── */

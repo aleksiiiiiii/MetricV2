@@ -2,11 +2,22 @@
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: clamp(20px, 4vw, 56px);
+  padding: var(--s5) var(--gutter);
+  /* Les zones sûres, parce que cet écran est **hors de la coquille** : il n'a ni en-tête
+     ni barre d'onglets pour les porter à sa place. */
+  padding-top: calc(var(--s5) + var(--safe-t));
+  padding-bottom: calc(var(--s5) + var(--safe-b));
 }
 
 .panel {
   width: min(380px, 100%);
+}
+
+/* Le titre touchait la carte : `<h1 style={{ fontSize: 34, marginTop: 8 }}>` posait sa
+   taille en dur et n'avait aucune marge basse. La taille vient maintenant de l'échelle,
+   et l'écart de la classe. */
+.head {
+  margin-bottom: var(--s5);
 }
 
 .form {
@@ -18,7 +29,7 @@
 
 .error {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--recover);
   border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
   background: rgb(var(--recover-rgb) / var(--badge-bg-a));
@@ -29,7 +40,7 @@
 
 .notice {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--load);
   border: 1px solid rgb(var(--load-rgb) / var(--badge-border-a));
   background: rgb(var(--load-rgb) / var(--badge-bg-a));
@@ -42,7 +53,7 @@
   margin-top: var(--s6);
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   letter-spacing: 0.08em;
   text-align: center;
 }

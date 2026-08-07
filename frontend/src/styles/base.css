@@ -151,23 +151,48 @@ a {
   gap: var(--s3);
 }
 
+/* La taille minimale automatique d'un élément de grille ou de flex est son
+   **contenu minimal**, pas zéro. Une carte qui contient un tableau large, une
+   grille annuelle ou une bande de pastilles pousse donc sa colonne au-delà de la
+   piste, et c'est la page entière qui finit par défiler horizontalement — le
+   défaut que la mesure n° 2 de `front.md` §5 cherche.
+
+   Ces trois lignes le rendent impossible, et n'ont d'effet que là où il existe. */
+.grid > *,
+.stack > *,
+.row > * {
+  min-width: 0;
+}
+
 @media (min-width: 600px) {
   .grid {
     gap: var(--s4);
   }
 }
 
-/* Mobile d'abord : **deux colonnes par défaut**, et non une.
+/* Mobile d'abord : une colonne, puis ce que la place permet.
 
-   La règle précédente était un `max-width: 760px` qui faisait retomber les
-   quatre grilles à une seule colonne — les quatre chiffres du tableau de bord
-   devenaient quatre grandes cartes empilées, et il fallait faire défiler pour
-   lire son poids **et** sa semaine. Deux tuiles côte à côte tiennent très bien
-   dans 390 px : c'est exactement ce que fait l'écran d'accueil d'un téléphone. */
+   Écrit dans ce sens plutôt qu'en `max-width: 760px`, mais **le résultat est le
+   même qu'avant** sur téléphone, et c'est délibéré : une `g2` porte presque
+   toujours une carte avec un titre, un paragraphe et des contrôles. Deux de ces
+   cartes de front dans 390 px donnent 131 px utiles chacune — de quoi casser un
+   `Stepper` en trois, ce qui s'est effectivement produit sur `/_kitchen-sink`
+   avant que la mesure ne le montre.
+
+   Ce qui tient à deux colonnes sur un téléphone, ce sont des **tuiles** : un
+   libellé, un chiffre, une ligne de détail. Elles ont leur classe. */
 .g2,
 .g3,
 .g4 {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 600px) {
+  .g2,
+  .g3,
+  .g4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (min-width: 960px) {
@@ -180,22 +205,18 @@ a {
   }
 }
 
-/* Une grille dont chaque cellule porte une phrase, pas un chiffre : elle reste
-   sur une colonne tant qu'il n'y a pas la place de lire deux textes de front. */
-.g2-text,
-.g3-text {
-  grid-template-columns: 1fr;
-}
-
-@media (min-width: 600px) {
-  .g2-text {
-    grid-template-columns: repeat(2, 1fr);
-  }
+/* Tuiles : un libellé, un chiffre, une ligne de détail — **deux de front dès
+   390 px**, parce qu'un poids et une semaine se lisent d'un même coup d'œil et
+   que les empiler obligeait à faire défiler pour comparer deux nombres. C'est le
+   seul endroit où une grille reste dense sur téléphone, et c'est un choix pris
+   tuile par tuile, jamais un défaut. */
+.tiles {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 @media (min-width: 960px) {
-  .g3-text {
-    grid-template-columns: repeat(3, 1fr);
+  .tiles {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -212,11 +233,30 @@ a {
   align-items: center;
 }
 
+/* Titre à gauche, indicateur à droite — **sauf sur un téléphone, où ils s'empilent**.
+
+   Le motif est employé 23 fois, et son enfant de gauche est presque toujours un titre
+   *suivi d'un paragraphe*. En restant sur une ligne dans 304 px, le badge prenait sa
+   place à droite et le paragraphe se retrouvait essoré sur la moitié gauche de la carte,
+   l'autre moitié vide — c'est ce que la capture du kitchen sink a montré, alors que
+   toutes les mesures étaient au vert.
+
+   Empiler coûte une ligne quand le titre est court. Essorer un paragraphe coûte la
+   lecture. */
 .spread {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: flex-start;
-  gap: var(--s4);
+  gap: var(--s3);
+}
+
+@media (min-width: 600px) {
+  .spread {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--s4);
+  }
 }
 
 .mt {
