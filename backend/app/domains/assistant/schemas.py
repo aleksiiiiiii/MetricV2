@@ -106,6 +106,51 @@ class ProposedAction(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class UndoRef(BaseModel):
+    """De quoi défaire un ajout : la suppression que l'utilisateur ferait lui-même.
+
+    Aucune machinerie d'annulation n'a été inventée. `domain` nomme la ressource côté API,
+    l'écran en déduit la route qu'il appelle déjà pour ses propres suppressions, et la
+    garde `If-Match` s'applique comme toujours.
+    """
+
+    domain: str
+    row_id: int
+    token: str
+
+
+class ActionReport(BaseModel):
+    """Ce qu'il est advenu d'une action demandée par le modèle."""
+
+    name: str
+    level: Literal["add", "change"]
+    #: `done` — écrit, annulable. `pending` — rien n'est écrit, un appui décidera.
+    #: `refused` — le nom n'existe pas, les arguments manquent, ou le domaine a dit non.
+    status: Literal["done", "pending", "refused"]
+    #: Une phrase française. Elle est **lue par l'utilisateur** : « Pesée de 82,4 kg notée
+    #: le 07/08/2026 », ou « Il me manque de quoi le faire : date. »
+    summary: str
+    #: Les arguments relus, renvoyés pour qu'un `pending` puisse être confirmé tel quel.
+    args: dict[str, Any] = Field(default_factory=dict)
+    undo: UndoRef | None = None
+
+
+class ConfirmRequest(BaseModel):
+    """Exécute une action restée en attente.
+
+    Le client renvoie le nom et les arguments : rien n'est retenu côté serveur entre la
+    proposition et la confirmation. Ce n'est pas un trou de sécurité — l'écran peut de
+    toute façon appeler directement les routes du domaine, et c'est exactement ce que fait
+    l'utilisateur en supprimant une ligne à la main. L'assistant ne peut rien de plus que
+    l'API ; il ne peut pas non plus se souvenir d'une permission.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(max_length=MAX_ACTION_NAME)
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
 class ChatReply(BaseModel):
     """Ce que la conversation rend."""
 
@@ -115,6 +160,8 @@ class ChatReply(BaseModel):
     reply: str
     #: Ce qui mérite d'être retenu, en attente de validation.
     remember: list[ProposedMemory] = Field(default_factory=list)
+    #: Ce que l'assistant a fait, ou demande à faire. Vide le plus souvent.
+    actions: list[ActionReport] = Field(default_factory=list)
     #: Le condensé factuel réellement envoyé au modèle, ligne par ligne (`IA-09`).
     #:
     #: Publié pour la même raison qu'à `GOAL-02`, et elle vaut ici avec plus de force :

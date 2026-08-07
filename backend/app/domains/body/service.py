@@ -149,9 +149,21 @@ class WeightService:
 
     # ── Écriture ──────────────────────────────────────
 
-    async def create(self, payload: WeightPayload) -> WeightEntry:
+    async def create(self, payload: WeightPayload, *, source: str = "manual") -> WeightEntry:
+        """Écrit une pesée.
+
+        `source` suit `IMP-05`, comme pour une course ou un repas : une pesée notée par
+        l'assistant ne doit pas être indistinguable d'une pesée relevée à la main. La
+        correction, elle, préserve déjà la provenance — c'est la création qui ne savait
+        pas encore la dire.
+        """
         row = await self._repo.append(
-            WeightRow(date=payload.date, weight_kg=payload.weight_kg, note=payload.note)
+            WeightRow(
+                date=payload.date,
+                weight_kg=payload.weight_kg,
+                note=payload.note,
+                source=source,
+            )
         )
         return self._entry(row)
 
@@ -270,6 +282,8 @@ class MeasurementService:
         return indicators
 
     async def create(self, payload: MeasurementPayload) -> MeasurementEntry:
+        # Pas de `source` ici : `measurements.csv` n'a pas cette colonne à l'annexe, et
+        # lui en ajouter une est une décision de schéma, pas un détail d'implémentation.
         row = await self._repo.append(MeasurementRow(**payload.model_dump()))
         return self._entry(row)
 

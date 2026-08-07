@@ -22,11 +22,12 @@ from __future__ import annotations
 
 import secrets as secrets_module
 from datetime import UTC, date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.core.dates import local_moment, now_local, today_local
-from app.core.exceptions import AiUnreadableError
+from app.core.exceptions import AiUnreadableError, MetricError
 from app.domains.ai.service import AiService
+from app.domains.assistant import actions as catalogue
 from app.domains.assistant import context, conversation
 from app.domains.assistant.models import (
     MAX_CONTENT,
@@ -39,15 +40,19 @@ from app.domains.assistant.models import (
 )
 from app.domains.assistant.schemas import (
     MAX_HISTORY,
+    ActionReport,
     AssistantView,
     ChatReply,
     ChatRequest,
+    ConfirmRequest,
     MemoryEntry,
     MemoryPayload,
+    ProposedAction,
     ThreadDetail,
     ThreadList,
     ThreadMessage,
     ThreadSummary,
+    UndoRef,
 )
 from app.storage.csv_repo import CsvRepository, Row
 from app.storage.errors import StorageNotFoundError
@@ -327,6 +332,110 @@ class AssistantService:
         rows.sort(key=lambda row: row.seq)
         return [(row.role, row.content) for row in rows[-MAX_HISTORY:]]
 
+    # ── Les actions (`IA-15`) ─────────────────────────
+
+    async def _run_actions(self, proposed: list[ProposedAction]) -> list[ActionReport]:
+        """Exécute ce qui s'exécute, met le reste en attente.
+
+        **Aucune action ne fait échouer l'échange.** Un nom inventé, des arguments
+        incomplets, un domaine qui refuse : chacun rend un rapport lisible, et la réponse
+        reste affichée. L'inverse — un `500` parce que le modèle a mal nommé une action —
+        perdrait la réponse *et* la question, pour un tour où l'assistant a peut-être
+        surtout bien répondu.
+
+        Le niveau vient de la table et **jamais du modèle** : il ne peut pas demander à ce
+        qu'une suppression passe pour un ajout.
+        """
+        reports: list[ActionReport] = []
+
+        for item in proposed:
+            checked = catalogue.validate(item.name, item.args)
+            if isinstance(checked, str):
+                reports.append(
+                    ActionReport(
+                        name=item.name,
+                        level="add",
+                        status="refused",
+                        summary=checked,
+                        args=item.args,
+                    )
+                )
+                continue
+
+            spec, payload = checked
+            if spec.level is catalogue.Level.CHANGE:
+                # Rien n'est écrit. L'écran montrera ce que ça changerait, et un appui
+                # rappellera `confirm` avec les mêmes arguments.
+                reports.append(
+                    ActionReport(
+                        name=spec.name,
+                        level="change",
+                        status="pending",
+                        summary=spec.label.capitalize(),
+                        args=item.args,
+                    )
+                )
+                continue
+
+            reports.append(await self._perform(spec, payload, item.args))
+
+        return reports
+
+    async def _perform(
+        self, spec: catalogue.ActionSpec, payload: Any, args: dict[str, Any]
+    ) -> ActionReport:
+        """Lance une action et rend son rapport, quoi qu'il advienne."""
+        try:
+            outcome = await spec.run(self._store, payload)
+        except MetricError as error:
+            # Le domaine a dit non — borne de vraisemblance, conflit de jeton, ligne
+            # absente. Son message est déjà en français et destiné à être lu (`API-06`).
+            return ActionReport(
+                name=spec.name,
+                level=spec.level.value,
+                status="refused",
+                summary=str(error),
+                args=args,
+            )
+
+        return ActionReport(
+            name=spec.name,
+            level=spec.level.value,
+            status="done",
+            summary=outcome.summary,
+            args=args,
+            undo=(
+                UndoRef(
+                    domain=outcome.undo.domain,
+                    row_id=outcome.undo.row_id,
+                    token=outcome.undo.token,
+                )
+                if outcome.undo is not None
+                else None
+            ),
+        )
+
+    async def confirm(self, request: ConfirmRequest) -> ActionReport:
+        """Exécute une action restée en attente.
+
+        Elle est **revalidée entièrement** : le client renvoie un nom et des arguments, et
+        ils repassent par la même porte que ceux du modèle. Rien n'est retenu entre la
+        proposition et la confirmation, donc rien ne peut être confirmé qui n'aurait pas
+        pu être demandé.
+        """
+        checked = catalogue.validate(request.name, request.args)
+        if isinstance(checked, str):
+            return ActionReport(
+                name=request.name,
+                level="change",
+                status="refused",
+                summary=checked,
+                args=request.args,
+            )
+
+        spec, payload = checked
+        return await self._perform(spec, payload, request.args)
+
     # ── La conversation (`IA-09`, `IA-10`) ────────────
 
     async def ask(
@@ -372,9 +481,14 @@ class AssistantService:
                 context=facts,
                 memory=memory,
                 history=history,
+                actions=catalogue.describe_catalogue(),
+                slices=[],
+                naming=opening,
             ),
             max_tokens=MAX_TOKENS,
         )
+
+        reports = await self._run_actions(conversation.read_actions(payload))
 
         reply, proposed, _ = conversation.read_reply(
             payload,
@@ -393,6 +507,7 @@ class AssistantService:
             )
 
         if opening:
+            title = conversation.read_title(payload, fallback=title)
             thread_id = await self._open_thread(title, moment=moment)
         if thread_id is None:  # pragma: no cover - `opening` vient de l'ouvrir
             raise StorageNotFoundError("Cette discussion n'existe pas.")
@@ -407,6 +522,7 @@ class AssistantService:
             title=title,
             reply=reply,
             remember=proposed,
+            actions=reports,
             context=facts,
         )
 

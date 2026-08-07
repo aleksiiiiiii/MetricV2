@@ -25,9 +25,11 @@ from fastapi import APIRouter, Header, Path, status
 from app.core.deps import StoreDep
 from app.domains.ai.deps import AiServiceDep
 from app.domains.assistant.schemas import (
+    ActionReport,
     AssistantView,
     ChatReply,
     ChatRequest,
+    ConfirmRequest,
     MemoryEntry,
     MemoryPayload,
     ThreadDetail,
@@ -160,6 +162,25 @@ async def forget_all_threads(store: StoreDep) -> None:
     retenu survit à l'effacement des discussions qui l'ont produit, et c'est bien le
     partage voulu entre les deux (`IA-11`)."""
     await AssistantService(store).forget_all_threads()
+
+
+# ── Les actions (`IA-15`) ─────────────────────────────
+
+
+@router.post("/actions/confirm", response_model=ActionReport, summary="Exécuter une action")
+async def confirm(payload: ConfirmRequest, store: StoreDep) -> ActionReport:
+    """Exécute une action que l'assistant avait laissée en attente.
+
+    **Sans dépendance à l'IA** : confirmer n'interroge aucun modèle. C'est une écriture
+    ordinaire, dont l'assistant n'a fait que rédiger les arguments — et l'utilisateur
+    aurait pu appeler la route du domaine lui-même, ce qu'il fait tous les jours depuis
+    les autres écrans.
+
+    L'action est revalidée entièrement contre le catalogue : rien n'est retenu entre la
+    proposition et la confirmation, donc rien ne peut être confirmé qui n'aurait pas pu
+    être demandé.
+    """
+    return await AssistantService(store).confirm(payload)
 
 
 # ── La conversation (`IA-09`, `IA-10`) ────────────────
