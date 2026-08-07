@@ -49,8 +49,12 @@
 }
 
 .stat {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  /* Trois lignes fixes — libellé, valeur, précision — plutôt qu'une pile libre : un
+     libellé qui passe à la ligne décalait sa valeur d'une hauteur, et les trois chiffres
+     ne s'alignaient plus. Or les aligner est tout ce qu'une rangée de trois sert à faire. */
+  grid-template-rows: auto auto auto;
+  align-content: start;
   gap: 3px;
   font-size: var(--t-num-md);
 }

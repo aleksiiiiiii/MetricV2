@@ -166,6 +166,10 @@ export function Settings() {
   if (isPending) {
     return (
       <div className="wrap">
+        {/* L'en-tête est là **avant** la donnée. Un écran qui n'affiche qu'un
+          « chargement… » sur fond noir ne dit pas où l'on vient d'arriver, et la seconde
+          d'attente se lit comme un écran qui n'a pas répondu. */}
+        <PageHead eyebrow="Réglages" title={<>Objectifs &amp; repères</>} />
         <p className={styles.empty}>chargement…</p>
       </div>
     );
@@ -174,6 +178,7 @@ export function Settings() {
   if (error || !data) {
     return (
       <div className="wrap">
+        <PageHead eyebrow="Réglages" title={<>Objectifs &amp; repères</>} />
         <Empty title="Réglages indisponibles">
           {error instanceof Error ? error.message : 'Le serveur n’a pas répondu.'}
         </Empty>

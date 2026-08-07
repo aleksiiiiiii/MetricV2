@@ -308,6 +308,10 @@ export function Dashboard() {
   if (isPending) {
     return (
       <div className="wrap">
+        {/* L'en-tête est là **avant** la donnée. Un écran qui n'affiche qu'un
+          « chargement… » sur fond noir ne dit pas où l'on vient d'arriver, et la seconde
+          d'attente se lit comme un écran qui n'a pas répondu. */}
+        <PageHead eyebrow="Aujourd’hui" title="Tableau de bord" />
         <p className={styles.empty}>chargement…</p>
       </div>
     );
@@ -316,6 +320,7 @@ export function Dashboard() {
   if (error || !data) {
     return (
       <div className="wrap">
+        <PageHead eyebrow="Aujourd’hui" title="Tableau de bord" />
         <Empty title="Tableau de bord indisponible">
           {error instanceof Error ? error.message : 'Le serveur n’a pas répondu.'}
         </Empty>

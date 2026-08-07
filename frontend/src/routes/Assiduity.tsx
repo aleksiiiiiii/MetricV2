@@ -89,7 +89,7 @@ function TrackStats({ grid }: { grid: Grid }) {
       </div>
 
       <div className={styles.stat}>
-        <span className={styles.statKey}>Série en cours</span>
+        <span className={styles.statKey}>Série</span>
         <span className="num">{streakLabel(stats.current_streak)}</span>
         <span className={styles.statHint}>record {streakLabel(stats.longest_streak)}</span>
       </div>
@@ -267,6 +267,10 @@ export function Assiduity() {
   if (isPending) {
     return (
       <div className="wrap">
+        {/* L'en-tête est là **avant** la donnée. Un écran qui n'affiche qu'un
+          « chargement… » sur fond noir ne dit pas où l'on vient d'arriver, et la seconde
+          d'attente se lit comme un écran qui n'a pas répondu. */}
+        <PageHead eyebrow="Assiduité" title="Ce que tu tiens" />
         <p className={styles.muted}>chargement…</p>
       </div>
     );
@@ -275,6 +279,7 @@ export function Assiduity() {
   if (error || !data) {
     return (
       <div className="wrap">
+        <PageHead eyebrow="Assiduité" title="Ce que tu tiens" />
         <Empty title="Assiduité indisponible">
           {error instanceof Error ? error.message : 'Le serveur n’a pas répondu.'}
         </Empty>
@@ -293,9 +298,8 @@ export function Assiduity() {
           </Link>
         }
       >
-        Une heatmap ne mesure pas l’activité, elle mesure le respect d’un engagement. Un jour vide
-        n’est un échec que si quelque chose était attendu ce jour-là — c’est pourquoi le gris y est
-        la couleur la plus fréquente, et qu’il ne veut rien dire de mauvais.
+        Une heatmap ne mesure pas l’activité, elle mesure le respect d’un engagement. Le gris y
+        domine, et ne dit rien de mauvais : il dit qu’on n’attendait rien ce jour-là.
       </PageHead>
 
       {data.grids.length === 0 ? (

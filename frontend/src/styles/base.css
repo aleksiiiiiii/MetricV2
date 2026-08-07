@@ -249,16 +249,30 @@ a {
    lecture. */
 .spread {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
   align-items: flex-start;
   gap: var(--s3);
+  /* **Il passe à la ligne quand il ne tient pas, et seulement là.**
+
+     Trois comportements ont été essayés. Rester sur une ligne quoi qu'il arrive essorait
+     le paragraphe du bloc de gauche sur la moitié de la carte, l'autre moitié vide —
+     visible sur la carte d'assiduité. Empiler systématiquement le réparait, mais coûtait
+     une ligne à chacune des neuf cartes de réglages, où « Poids cible » et son badge
+     tiennent très bien côte à côte.
+
+     `flex-wrap` tranche tout seul : la base du premier enfant est son contenu, donc
+     large s'il porte un paragraphe et courte s'il porte un titre. Le badge descend
+     exactement dans le premier cas. */
+  flex-wrap: wrap;
+}
+
+.spread > *:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 @media (min-width: 600px) {
   .spread {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: flex-start;
     gap: var(--s4);
   }
 }
