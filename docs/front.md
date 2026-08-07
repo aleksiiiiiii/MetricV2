@@ -50,9 +50,15 @@ passe de 15 à 16 px, `h1` **descend** de 34 à 30 (un titre n'est pas une donn�
 `--gutter` / `--card-pad` à 16 px sur téléphone — 16 px de largeur utile rendus au contenu.
 `viewport-fit=cover` et `env(safe-area-inset-*)` posés, plus les balises qui font s'ouvrir
 l'application sans la barre d'adresse depuis l'écran d'accueil. **Cinq points de rupture
-ramenés à deux**, tous deux en `min-width` : les grilles `g2`/`g3`/`g4` passent à **deux
-colonnes par défaut** au lieu d'une seule. `.rule` perd 34 px de marge sur mobile —
+ramenés à deux**, tous deux en `min-width`. `.rule` perd 34 px de marge sur mobile —
 **170 px rendus** sur le seul tableau de bord.
+
+> Les grilles `g2`/`g3`/`g4` sont d'abord passées à **deux colonnes par défaut**, puis
+> revenues à une. La mesure a montré pourquoi : une `g2` porte presque toujours une carte
+> avec un paragraphe et des contrôles, et deux de front dans 390 px donnent 131 px utiles
+> — de quoi casser un `Stepper` en trois, ce qui s'est effectivement produit. Ce qui tient
+> à deux de front, ce sont des **tuiles** : un libellé, un chiffre, une ligne. Elles ont
+> leur classe, `.tiles`, et elle se pose tuile par tuile.
 
 **Phase B — la coquille.** Nouveaux fichiers : [Sheet.tsx](../frontend/src/components/ui/Sheet.tsx),
 [icons.tsx](../frontend/src/components/ui/icons.tsx),
@@ -89,9 +95,16 @@ fond, sans rapport avec le mobile**, trouvés en passant :
   existé** : le tiroir de détail était donc transparent et à coins carrés, par-dessus la
   grille.
 
-**Phase E — la finition.** L'entrée d'écran et le remplissage des jauges sont faits. Restent
-les états vides, qui décrivent le prochain geste au lieu de le porter — « Un chiffre le
-matin, et la courbe commence » gagnerait un bouton qui ouvre la feuille de pesée.
+**Phase E — la finition.** Fondu d'entrée sur `<main>`, dont la clé suit l'adresse : c'est
+ce qui rejoue l'animation à chaque navigation, sans bibliothèque de transition. Les jauges
+se remplissent depuis zéro, en `transform` et non en `width` — une largeur animée refait la
+mise en page à chaque image. Et l'en-tête reste affiché pendant le chargement et l'erreur,
+sur les trois écrans qui rendaient une page nue.
+
+Ce qui n'a **pas** été fait de la phase E : les états vides portent toujours le prochain
+geste en mots — « Un chiffre le matin, et la courbe commence » — sans bouton qui ouvre la
+feuille de pesée. Le `⊕` de la barre y mène en deux appuis depuis n'importe où, ce qui rend
+le gain plus faible qu'il n'y paraissait quand le plan a été écrit.
 
 ### Ce qui reste
 
