@@ -164,3 +164,16 @@ export function isoDay(value: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
 }
+
+/**
+ * Accorde un nom au nombre qui le précède.
+ *
+ * Douze endroits écrivaient « 1 séance(s) », « 3 groupe(s) travaillé(s) ». Le gabarit se
+ * lit comme un texte qu'on a oublié de finir, et il apparaît précisément là où le compte
+ * vaut un — c'est-à-dire au premier jour d'usage, quand l'application se juge.
+ *
+ * Zéro prend le singulier : « 0 séance », comme en français.
+ */
+export function plural(count: number, singular: string, many?: string): string {
+  return count > 1 ? (many ?? `${singular}s`) : singular;
+}

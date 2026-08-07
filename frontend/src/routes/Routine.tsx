@@ -24,7 +24,7 @@ import {
 } from '@/features/routine/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { integer, longDate, num, time, volume } from '@/lib/format';
+import { integer, longDate, num, plural, time, volume } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
@@ -104,7 +104,11 @@ function Hydration() {
       <div className={styles.hydration}>
         {stats && (
           <Ring
-            ratio={stats.ratio}
+            // Journée pas encore commencée : l'anneau reste vide plutôt que d'écrire
+            // « 0 % ». C'est la même règle que sur `/nutrition` et que le tiret du
+            // tableau de bord — un jour qui débute n'est pas un objectif manqué, et la
+            // charte tient déjà ce discours sur la grille d'assiduité.
+            ratio={stats.today_ml > 0 ? stats.ratio : null}
             label="Objectif du jour"
             detail={
               stats.average_7d_ml !== null
@@ -489,7 +493,7 @@ export function Routine() {
               value={stats?.average_7d_ml != null ? volume(stats.average_7d_ml) : '—'}
               detail={
                 stats
-                  ? `objectif atteint ${stats.days_reached} jour(s) sur ${stats.days_counted}`
+                  ? `objectif atteint ${stats.days_reached} ${plural(stats.days_reached, 'jour')} sur ${stats.days_counted}`
                   : undefined
               }
             />

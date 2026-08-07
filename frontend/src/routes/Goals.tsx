@@ -13,7 +13,7 @@ import {
 } from '@/features/goals/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { num, shortDate } from '@/lib/format';
+import { num, plural, shortDate } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
@@ -53,9 +53,10 @@ function useInvalidateGoals() {
 /** Jours restants, en clair. Le serveur donne le nombre ; le français est ici. */
 function deadlineLine(days: number, deadline: string): string {
   const when = shortDate(`${deadline}T12:00:00`);
-  if (days < 0) return `échéance dépassée depuis ${String(-days)} jour(s) — ${when}`;
+  if (days < 0)
+    return `échéance dépassée depuis ${String(-days)} ${plural(-days, 'jour')} — ${when}`;
   if (days === 0) return `dernier jour — ${when}`;
-  return `${String(days)} jour(s) restants — ${when}`;
+  return `${String(days)} ${plural(days, 'jour')} ${plural(days, 'restant')} — ${when}`;
 }
 
 // ── L'objectif en cours (`GOAL-04`, `GOAL-05`) ────────

@@ -25,7 +25,7 @@ import {
 import { usePhoto } from '@/features/nutrition/usePhoto';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { integer, longDate, num, time } from '@/lib/format';
+import { integer, longDate, num, plural, time } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
@@ -708,23 +708,33 @@ export function Nutrition() {
         {data !== undefined ? longDate(data.date) : '—'}
       </PageHead>
 
+      {/* Les trois totaux d'une même journée disaient zéro de trois façons : « 0 % » dans
+          l'anneau, « 0 g » pour les sucres, « — » pour les calories. Sans repas, il n'y a
+          pas trois états — il n'y en a qu'un, et c'est le tiret. */}
       <Rule>Totaux</Rule>
-      <div className="grid g3">
-        <Card>
-          {totals && (
-            <Ring
-              ratio={totals.protein_ratio}
-              label="Protéines"
-              detail={`${num(totals.protein_g, 0)} g sur ${num(totals.protein_target_g, 0)} g`}
-              tone={totals.protein_ratio >= 1 ? 'effort' : 'signal'}
-            />
-          )}
-        </Card>
+      <Card>
+        {totals && (
+          <Ring
+            ratio={totals.meals > 0 ? totals.protein_ratio : null}
+            label="Protéines"
+            detail={
+              totals.meals > 0
+                ? `${num(totals.protein_g, 0)} g sur ${num(totals.protein_target_g, 0)} g`
+                : `objectif ${num(totals.protein_target_g, 0)} g`
+            }
+            tone={totals.protein_ratio >= 1 ? 'effort' : 'signal'}
+          />
+        )}
+      </Card>
+
+      {/* Deux tuiles : un libellé, un chiffre, une ligne. Elles tiennent de front. */}
+      <div className="grid tiles mt">
         <Card>
           <Stat
+            compact
             label="Sucres ajoutés"
-            value={totals ? num(totals.added_sugar_g, 0) : '—'}
-            unit={totals ? 'g' : undefined}
+            value={totals && totals.meals > 0 ? num(totals.added_sugar_g, 0) : '—'}
+            unit={totals && totals.meals > 0 ? 'g' : undefined}
             detail={
               totals
                 ? totals.over_sugar
@@ -737,14 +747,15 @@ export function Nutrition() {
         </Card>
         <Card>
           <Stat
+            compact
             label="Calories"
             value={totals && totals.calories > 0 ? integer(totals.calories) : '—'}
             unit={totals && totals.calories > 0 ? 'kcal' : undefined}
             detail={
               totals
                 ? totals.calories_known < totals.meals
-                  ? `sur ${totals.calories_known} repas renseigné(s) / ${totals.meals}`
-                  : `${totals.meals} repas`
+                  ? `sur ${totals.calories_known} repas ${plural(totals.calories_known, 'renseigné')} / ${totals.meals}`
+                  : `${integer(totals.meals)} repas`
                 : undefined
             }
           />

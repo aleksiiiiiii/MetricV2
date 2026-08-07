@@ -184,22 +184,40 @@ export function Progress({
 const RING_RADIUS = 35;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
+/**
+ * Anneau de progression.
+ *
+ * **`ratio: null` n'est pas `ratio: 0`.** Un anneau dessine un pourcentage — c'est ce
+ * qu'il sait faire —, et c'est exactement par là que l'invariant « aucune valeur
+ * inventée » s'est cassé au lot L14 : l'écran passait une donnée absente, choisissait de
+ * ne pas colorer, et le composant écrivait quand même « 0 % » en son centre. Quatre
+ * décisions correctes, une page qui ment.
+ *
+ * Le cas est donc dans le type, pas dans la discipline de l'appelant : sans valeur,
+ * l'anneau reste vide et affiche un tiret. Il n'y a plus de façon de se tromper.
+ */
 export function Ring({
   ratio,
   label,
   detail,
   tone = 'effort',
 }: {
-  ratio: number;
+  ratio: number | null;
   label: ReactNode;
   detail?: ReactNode | undefined;
   tone?: Tone | undefined;
 }) {
-  const clamped = Math.max(0, Math.min(1, ratio));
+  const clamped = ratio === null ? 0 : Math.max(0, Math.min(1, ratio));
 
   return (
     <div className={styles.ring}>
-      <svg width="86" height="86" viewBox="0 0 86 86" role="img" aria-label={percent(clamped)}>
+      <svg
+        width="86"
+        height="86"
+        viewBox="0 0 86 86"
+        role="img"
+        aria-label={ratio === null ? 'aucune donnée' : percent(clamped)}
+      >
         <circle
           cx="43"
           cy="43"
@@ -208,18 +226,21 @@ export function Ring({
           stroke="var(--surface-2)"
           strokeWidth="8"
         />
-        <circle
-          cx="43"
-          cy="43"
-          r={RING_RADIUS}
-          fill="none"
-          stroke={TONE_VAR[tone]}
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={RING_CIRCUMFERENCE}
-          strokeDashoffset={RING_CIRCUMFERENCE * (1 - clamped)}
-          transform="rotate(-90 43 43)"
-        />
+        {/* Sans valeur, aucun arc n'est tracé : la piste vide dit ce qu'il y a à dire. */}
+        {ratio !== null && (
+          <circle
+            cx="43"
+            cy="43"
+            r={RING_RADIUS}
+            fill="none"
+            stroke={TONE_VAR[tone]}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={RING_CIRCUMFERENCE}
+            strokeDashoffset={RING_CIRCUMFERENCE * (1 - clamped)}
+            transform="rotate(-90 43 43)"
+          />
+        )}
         <text
           x="43"
           y="48"
@@ -228,7 +249,7 @@ export function Ring({
           fontFamily="JetBrains Mono, monospace"
           fontSize="18"
         >
-          {num(clamped * 100, 0)}%
+          {ratio === null ? '—' : `${num(clamped * 100, 0)}%`}
         </text>
       </svg>
       <div className={styles.ringLabel}>

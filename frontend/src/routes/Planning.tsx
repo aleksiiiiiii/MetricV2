@@ -27,7 +27,7 @@ import {
 } from '@/features/planning/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { hoursMinutes, longDate, percent, shortDate } from '@/lib/format';
+import { hoursMinutes, longDate, percent, plural, shortDate } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
@@ -148,8 +148,8 @@ function DayButton({
   // lisent pas à la synthèse vocale, et « 12 » tout seul ne dirait rien.
   const label = [
     longDate(`${cell.date}T12:00:00`),
-    planned > 0 ? `${String(planned)} prévue(s)` : null,
-    done > 0 ? `${String(done)} effectuée(s)` : null,
+    planned > 0 ? `${String(planned)} ${plural(planned, 'prévue')}` : null,
+    done > 0 ? `${String(done)} ${plural(done, 'effectuée')}` : null,
   ]
     .filter(Boolean)
     .join(', ');
@@ -501,7 +501,10 @@ function ProposalCard() {
       setProposal(null);
       setRemoved(new Set());
       invalidate();
-      notify(`${String(result.created.length)} séance(s) ajoutée(s) au planning.`, 'effort');
+      notify(
+        `${String(result.created.length)} ${plural(result.created.length, 'séance')} ${plural(result.created.length, 'ajoutée')} au planning.`,
+        'effort',
+      );
     },
     onError: (caught: unknown) => {
       notify(caught instanceof ApiError ? caught.message : 'Adoption impossible.', 'recover');

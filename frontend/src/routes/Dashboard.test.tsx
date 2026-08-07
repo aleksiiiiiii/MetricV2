@@ -120,7 +120,7 @@ describe('tableau de bord', () => {
     // Ce sont les commentaires qui l'accompagnent qui prouvent d'où viennent les calculs.
     expect(await screen.findByText(/−1,2 kg sur les 8 dernières pesées/)).toBeInTheDocument();
     expect(screen.getAllByText('72,4').length).toBeGreaterThan(0);
-    expect(screen.getByText(/2 séance\(s\), 8,4 km/)).toBeInTheDocument();
+    expect(screen.getByText(/2 séances, 8,4 km/)).toBeInTheDocument();
     expect(screen.getByText('1,25 L')).toBeInTheDocument();
     expect(screen.getByText(/record 41 jours · 180 jours suivis/)).toBeInTheDocument();
   });

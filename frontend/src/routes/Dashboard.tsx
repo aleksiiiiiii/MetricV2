@@ -24,14 +24,15 @@ import {
   type Streak,
 } from '@/features/aggregates/api';
 import {
-  delta,
   dayMonth,
+  delta,
   hoursMinutes,
   integer,
   kg,
   longDate,
   num,
   percent,
+  plural,
   volume,
 } from '@/lib/format';
 import { keys } from '@/lib/query';
@@ -92,7 +93,7 @@ function Numbers({ data }: { data: DashboardView }) {
           value={training.week.sessions > 0 ? hoursMinutes(training.week.minutes) : '—'}
           detail={
             training.week.sessions > 0
-              ? `${integer(training.week.sessions)} séance(s), ${num(training.week.distance_km, 1)} km`
+              ? `${integer(training.week.sessions)} ${plural(training.week.sessions, 'séance')}, ${num(training.week.distance_km, 1)} km`
               : 'Rien depuis lundi.'
           }
         />
@@ -168,7 +169,7 @@ function Graph({ shipped }: { shipped: SeriesView }) {
           <h3>{series?.label ?? shipped.label}</h3>
           <p className={styles.note}>
             {series && series.stats.count > 0
-              ? `${integer(series.stats.count)} relevé(s) sur la plage`
+              ? `${integer(series.stats.count)} ${plural(series.stats.count, 'relevé')} sur la plage`
               : 'Aucun relevé sur cette plage.'}
           </p>
         </div>
@@ -417,7 +418,8 @@ export function Dashboard() {
             <div>
               <h3>Huit dernières semaines</h3>
               <p className={styles.note}>
-                {integer(data.training.sessions_total)} séance(s) depuis le début, soit{' '}
+                {integer(data.training.sessions_total)}{' '}
+                {plural(data.training.sessions_total, 'séance')} depuis le début, soit{' '}
                 {hoursMinutes(data.training.minutes_total)}.
               </p>
             </div>

@@ -140,7 +140,7 @@ describe('écran Nutrition', () => {
     );
     renderNutrition();
 
-    expect(await screen.findByText(/sur 1 repas renseigné\(s\) \/ 3/)).toBeInTheDocument();
+    expect(await screen.findByText(/sur 1 repas renseigné \/ 3/)).toBeInTheDocument();
   });
 
   it('signale un dépassement du plafond de sucres', async () => {

@@ -23,7 +23,7 @@ import {
 } from '@/features/body/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { delta, isoDay, kg, num, shortDate } from '@/lib/format';
+import { delta, isoDay, kg, num, plural, shortDate } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
@@ -355,9 +355,12 @@ export function Body() {
         </p>
       )}
 
-      <div className="grid g4">
+      {/* Des tuiles : un libellé, un chiffre, une ligne. Empilées, il fallait faire
+          défiler pour comparer deux nombres qui se lisent d'un même coup d'œil. */}
+      <div className="grid tiles">
         <Card>
           <Stat
+            compact
             label="Dernier poids"
             value={
               stats?.latest_kg !== null && stats !== undefined ? num(stats.latest_kg ?? 0, 1) : '—'
@@ -368,6 +371,7 @@ export function Body() {
         </Card>
         <Card>
           <Stat
+            compact
             label="Variation · 8 pesées"
             value={stats?.change_kg != null ? delta(stats.change_kg) : '—'}
             unit={stats?.change_kg != null ? 'kg' : undefined}
@@ -385,6 +389,7 @@ export function Body() {
         </Card>
         <Card>
           <Stat
+            compact
             label="Écart à l'objectif"
             value={stats?.to_target_kg != null ? delta(stats.to_target_kg) : '—'}
             unit={stats?.to_target_kg != null ? 'kg' : undefined}
@@ -393,13 +398,14 @@ export function Body() {
         </Card>
         <Card>
           <Stat
+            compact
             label="Amplitude"
             value={stats?.amplitude_kg != null ? num(stats.amplitude_kg, 1) : '—'}
             unit={stats?.amplitude_kg != null ? 'kg' : undefined}
             detail={
               stats?.min_kg != null && stats.max_kg != null
                 ? `${num(stats.min_kg, 1)} → ${num(stats.max_kg, 1)} kg`
-                : `${stats?.count ?? 0} relevé(s)`
+                : `${stats?.count ?? 0} ${plural(stats?.count ?? 0, 'relevé')}`
             }
           />
         </Card>

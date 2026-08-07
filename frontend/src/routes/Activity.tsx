@@ -33,7 +33,17 @@ import { useAiStatus } from '@/features/ai/useAiStatus';
 import { importsApi, type AppleDraft } from '@/features/imports/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { delta, duration, hoursMinutes, isoDay, km, num, pace, shortDate } from '@/lib/format';
+import {
+  delta,
+  duration,
+  hoursMinutes,
+  isoDay,
+  km,
+  num,
+  pace,
+  plural,
+  shortDate,
+} from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useHorizontalSwipe } from '@/lib/swipe';
 import { useToast } from '@/lib/toast';
@@ -1190,16 +1200,20 @@ export function Activity() {
       <PageHead eyebrow="Domaine Activité" title={<>Courses &amp; séances</>} />
 
       <Rule>Cette semaine</Rule>
-      <div className="grid g4">
+      {/* Des tuiles : un libellé, un chiffre, une ligne. Empilées, il fallait faire
+          défiler pour comparer deux nombres qui se lisent d'un même coup d'œil. */}
+      <div className="grid tiles">
         <Card>
           <Stat
+            compact
             label="Temps total"
             value={week ? hoursMinutes(week.minutes) : '—'}
-            detail={week ? `${week.sessions} séance(s)` : 'chargement…'}
+            detail={week ? `${week.sessions} ${plural(week.sessions, 'séance')}` : 'chargement…'}
           />
         </Card>
         <Card>
           <Stat
+            compact
             label="Distance"
             value={week && week.distance_km > 0 ? num(week.distance_km, 1) : '—'}
             unit={week && week.distance_km > 0 ? 'km' : undefined}
@@ -1210,6 +1224,7 @@ export function Activity() {
         </Card>
         <Card>
           <Stat
+            compact
             label="Séances"
             value={week ? String(week.sessions) : '—'}
             detail={week ? `semaine du ${shortDate(week.week_start)}` : undefined}
@@ -1217,6 +1232,7 @@ export function Activity() {
         </Card>
         <Card>
           <Stat
+            compact
             label="Tonnage"
             value={
               data
@@ -1227,7 +1243,11 @@ export function Activity() {
                 : '—'
             }
             unit={data && data.muscles.length > 0 ? 'kg' : undefined}
-            detail={data ? `${data.muscles.length} groupe(s) travaillé(s)` : undefined}
+            detail={
+              data
+                ? `${data.muscles.length} ${plural(data.muscles.length, 'groupe')} ${plural(data.muscles.length, 'travaillé')}`
+                : undefined
+            }
           />
         </Card>
       </div>
