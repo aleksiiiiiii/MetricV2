@@ -28,9 +28,9 @@ d'abord** — les sections suivantes décrivent l'état d'avant et portent la me
 | **A** | Socle — échelle typographique, gouttières, zones sûres, points de rupture | ✅ **fait** |
 | **B** | Coquille — barre d'onglets basse, feuille « Plus », saisie rapide | ✅ **fait** |
 | **C** | Primitives — survol protégé, états d'appui, tailles, `Chart`, `Heatmap` | ✅ **fait** |
-| **D** | Les écrans — styles, tailles, points de rupture, `PageHead` | ✅ **fait**, sauf `wrap`+`screen` |
-| **E** | Finition — mouvement | ⚠️ **entamée** : entrée d'écran et jauges. États vides à faire |
-| **V** | Vérification dans le navigateur à 402 × 874 | ⚠️ **2 écrans sur 12** — voir plus bas |
+| **D** | Les écrans — styles, tailles, points de rupture, `PageHead`, tuiles | ✅ **fait**, sauf `wrap`+`screen` |
+| **E** | Finition — mouvement, états de chargement | ✅ **fait** |
+| **V** | Vérification dans le navigateur à 402 × 874 | ✅ **12/12**, sauf `/objectif` — voir plus bas |
 
 ### Les compteurs, après la passe D
 
@@ -107,33 +107,36 @@ la conséquence visible.
 
 | Vérification | État |
 |---|---|
-| `tsc --noEmit`, `eslint`, `prettier` | ✅ vert |
-| `vitest` | ✅ **230 tests verts** — aucun ne dépendait du libellé de navigation |
-| `ruff`, `mypy`, `pytest` (backend) | ⏳ pas rejoués — rien du backend n'a bougé |
-| `/connexion` et `/_kitchen-sink` regardés à 402 × 874 | ✅ **et 8 défauts trouvés** |
-| **Les dix écrans derrière la session** | 🚧 **jamais ouverts** |
+| `make check` — ruff, mypy (153 fichiers), 1043 tests backend | ✅ vert |
+| `tsc`, `eslint`, `prettier`, 230 tests d'écran | ✅ vert |
+| `audit-mobile.mjs` sur les douze écrans | ✅ **12/12 sans défaut mesurable** |
+| Les douze écrans **regardés** à 402 × 874 | ✅ sauf `/objectif` |
 
-**Ce que « regarder » a rapporté, chiffré.** Sur les deux pages publiques : **quatre défauts
-que l'audit a mesurés** — pas-à-pas écrasé, débordement horizontal, anneau comprimé,
-textes sous le plancher — et **quatre que seule la capture montrait**, toutes les mesures
-étant au vert : `.spread` essorant son paragraphe, les étiquettes du graphique qui se
-chevauchaient, un surtitre de trois lignes en capitales, et une phrase de charte qui
-annonçait « lisibles en 13 px » après que le plancher soit passé à 12.
+**Ce que « regarder » a rapporté, chiffré.** Environ **vingt-cinq défauts** sur les douze
+écrans. La moitié sortait de l'audit ; l'autre moitié n'était visible qu'en capture,
+toutes les mesures étant au vert :
 
-Huit défauts sur deux pages. **Il en reste dix à ouvrir.**
+- le sélecteur de métrique du tableau de bord prenait **neuf lignes et 470 px** ;
+- `.spread` essorait son paragraphe sur une demi-largeur de carte ;
+- les étiquettes du graphique se chevauchaient — « J-29 » par-dessus « 5:00 » ;
+- « Un chiffre le matin, et la courbe commence » s'affichait **sous une pesée de 60 kg** ;
+- trois écrans rendaient une page nue pendant le chargement, sans même leur titre ;
+- `/corps` affirmait « aucune pesée » **avant d'avoir lu l'historique** ;
+- douze « 1 séance(s) », qui apparaissent précisément au premier jour d'usage.
 
-**Le blocage.** La recette de la [§5](#5--vérifier-un-changement) demande une session, donc
-un jeton dans `localStorage`. Fabriquer ce jeton en appelant `TokenService.issue()` du
-backend — la même fonction que la connexion — **a été refusé par les permissions**. Trois
-portes possibles, au choix :
+**Le seul écran non vérifié : `/objectif`.** Il reste sur « Chargement de l'objectif… »
+parce que **`/api/goals` et `/api/goals/weekly` ne répondent pas** — 25 s sans réponse,
+mesurés en direct. Ce n'est pas la refonte : aucun fichier du backend n'a changé
+(`git diff 613739b..HEAD -- backend/` est vide) et `make check` passe entièrement,
+1043 tests compris. C'est l'instance qui tourne depuis la veille qui est en cause,
+probablement sur une lecture Nextcloud. **À revérifier après un redémarrage de l'API.**
 
-1. autoriser l'appel qui fabrique le jeton ;
-2. donner les identifiants pour passer par `/api/auth/login` ;
-3. coller un jeton déjà valide — c'est la valeur de `metric.token` dans le `localStorage`
-   du navigateur, sur une session ouverte.
+Pour rejouer l'audit :
 
-Puis : `node scripts/audit-mobile.mjs --base http://localhost:<port> --token "<jeton>"`,
-qui parcourt les douze écrans et dépose une capture de chacun.
+```bash
+make dev                                   # vérifier le port annoncé
+node scripts/audit-mobile.mjs --base http://localhost:<port> --token "<jeton>"
+```
 
 ---
 

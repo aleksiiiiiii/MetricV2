@@ -343,6 +343,14 @@ export function Body() {
   const stats = data?.stats;
   const series = (data?.series ?? []).slice(-CHART_POINTS);
 
+  /**
+   * Tant que la requête n'a pas répondu, l'écran ne sait rien — et « aucune pesée » est
+   * une affirmation, pas une absence de réponse. Les quatre tuiles l'écrivaient pendant
+   * la seconde de chargement, avant de la remplacer par la vraie valeur : le premier
+   * regard tombait sur un écran qui déclare vide un historique qu'il n'a pas encore lu.
+   */
+  const waiting = stats === undefined;
+
   return (
     <div className="wrap">
       <PageHead eyebrow="Domaine Corps" title={<>Poids &amp; mensurations</>} />
@@ -366,7 +374,13 @@ export function Body() {
               stats?.latest_kg !== null && stats !== undefined ? num(stats.latest_kg ?? 0, 1) : '—'
             }
             unit={stats?.latest_kg != null ? 'kg' : undefined}
-            detail={stats?.latest_date != null ? shortDate(stats.latest_date) : 'aucune pesée'}
+            detail={
+              waiting
+                ? 'chargement…'
+                : stats.latest_date != null
+                  ? shortDate(stats.latest_date)
+                  : 'aucune pesée'
+            }
           />
         </Card>
         <Card>
@@ -376,11 +390,13 @@ export function Body() {
             value={stats?.change_kg != null ? delta(stats.change_kg) : '—'}
             unit={stats?.change_kg != null ? 'kg' : undefined}
             detail={
-              stats?.change_kg != null
-                ? stats.change_kg <= 0
-                  ? 'en baisse'
-                  : 'en hausse'
-                : 'pas assez de relevés'
+              waiting
+                ? 'chargement…'
+                : stats.change_kg != null
+                  ? stats.change_kg <= 0
+                    ? 'en baisse'
+                    : 'en hausse'
+                  : 'pas assez de relevés'
             }
             direction={
               stats?.change_kg != null ? (stats.change_kg <= 0 ? 'up' : 'down') : undefined
@@ -403,9 +419,11 @@ export function Body() {
             value={stats?.amplitude_kg != null ? num(stats.amplitude_kg, 1) : '—'}
             unit={stats?.amplitude_kg != null ? 'kg' : undefined}
             detail={
-              stats?.min_kg != null && stats.max_kg != null
-                ? `${num(stats.min_kg, 1)} → ${num(stats.max_kg, 1)} kg`
-                : `${stats?.count ?? 0} ${plural(stats?.count ?? 0, 'relevé')}`
+              waiting
+                ? 'chargement…'
+                : stats.min_kg != null && stats.max_kg != null
+                  ? `${num(stats.min_kg, 1)} → ${num(stats.max_kg, 1)} kg`
+                  : `${stats.count} ${plural(stats.count, 'relevé')}`
             }
           />
         </Card>
