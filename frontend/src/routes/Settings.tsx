@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { Badge, Button, Card, Empty, Field, Rule } from '@/components/ui';
+import { Badge, Button, Card, Empty, Field, PageHead, Rule } from '@/components/ui';
 import {
   settingsApi,
   type SettingsPayload,
@@ -10,6 +10,7 @@ import {
 } from '@/features/settings/api';
 import { useAiStatus } from '@/features/ai/useAiStatus';
 import { ApiError } from '@/lib/api';
+import { cx } from '@/lib/cx';
 import { num } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
@@ -190,12 +191,10 @@ export function Settings() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Réglages</p>
-      <h1 style={{ marginTop: 10 }}>Objectifs &amp; repères</h1>
-      <p className="lede" style={{ marginTop: 14 }}>
+      <PageHead eyebrow="Réglages" title={<>Objectifs &amp; repères</>}>
         Ces valeurs servent de référence à tous les écrans. Tant qu’un réglage n’est pas renseigné,
         c’est le défaut du serveur qui s’applique — et il est affiché tel quel, jamais deviné.
-      </p>
+      </PageHead>
 
       <Rule>Objectifs</Rule>
 
@@ -286,8 +285,6 @@ export function Settings() {
       <Tracks />
 
       <AiSection />
-
-      <div style={{ height: 40 }} />
     </div>
   );
 }
@@ -315,11 +312,11 @@ function AiSection() {
             {ai.enabled ? 'disponible' : 'hors service'}
           </Badge>
         </div>
-        <p className={styles.note} style={{ marginTop: 10 }}>
+        <p className={cx(styles.note, styles.noteSpaced)}>
           {ai.message ||
             'État inconnu : le serveur n’a pas répondu. Tout se saisit à la main, sans rien perdre.'}
         </p>
-        <p className={styles.note} style={{ marginTop: 10 }}>
+        <p className={cx(styles.note, styles.noteSpaced)}>
           Ce qu’une estimation propose n’est jamais enregistré sans validation, et se corrige au
           doigt avant de l’être.
         </p>

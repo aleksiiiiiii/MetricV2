@@ -24,12 +24,23 @@ d'abord** — les sections suivantes décrivent l'état d'avant et portent la me
 
 | | Phase | État |
 |---|---|---|
+| **0** | [`scripts/audit-mobile.mjs`](../scripts/audit-mobile.mjs) — l'outil de mesure | ✅ **fait** |
 | **A** | Socle — échelle typographique, gouttières, zones sûres, points de rupture | ✅ **fait** |
 | **B** | Coquille — barre d'onglets basse, feuille « Plus », saisie rapide | ✅ **fait** |
 | **C** | Primitives — survol protégé, états d'appui, tailles, `Chart`, `Heatmap` | ✅ **fait** |
-| **D** | Les douze écrans, un par un | ⏳ **pas commencé** |
-| **E** | Finition — mouvement, états vides qui portent le geste | ⏳ **pas commencé** |
-| **V** | Vérification dans le navigateur à 402 × 874 | 🚧 **bloquée** — voir plus bas |
+| **D** | Les écrans — styles, tailles, points de rupture, `PageHead` | ✅ **fait**, sauf `wrap`+`screen` |
+| **E** | Finition — mouvement | ⚠️ **entamée** : entrée d'écran et jauges. États vides à faire |
+| **V** | Vérification dans le navigateur à 402 × 874 | ⚠️ **2 écrans sur 12** — voir plus bas |
+
+### Les compteurs, après la passe D
+
+| | Avant | Après |
+|---|---|---|
+| Déclarations `font-size` en littéral, dans `routes/` | 101 | **1** — le spécimen de police de la charte |
+| Styles en ligne dans `routes/` | 47 | **3** — une couleur et deux largeurs calculées |
+| `:hover` hors garde de pointeur fin | 27 | **0** |
+| Points de rupture distincts | 5 | **2** (`600`, `960`) |
+| Tokens CSS appelés mais jamais déclarés | 2 | **0** |
 
 ### Ce qui est fait, en détail
 
@@ -66,35 +77,63 @@ du système ne se superpose plus aux états de la charte. `LogButton` et les tou
 > du DOM lit « 9 » et ne voit rien. Il faut diviser par la largeur rendue. Corrigé par trois
 > paliers calculés dans [Chart.module.css](../frontend/src/components/ui/Chart.module.css).
 
+**Phase D — les écrans.** Les compteurs ci-dessus. Ajouté au passage :
+[`PageHead`](../frontend/src/components/ui/primitives.tsx) — les huit écrans qui ont un
+en-tête l'écrivaient à la main avec les mêmes trois styles en ligne. Et **deux défauts de
+fond, sans rapport avec le mobile**, trouvés en passant :
+
+- `/nutrition` datait sa page avec **`longDate(new Date())`** — l'horloge du téléphone, et
+  non celle qui a daté les repas. C'est l'invariant « le jour vient du serveur », cassé
+  depuis le lot qui a créé l'écran. Il lit `data.date` désormais.
+- `/assiduite` appelait **`--surface-1` et `--r-md`, deux tokens qui n'ont jamais
+  existé** : le tiroir de détail était donc transparent et à coins carrés, par-dessus la
+  grille.
+
+**Phase E — la finition.** L'entrée d'écran et le remplissage des jauges sont faits. Restent
+les états vides, qui décrivent le prochain geste au lieu de le porter — « Un chiffre le
+matin, et la courbe commence » gagnerait un bouton qui ouvre la feuille de pesée.
+
 ### Ce qui reste
 
-**Phase D — les douze écrans.** Aucun n'a été touché. Ce qui les attend : la convention
-`cx('wrap', styles.screen)` partout, les **60 `style={{…}}`** restants transformés en
-classes, une première hauteur d'écran qui montre un chiffre, et les `:hover` de leurs
-feuilles de style à protéger — **13 fichiers de `routes/` en ont encore**.
-
-**Phase E — la finition.** Transition d'écran, animation des barres et anneaux à
-l'apparition, états vides qui portent le geste au lieu de le décrire.
+**La convention de conteneur de page.** Neuf écrans posent encore `className="wrap"` sur
+plusieurs blocs au lieu du `cx('wrap', styles.screen)` de `/planning`. C'est le seul point
+du plan volontairement **laissé de côté** : c'est un remaniement de mise en page dont le
+défaut caractéristique — un contenu désaligné de l'en-tête — a été trouvé deux fois en
+regardant, jamais par un test. Le faire sans pouvoir regarder les écrans serait le faire à
+l'aveugle. En attendant, `.wrap .wrap` neutralise le retrait imbriqué, ce qui en supprime
+la conséquence visible.
 
 ### Ce qui est vérifié, et ce qui ne l'est pas
 
 | Vérification | État |
 |---|---|
-| `tsc --noEmit` | ✅ vert |
+| `tsc --noEmit`, `eslint`, `prettier` | ✅ vert |
 | `vitest` | ✅ **230 tests verts** — aucun ne dépendait du libellé de navigation |
 | `ruff`, `mypy`, `pytest` (backend) | ⏳ pas rejoués — rien du backend n'a bougé |
-| **La page dans un navigateur** | 🚧 **pas encore regardée** |
+| `/connexion` et `/_kitchen-sink` regardés à 402 × 874 | ✅ **et 8 défauts trouvés** |
+| **Les dix écrans derrière la session** | 🚧 **jamais ouverts** |
+
+**Ce que « regarder » a rapporté, chiffré.** Sur les deux pages publiques : **quatre défauts
+que l'audit a mesurés** — pas-à-pas écrasé, débordement horizontal, anneau comprimé,
+textes sous le plancher — et **quatre que seule la capture montrait**, toutes les mesures
+étant au vert : `.spread` essorant son paragraphe, les étiquettes du graphique qui se
+chevauchaient, un surtitre de trois lignes en capitales, et une phrase de charte qui
+annonçait « lisibles en 13 px » après que le plancher soit passé à 12.
+
+Huit défauts sur deux pages. **Il en reste dix à ouvrir.**
 
 **Le blocage.** La recette de la [§5](#5--vérifier-un-changement) demande une session, donc
 un jeton dans `localStorage`. Fabriquer ce jeton en appelant `TokenService.issue()` du
-backend — la même fonction que la connexion — **a été refusé par les permissions**. Les
-douze écrans n'ont donc **pas encore été regardés**, et c'est exactement ce que ce document
-dit être la seule vérification qui trouve des défauts. Trois portes possibles, au choix :
+backend — la même fonction que la connexion — **a été refusé par les permissions**. Trois
+portes possibles, au choix :
 
 1. autoriser l'appel qui fabrique le jeton ;
 2. donner les identifiants pour passer par `/api/auth/login` ;
-3. se limiter à `/_kitchen-sink`, publique — elle montre tous les composants, donc tout le
-   travail des phases A et C, mais **aucun des douze écrans**.
+3. coller un jeton déjà valide — c'est la valeur de `metric.token` dans le `localStorage`
+   du navigateur, sur une session ouverte.
+
+Puis : `node scripts/audit-mobile.mjs --base http://localhost:<port> --token "<jeton>"`,
+qui parcourt les douze écrans et dépose une capture de chacun.
 
 ---
 

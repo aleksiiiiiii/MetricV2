@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
 
-import { Badge, Button, Card, Empty, Heatmap, Rule } from '@/components/ui';
+import { Badge, Button, Card, Empty, Heatmap, PageHead, Rule } from '@/components/ui';
 import { heatmapApi, type DayEntry, type Grid } from '@/features/heatmap/api';
 import { duration, integer, isoDay, km, longDate, num, percent } from '@/lib/format';
 import { keys } from '@/lib/query';
@@ -284,19 +284,19 @@ export function Assiduity() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Assiduité</p>
-      <h1 style={{ marginTop: 10 }}>Ce que tu tiens</h1>
-      <p className="lede" style={{ marginTop: 14 }}>
+      <PageHead
+        eyebrow="Assiduité"
+        title="Ce que tu tiens"
+        actions={
+          <Link to="/reglages" className={styles.settingsLink}>
+            Régler les pistes, les cadences et les seuils
+          </Link>
+        }
+      >
         Une heatmap ne mesure pas l’activité, elle mesure le respect d’un engagement. Un jour vide
         n’est un échec que si quelque chose était attendu ce jour-là — c’est pourquoi le gris y est
         la couleur la plus fréquente, et qu’il ne veut rien dire de mauvais.
-      </p>
-
-      <div className="row" style={{ marginTop: 18 }}>
-        <Link to="/reglages" className={styles.settingsLink}>
-          Régler les pistes, les cadences et les seuils
-        </Link>
-      </div>
+      </PageHead>
 
       {data.grids.length === 0 ? (
         <Empty title="Aucune piste active">

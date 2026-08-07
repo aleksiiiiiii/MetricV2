@@ -126,6 +126,7 @@
   --t-meta: 12px; /* surtitre, unité, horodatage — le plancher absolu */
   --t-num-xl: 34px; /* le chiffre qu'on vient lire, lui, grandit */
   --t-num: 17px; /* chiffre en ligne dans une phrase */
+  --t-num-md: 20px; /* chiffre secondaire : indicateur, objectif, total */
 
   /* Interlettrage des capitales monospace. La charte montait à `.18em` sur des
      surtitres de 11 px ; à 12 px, la même valeur les élargit de 9 % et fait

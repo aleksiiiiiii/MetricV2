@@ -8,6 +8,7 @@ import {
   Card,
   Empty,
   Field,
+  PageHead,
   Ring,
   Rule,
   Stat,
@@ -699,11 +700,13 @@ export function Nutrition() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Domaine Nutrition</p>
-      <h1 style={{ marginTop: 10 }}>Repas du jour</h1>
-      <p className="lede" style={{ marginTop: 14 }}>
-        {longDate(new Date())}
-      </p>
+      {/* Le jour vient du serveur, dans le fuseau local. Cette ligne écrivait
+          `longDate(new Date())` : l'horloge du téléphone, qui n'est pas celle qui a daté
+          les repas. Un utilisateur en déplacement, ou éveillé à minuit passé, lisait une
+          date qui ne correspondait à aucun des repas affichés dessous. */}
+      <PageHead eyebrow="Domaine Nutrition" title="Repas du jour">
+        {data !== undefined ? longDate(data.date) : '—'}
+      </PageHead>
 
       <Rule>Totaux</Rule>
       <div className="grid g3">
@@ -780,8 +783,6 @@ export function Nutrition() {
           <Favorites favorites={data?.favorites ?? []} />
         </div>
       </div>
-
-      <div style={{ height: 40 }} />
     </div>
   );
 }

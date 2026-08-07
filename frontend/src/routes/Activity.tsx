@@ -14,6 +14,7 @@ import {
   Empty,
   Field,
   LogButton,
+  PageHead,
   Rule,
   Segmented,
   Stat,
@@ -1186,8 +1187,7 @@ export function Activity() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Domaine Activité</p>
-      <h1 style={{ marginTop: 10 }}>Courses &amp; séances</h1>
+      <PageHead eyebrow="Domaine Activité" title={<>Courses &amp; séances</>} />
 
       <Rule>Cette semaine</Rule>
       <div className="grid g4">
@@ -1274,7 +1274,7 @@ export function Activity() {
               }))}
             />
           ) : (
-            <p className={styles.empty} style={{ marginTop: 12 }}>
+            <p className={cx(styles.empty, styles.emptyInset)}>
               aucun exercice consigné cette semaine
             </p>
           )}
@@ -1326,13 +1326,11 @@ export function Activity() {
       <Rule>Saisie</Rule>
       <div className={styles.split}>
         <Card flush>
-          <h3 style={{ padding: '0 12px 14px' }}>
+          <h3 className={styles.flushTitle}>
             Historique {data !== undefined && <span className={styles.empty}>· {data.total}</span>}
           </h3>
           {isPending ? (
-            <p className={styles.empty} style={{ padding: '0 12px 12px' }}>
-              chargement…
-            </p>
+            <p className={cx(styles.empty, styles.flushPad)}>chargement…</p>
           ) : data && data.history.length > 0 ? (
             <ul className={styles.history} aria-label="Historique des activités">
               {data.history.map((row) => (
@@ -1342,7 +1340,7 @@ export function Activity() {
               ))}
             </ul>
           ) : (
-            <div style={{ padding: '0 12px 12px' }}>
+            <div className={styles.flushPad}>
               <Empty title="Aucune activité">
                 Une sortie, une séance — la semaine commence à compter.
               </Empty>
@@ -1376,8 +1374,6 @@ export function Activity() {
           <ExerciseCatalogue />
         </div>
       </div>
-
-      <div style={{ height: 40 }} />
     </div>
   );
 }

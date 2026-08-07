@@ -27,6 +27,7 @@ export {
   Eyebrow,
   Field,
   LogButton,
+  PageHead,
   Rule,
   Segmented,
   Stepper,

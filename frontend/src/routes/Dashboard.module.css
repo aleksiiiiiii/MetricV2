@@ -1,33 +1,33 @@
 .split {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 1fr;
   gap: var(--s4);
   align-items: start;
 }
 
-@media (max-width: 960px) {
+@media (min-width: 960px) {
   .split {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 360px;
   }
 }
 
 .note {
   color: var(--ink-mid);
-  font-size: 13px;
+  font-size: var(--t-sub);
   margin-top: 2px;
 }
 
 .empty {
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   margin-top: var(--s4);
 }
 
 .warn {
   color: var(--recover);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   margin-top: var(--s3);
 }
 
@@ -56,16 +56,18 @@
   color: var(--ink-mid);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   letter-spacing: 0.04em;
   padding: 5px 10px;
   text-transform: uppercase;
   transition: var(--t);
 }
 
-.metric:hover {
-  border-color: var(--signal);
-  color: var(--signal);
+@media (hover: hover) and (pointer: fine) {
+  .metric:hover {
+    border-color: var(--signal);
+    color: var(--signal);
+  }
 }
 
 .metric[aria-pressed='true'] {
@@ -88,7 +90,7 @@
   border-top: 1px solid var(--line-soft);
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -131,13 +133,13 @@
 .dayLabel {
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--t-meta);
 }
 
 .daySources {
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--t-sub);
 }
 
 .dayOff .daySources {
@@ -157,7 +159,7 @@
   color: var(--ink-mid);
   display: block;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   letter-spacing: 0.04em;
   margin-bottom: 6px;
   text-transform: uppercase;
@@ -178,10 +180,12 @@
   border: 1px solid var(--line);
   border-radius: var(--r-btn);
   color: var(--ink);
-  font-size: 14px;
+  font-size: var(--t-sub);
   text-decoration: none;
 }
 
-.assistant:hover {
-  border-color: var(--signal);
+@media (hover: hover) and (pointer: fine) {
+  .assistant:hover {
+    border-color: var(--signal);
+  }
 }

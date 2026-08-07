@@ -2,7 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { SyntheticEvent } from 'react';
 
-import { Badge, Button, Card, Chart, Empty, Field, Rule, Stat, Table } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Chart,
+  Empty,
+  Field,
+  PageHead,
+  Rule,
+  Stat,
+  Table,
+} from '@/components/ui';
 import type { Column } from '@/components/ui';
 import {
   bodyApi,
@@ -334,8 +345,7 @@ export function Body() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Domaine Corps</p>
-      <h1 style={{ marginTop: 10 }}>Poids &amp; mensurations</h1>
+      <PageHead eyebrow="Domaine Corps" title={<>Poids &amp; mensurations</>} />
 
       <Rule>Indicateurs</Rule>
 
@@ -427,13 +437,11 @@ export function Body() {
       <Rule>Saisie et historique</Rule>
       <div className={styles.grid}>
         <Card flush>
-          <h3 style={{ padding: '0 12px 14px' }}>
+          <h3 className={styles.flushTitle}>
             Historique {data !== undefined && <span className={styles.empty}>· {data.total}</span>}
           </h3>
           {isPending ? (
-            <p className={styles.empty} style={{ padding: '0 12px 12px' }}>
-              chargement…
-            </p>
+            <p className={cx(styles.empty, styles.flushPad)}>chargement…</p>
           ) : data && data.entries.length > 0 ? (
             <Table
               columns={columns}
@@ -442,7 +450,7 @@ export function Body() {
               caption="Historique des pesées"
             />
           ) : (
-            <div style={{ padding: '0 12px 12px' }}>
+            <div className={styles.flushPad}>
               <Empty title="Aucune pesée">Un chiffre le matin, et la courbe commence.</Empty>
             </div>
           )}
@@ -463,8 +471,6 @@ export function Body() {
           <MeasurementPanel />
         </div>
       </div>
-
-      <div style={{ height: 40 }} />
     </div>
   );
 }

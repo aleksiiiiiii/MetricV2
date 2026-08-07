@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router';
+import { NavLink, Outlet, useLocation } from 'react-router';
 
 import { Button } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
@@ -40,6 +40,7 @@ const NAV = [
 
 export function Shell() {
   const { state, logout } = useAuth();
+  const { pathname } = useLocation();
 
   return (
     <div className={styles.shell}>
@@ -80,7 +81,9 @@ export function Shell() {
         </div>
       </header>
 
-      <main className={styles.main}>
+      {/* La clé change avec l'adresse : c'est ce qui fait rejouer l'animation d'entrée à
+          chaque navigation, sans bibliothèque de transition et sans état à tenir. */}
+      <main key={pathname} className={cx(styles.main, 'enter')}>
         <Outlet />
       </main>
 

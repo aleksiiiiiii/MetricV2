@@ -653,3 +653,30 @@
 .aiActions {
   margin-top: var(--s4);
 }
+
+/* ── En-tête d'écran ──────────────────────────────── */
+
+/* Les écarts que huit écrans posaient en `style={{ marginTop: … }}`, décidés une fois.
+   Serrés : chaque pixel pris ici est un pixel de donnée qu'on ne voit pas sans faire
+   défiler, et c'est la première hauteur d'écran qui décide si on reste. */
+.pageHead {
+  margin-bottom: var(--s5);
+}
+
+.pageHead h1 {
+  margin-top: var(--s2);
+}
+
+.pageLede {
+  margin-top: var(--s3);
+}
+
+.pageActions {
+  margin-top: var(--s4);
+}
+
+/* Une règle graduée qui suit immédiatement l'en-tête n'a rien à séparer d'autre : elle
+   se contente de l'écart déjà posé. */
+.pageHead + :global(.rule) {
+  margin-top: 0;
+}

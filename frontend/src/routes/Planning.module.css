@@ -38,7 +38,7 @@
 }
 
 .month {
-  font-size: 24px;
+  font-size: var(--t-title);
   font-weight: 500;
   letter-spacing: -0.02em;
   text-transform: capitalize;
@@ -57,7 +57,7 @@
   flex: 1;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 600px) {
   .head {
     flex-direction: row;
     align-items: flex-end;
@@ -86,7 +86,7 @@
 
 .weekdays {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--t-meta);
   letter-spacing: 0.12em;
   color: var(--ink-low);
   text-align: center;
@@ -116,8 +116,10 @@
     border-color var(--t-fast);
 }
 
-.day:hover {
-  border-color: var(--line);
+@media (hover: hover) and (pointer: fine) {
+  .day:hover {
+    border-color: var(--line);
+  }
 }
 
 /* Débordement de semaine : présent, atteignable, mais visiblement pas ce mois-ci. */
@@ -137,7 +139,7 @@
 
 .dayNumber {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--t-sub);
   line-height: 1;
 }
 
@@ -175,7 +177,7 @@
   display: flex;
   align-items: center;
   gap: var(--s1);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
 }
 
@@ -235,7 +237,7 @@
   min-height: var(--tap);
 }
 
-@media (min-width: 640px) {
+@media (min-width: 600px) {
   .item {
     flex-direction: row;
     align-items: center;
@@ -249,19 +251,19 @@
 
 .meta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   letter-spacing: 0.04em;
   color: var(--ink-mid);
 }
 
 .note {
-  font-size: 13px;
+  font-size: var(--t-sub);
   color: var(--ink-mid);
 }
 
 .dropped {
   margin-top: var(--s3);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
 }
 
@@ -286,7 +288,7 @@
   width: 100%;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 600px) {
   .form {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -326,7 +328,7 @@
 
 .statKey {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--t-meta);
   letter-spacing: 0.1em;
   color: var(--ink-low);
   text-transform: uppercase;
@@ -334,7 +336,7 @@
 
 .statValue {
   font-family: var(--mono);
-  font-size: 18px;
+  font-size: var(--t-num-md);
   color: var(--ink);
 }
 
@@ -351,7 +353,7 @@
   padding: var(--s3);
   overflow-wrap: anywhere;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   background: var(--surface-2);
   border-radius: var(--r-sm);
   color: var(--ink-mid);
@@ -370,10 +372,12 @@
   border: 1px solid var(--line);
   border-radius: var(--r-btn);
   color: var(--ink);
-  font-size: 14px;
+  font-size: var(--t-sub);
   text-decoration: none;
 }
 
-.download:hover {
-  border-color: var(--signal);
+@media (hover: hover) and (pointer: fine) {
+  .download:hover {
+    border-color: var(--signal);
+  }
 }

@@ -1,6 +1,6 @@
 .name {
   color: var(--ink);
-  font-size: 15px;
+  font-size: var(--t-sub);
   font-weight: 500;
 }
 
@@ -17,12 +17,12 @@
 .empty {
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
 }
 
 .error {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--recover);
   border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
   background: rgb(var(--recover-rgb) / var(--badge-bg-a));
@@ -35,6 +35,10 @@
 /* Phrase explicative sous un titre de carte — même registre que les autres écrans. */
 .note {
   color: var(--ink-mid);
-  font-size: 13px;
+  font-size: var(--t-sub);
   line-height: 1.6;
+}
+
+.noteSpaced {
+  margin-top: var(--s3);
 }

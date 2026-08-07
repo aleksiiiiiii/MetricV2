@@ -8,7 +8,7 @@ import {
   Card,
   Chart,
   Empty,
-  Eyebrow,
+  PageHead,
   Progress,
   Rule,
   Segmented,
@@ -305,8 +305,7 @@ export function Dashboard() {
 
   return (
     <div className="wrap">
-      <Eyebrow>{longDate(data.date)}</Eyebrow>
-      <h1 style={{ marginTop: 10 }}>Tableau de bord</h1>
+      <PageHead eyebrow={longDate(data.date)} title="Tableau de bord" />
 
       <Rule>Aujourd’hui</Rule>
 
@@ -453,8 +452,6 @@ export function Dashboard() {
           </Card>
         </>
       )}
-
-      <div style={{ height: 40 }} />
     </div>
   );
 }

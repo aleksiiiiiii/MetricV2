@@ -328,3 +328,29 @@ a {
     animation: none !important;
   }
 }
+
+/* ── Mouvement ────────────────────────────────────── */
+
+/*
+ * Une donnée qui arrive se pose ; elle n'apparaît pas déjà là.
+ *
+ * C'est la seule animation de contenu du projet, et elle est courte — 0,32 s — parce
+ * qu'elle sert à faire remarquer une valeur, pas à faire attendre. Les barres et les
+ * anneaux partent de zéro : voir une jauge se remplir dit « voilà où tu en es » d'une
+ * façon qu'un rectangle déjà rempli ne dit pas.
+ *
+ * Tout est annulé sous `prefers-reduced-motion` par la règle générale en fin de fichier.
+ */
+@keyframes metric-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Le contenu d'un écran, à l'arrivée. Posé sur `main` et non sur chaque carte : un
+   décalage par carte donnerait une cascade, et une cascade sur douze cartes se regarde
+   au lieu de se lire. */
+.enter {
+  animation: metric-enter 0.22s ease-out both;
+}

@@ -31,6 +31,40 @@ export function Rule({ children }: { children?: ReactNode }) {
   return <div className="rule">{children !== undefined && <span>{children}</span>}</div>;
 }
 
+/**
+ * En-tête d'écran : surtitre, titre, et ce qu'il y a à en dire.
+ *
+ * Les huit écrans qui en ont un l'écrivaient à la main, avec les mêmes trois styles en
+ * ligne — `marginTop: 10` sur le titre, `marginTop: 14` sur la phrase — répétés à
+ * l'identique. Trois écarts décidés huit fois sont trois écarts qu'on ne peut plus
+ * changer d'un coup, et c'est précisément ce qu'une refonte a besoin de faire.
+ *
+ * Il porte aussi une contrainte de fond : **il doit rester court**. Sur un téléphone, la
+ * hauteur qu'il prend est autant de données qu'on ne voit pas sans faire défiler. C'est
+ * pour ça que le `h1` a rapetissé — un titre de page n'est pas une donnée.
+ */
+export function PageHead({
+  eyebrow,
+  title,
+  children,
+  actions,
+}: {
+  eyebrow: string;
+  title: ReactNode;
+  /** Ce que l'écran sert à faire. Une phrase, pas un paragraphe. */
+  children?: ReactNode | undefined;
+  actions?: ReactNode | undefined;
+}) {
+  return (
+    <header className={styles.pageHead}>
+      <p className="eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      {children !== undefined && <p className={cx('lede', styles.pageLede)}>{children}</p>}
+      {actions !== undefined && <div className={cx('row', styles.pageActions)}>{actions}</div>}
+    </header>
+  );
+}
+
 // ── Boutons ───────────────────────────────────────────
 
 export type ButtonVariant = 'primary' | 'ghost' | 'quiet';

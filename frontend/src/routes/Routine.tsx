@@ -9,6 +9,7 @@ import {
   CheckGroup,
   Empty,
   Field,
+  PageHead,
   Progress,
   Ring,
   Rule,
@@ -22,6 +23,7 @@ import {
   type Supplement,
 } from '@/features/routine/api';
 import { ApiError } from '@/lib/api';
+import { cx } from '@/lib/cx';
 import { integer, longDate, num, time, volume } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
@@ -234,7 +236,7 @@ function Checklist() {
       <div className="spread">
         <div>
           <h3>{longDate(new Date())}</h3>
-          <p className="eyebrow" style={{ marginTop: 4 }}>
+          <p className={cx('eyebrow', styles.tightEyebrow)}>
             {data?.ratio.complete === true ? 'journée complète' : 'checklist du jour'}
           </p>
         </div>
@@ -246,9 +248,7 @@ function Checklist() {
       </div>
 
       {isPending ? (
-        <p className={styles.empty} style={{ marginTop: 12 }}>
-          chargement…
-        </p>
+        <p className={cx(styles.empty, styles.emptyInset)}>chargement…</p>
       ) : items.length === 0 ? (
         <Empty title="Aucun supplément au planning">
           Ajoute ce que tu prends, et la checklist se remplit toute seule chaque matin.
@@ -473,8 +473,7 @@ export function Routine() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Routine du jour</p>
-      <h1 style={{ marginTop: 10 }}>Hydratation &amp; suppléments</h1>
+      <PageHead eyebrow="Routine du jour" title={<>Hydratation &amp; suppléments</>} />
 
       <Rule>Aujourd'hui</Rule>
       <div className={styles.split}>
@@ -499,8 +498,6 @@ export function Routine() {
           <Schedule />
         </div>
       </div>
-
-      <div style={{ height: 40 }} />
     </div>
   );
 }

@@ -100,10 +100,24 @@
   overflow: hidden;
 }
 
+/* La jauge se remplit à l'arrivée plutôt que d'être déjà pleine.
+ *
+ * En `transform` et non en `width` : une largeur animée refait la mise en page à chaque
+ * image, une transformation ne touche qu'à la composition. La transition sur `width`
+ * reste, pour les changements de valeur **après** l'arrivée — les deux ne se marchent
+ * pas dessus, l'une joue une fois au montage et l'autre à chaque mise à jour. */
 .fill {
   height: 100%;
   border-radius: 4px;
   transition: width var(--t);
+  transform-origin: left center;
+  animation: metric-fill 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes metric-fill {
+  from {
+    transform: scaleX(0);
+  }
 }
 
 /* ── Anneau ───────────────────────────────────────── */

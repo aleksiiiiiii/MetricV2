@@ -14,7 +14,7 @@
 }
 
 .trackName {
-  font-size: 19px;
+  font-size: var(--t-title);
   font-weight: 500;
   letter-spacing: -0.01em;
 }
@@ -22,7 +22,7 @@
 .cadence {
   margin-top: 4px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   letter-spacing: 0.06em;
   color: var(--ink-low);
   text-transform: lowercase;
@@ -30,19 +30,21 @@
 
 /* ── Chiffres de la piste (`L11-09`) ────────────────── */
 
+/* Trois chiffres courts — respect, série, total. Ils **restent de front sur téléphone**
+   plutôt que de s'empiler comme avant : les empiler coûtait 210 px là où ils en prennent
+   70, et ces trois-là se lisent en se comparant. Seule la gouttière se resserre. */
 .stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s4);
+  gap: var(--s3);
   margin: var(--s4) 0 var(--s5);
   padding-bottom: var(--s4);
   border-bottom: 1px solid var(--line);
 }
 
-@media (max-width: 640px) {
+@media (min-width: 600px) {
   .stats {
-    grid-template-columns: 1fr;
-    gap: var(--s3);
+    gap: var(--s4);
   }
 }
 
@@ -50,12 +52,12 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 18px;
+  font-size: var(--t-num-md);
 }
 
 .statKey {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--t-meta);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-low);
@@ -63,55 +65,70 @@
 
 .statHint {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
 }
 
 .footnote {
   margin-top: var(--s4);
-  font-size: 13px;
+  font-size: var(--t-sub);
   line-height: 1.6;
   color: var(--ink-mid);
 }
 
 .settingsLink {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   letter-spacing: 0.04em;
   color: var(--ink-mid);
   border-bottom: 1px solid var(--line);
   padding-bottom: 2px;
 }
 
-.settingsLink:hover {
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .settingsLink:hover {
+    color: var(--ink);
+  }
 }
 
 .muted {
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
 }
 
 /* ── Tiroir de détail (`L11-08`) ────────────────────── */
 
+/* `--surface-1` et `--r-md` n'ont jamais existé : le fond du tiroir était donc
+   transparent et ses coins carrés, sur un fond de page sombre — le contenu de la
+   journée se lisait par-dessus la grille. Les vrais noms sont `--surface` et `--r`.
+
+   Il flotte au-dessus de la barre d'onglets, jamais dessous, et sa hauteur laisse
+   voir la grille d'où il vient : un tiroir qui couvre tout est une page. */
 .drawer {
   position: fixed;
-  right: var(--s4);
-  bottom: var(--s4);
-  width: min(380px, calc(100vw - 2 * var(--s4)));
-  max-height: min(70vh, 620px);
+  right: var(--gutter);
+  bottom: calc(var(--tabbar) + var(--safe-b) + var(--s3));
+  width: min(380px, calc(100vw - 2 * var(--gutter)));
+  max-height: min(60vh, 620px);
   overflow-y: auto;
-  background: var(--surface-1);
+  overscroll-behavior: contain;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: var(--s5);
+  border-radius: var(--r);
+  padding: var(--card-pad);
   box-shadow: var(--shadow);
-  z-index: 20;
+  z-index: 35;
+}
+
+@media (min-width: 960px) {
+  .drawer {
+    bottom: var(--s4);
+  }
 }
 
 .drawerTitle {
-  font-size: 18px;
+  font-size: var(--t-title);
   font-weight: 500;
   margin-top: 6px;
 }
@@ -122,7 +139,7 @@
   justify-content: space-between;
   gap: var(--s3);
   margin: var(--s4) 0;
-  font-size: 22px;
+  font-size: var(--t-num-md);
 }
 
 .entries {
@@ -142,7 +159,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--s3);
-  font-size: 14px;
+  font-size: var(--t-sub);
 }
 
 .entryLabel {
@@ -152,13 +169,13 @@
 .entryDetail {
   margin-top: 3px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
 }
 
 .entryNote {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--ink-mid);
   font-style: italic;
 }

@@ -15,6 +15,7 @@ import {
   Field,
   Heatmap,
   LogButton,
+  PageHead,
   Progress,
   Ring,
   Rule,
@@ -252,12 +253,10 @@ export function KitchenSink() {
 
   return (
     <div className="wrap">
-      <p className="eyebrow">Référence visuelle · bibliothèque de composants</p>
-      <h1 style={{ marginTop: 10 }}>Charte</h1>
-      <p className="lede" style={{ marginTop: 14 }}>
+      <PageHead eyebrow="Référence visuelle · bibliothèque de composants" title="Charte">
         Reprise fidèle de <code>GuidelinesUI.html</code>. Cette page est le test visuel du projet :
         toute dérive de la charte se voit ici avant de se voir dans un écran.
-      </p>
+      </PageHead>
 
       {/* ══ 01 COULEURS ══ */}
       <Rule>01 — Couleurs</Rule>
@@ -274,7 +273,7 @@ export function KitchenSink() {
           </div>
         ))}
       </div>
-      <div className="grid g3 mt">
+      <div className="grid tiles mt">
         {SURFACES.map((color) => (
           <div className={styles.swatch} key={color.token}>
             <div
@@ -335,7 +334,7 @@ export function KitchenSink() {
             </Button>
           </div>
 
-          <h3 style={{ marginTop: 24 }}>Saisie rapide</h3>
+          <h3 className={styles.subhead}>Saisie rapide</h3>
           <p className={styles.note}>
             La cible : un relevé en un geste. Ces boutons remplissent le formulaire avec la dernière
             valeur connue.
@@ -360,7 +359,7 @@ export function KitchenSink() {
             />
           </div>
 
-          <h3 style={{ marginTop: 24 }}>États</h3>
+          <h3 className={styles.subhead}>États</h3>
           <div className="row mt">
             <Badge tone="signal">relevé</Badge>
             <Badge tone="effort">série · 12 j</Badge>
@@ -368,7 +367,7 @@ export function KitchenSink() {
             <Badge tone="recover">manquant</Badge>
           </div>
 
-          <h3 style={{ marginTop: 24 }}>Période</h3>
+          <h3 className={styles.subhead}>Période</h3>
           <div className="row mt">
             <Segmented label="Période" value={period} onChange={setPeriod} options={PERIODS} />
           </div>
@@ -459,7 +458,7 @@ export function KitchenSink() {
             </ChipStrip>
           </div>
 
-          <h3 style={{ marginTop: 24 }}>Ligne à glisser</h3>
+          <h3 className={styles.subhead}>Ligne à glisser</h3>
           <p className={styles.note}>
             Tirer vers la gauche découvre l'action. Elle reste visible là où il y a un pointeur fin
             — un geste ne peut pas être la seule façon d'atteindre une commande. Deux appuis pour
@@ -559,9 +558,7 @@ export function KitchenSink() {
           <div className="spread">
             <div>
               <h3>Répartition du temps</h3>
-              <p className="eyebrow" style={{ marginTop: 4 }}>
-                semaine 30
-              </p>
+              <p className={cx('eyebrow', styles.tightEyebrow)}>semaine 30</p>
             </div>
             <Badge tone="load" mono>
               62 h
@@ -575,7 +572,7 @@ export function KitchenSink() {
               { label: 'Sport', ratio: 0.22, value: '12 h', tone: 'recover' },
             ]}
           />
-          <div style={{ marginTop: 26 }}>
+          <div className={styles.blockSpaced}>
             <Ring
               ratio={0.78}
               label="Objectif hebdomadaire"
@@ -610,9 +607,7 @@ export function KitchenSink() {
         <div className={styles.chartHead}>
           <div>
             <h3>Allure, charge et sommeil</h3>
-            <p className="eyebrow" style={{ marginTop: 4 }}>
-              30 derniers jours
-            </p>
+            <p className={cx('eyebrow', styles.tightEyebrow)}>30 derniers jours</p>
           </div>
           <Segmented
             label="Période du graphique"
@@ -644,10 +639,9 @@ export function KitchenSink() {
           }}
           note={
             <>
-              Les barres sous l'axe passent en{' '}
-              <span style={{ color: 'var(--recover)' }}>mauve</span> sous 6 h 30. Trois barres
-              mauves d'affilée et la bande de charge s'épaissit : c'est le signal qu'on cherche à
-              voir venir.
+              Les barres sous l'axe passent en <span className={styles.recoverInk}>mauve</span> sous
+              6 h 30. Trois barres mauves d'affilée et la bande de charge s'épaissit : c'est le
+              signal qu'on cherche à voir venir.
             </>
           }
         />
@@ -660,9 +654,7 @@ export function KitchenSink() {
           <div className="spread">
             <div>
               <h3>Samedi 26 juillet</h3>
-              <p className="eyebrow" style={{ marginTop: 4 }}>
-                jour de séance
-              </p>
+              <p className={cx('eyebrow', styles.tightEyebrow)}>jour de séance</p>
             </div>
             <Badge tone="effort">
               {done}/{total}
@@ -731,7 +723,7 @@ export function KitchenSink() {
       <Rule>10 — Niveaux d'intensité et espacement</Rule>
       <div className="grid g2">
         <Card>
-          <p className={styles.note} style={{ marginTop: 0 }}>
+          <p className={cx(styles.note, styles.noteFlush)}>
             Les quatre niveaux dérivent d'une seule couleur d'accent par opacité : chaque piste
             porte la sienne sans dupliquer quatre variantes.
           </p>
@@ -765,9 +757,7 @@ export function KitchenSink() {
       </div>
 
       <Rule>Fin</Rule>
-      <p className="eyebrow" style={{ paddingBottom: 40 }}>
-        Metric — aleksi.systems
-      </p>
+      <p className={cx('eyebrow', styles.tailNote)}>Metric — aleksi.systems</p>
     </div>
   );
 }

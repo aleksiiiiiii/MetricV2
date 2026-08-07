@@ -1,13 +1,13 @@
 .grid {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: 1fr;
   gap: var(--s4);
   align-items: start;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 960px) {
   .grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 340px;
   }
 }
 
@@ -26,7 +26,7 @@
 
 .error {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--recover);
   border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
   background: rgb(var(--recover-rgb) / var(--badge-bg-a));
@@ -37,7 +37,7 @@
 
 .note {
   color: var(--ink-mid);
-  font-size: 13px;
+  font-size: var(--t-sub);
   margin-top: 2px;
 }
 
@@ -54,19 +54,23 @@
   color: var(--ink-low);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   padding: 4px 8px;
   transition: var(--t);
 }
 
-.iconButton:hover {
-  color: var(--ink);
-  border-color: var(--line);
+@media (hover: hover) and (pointer: fine) {
+  .iconButton:hover {
+    color: var(--ink);
+    border-color: var(--line);
+  }
 }
 
-.danger:hover {
-  color: var(--recover);
-  border-color: rgb(var(--recover-rgb) / 0.4);
+@media (hover: hover) and (pointer: fine) {
+  .danger:hover {
+    color: var(--recover);
+    border-color: rgb(var(--recover-rgb) / 0.4);
+  }
 }
 
 .indicators {
@@ -84,7 +88,7 @@
 
 .indicatorLabel {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--t-meta);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-low);
@@ -92,21 +96,21 @@
 
 .indicatorValue {
   font-family: var(--mono);
-  font-size: 20px;
+  font-size: var(--t-num-md);
   font-variant-numeric: tabular-nums;
   margin-top: 6px;
   line-height: 1;
 }
 
 .indicatorUnit {
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
   margin-left: 2px;
 }
 
 .indicatorDelta {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   margin-top: 6px;
   color: var(--ink-mid);
 }
@@ -126,5 +130,20 @@
 .empty {
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
+}
+
+/* Retrait intérieur d'une carte « bord à bord » : elle annule son propre padding pour
+   que le tableau touche les bords, et le rend à ce qui l'entoure. Ces deux règles
+   remplacent trois `style={{ padding: '0 12px …' }}` posés à l'identique. */
+.flushTitle {
+  padding: 0 12px 14px;
+}
+
+.flushPad {
+  padding: 0 12px 12px;
+}
+
+.emptyInset {
+  margin-top: var(--s4);
 }

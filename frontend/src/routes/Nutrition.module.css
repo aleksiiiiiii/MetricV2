@@ -1,13 +1,13 @@
 .split {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 1fr;
   gap: var(--s4);
   align-items: start;
 }
 
-@media (max-width: 960px) {
+@media (min-width: 960px) {
   .split {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 360px;
   }
 }
 
@@ -26,7 +26,7 @@
 
 .error {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--recover);
   border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
   background: rgb(var(--recover-rgb) / var(--badge-bg-a));
@@ -37,14 +37,14 @@
 
 .note {
   color: var(--ink-mid);
-  font-size: 13px;
+  font-size: var(--t-sub);
   margin-top: 2px;
 }
 
 .empty {
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
 }
 
 .field {
@@ -55,7 +55,7 @@
 
 .field label {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-low);
@@ -68,7 +68,7 @@
   padding: 11px 13px;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--t-sub);
   width: 100%;
 }
 
@@ -89,12 +89,14 @@
   transition: var(--t);
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
 }
 
-.drop:hover {
-  border-color: var(--signal);
-  color: var(--signal);
+@media (hover: hover) and (pointer: fine) {
+  .drop:hover {
+    border-color: var(--signal);
+    color: var(--signal);
+  }
 }
 
 .preview {
@@ -151,13 +153,13 @@
 
 .mealTime {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
 }
 
 .mealMacros {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--ink-mid);
   margin-top: 4px;
   font-variant-numeric: tabular-nums;
@@ -184,7 +186,7 @@
   color: var(--ink-low);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   padding: 4px 8px;
   transition: var(--t);
   /* Le plancher du doigt (`L17-07`) : ces boutons portent la suppression et
@@ -198,14 +200,18 @@
   cursor: not-allowed;
 }
 
-.iconButton:hover {
-  color: var(--ink);
-  border-color: var(--line);
+@media (hover: hover) and (pointer: fine) {
+  .iconButton:hover {
+    color: var(--ink);
+    border-color: var(--line);
+  }
 }
 
-.danger:hover {
-  color: var(--recover);
-  border-color: rgb(var(--recover-rgb) / 0.4);
+@media (hover: hover) and (pointer: fine) {
+  .danger:hover {
+    color: var(--recover);
+    border-color: rgb(var(--recover-rgb) / 0.4);
+  }
 }
 
 /* ── Favoris ──────────────────────────────────────── */
@@ -225,11 +231,11 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--r-sm);
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--t-sub);
 }
 
 .favoriteMacros {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
 }

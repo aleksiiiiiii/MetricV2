@@ -1,13 +1,13 @@
 .split {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 1fr;
   gap: var(--s4);
   align-items: start;
 }
 
-@media (max-width: 960px) {
+@media (min-width: 960px) {
   .split {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 360px;
   }
 }
 
@@ -26,7 +26,7 @@
 
 .error {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--recover);
   border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
   background: rgb(var(--recover-rgb) / var(--badge-bg-a));
@@ -37,14 +37,14 @@
 
 .note {
   color: var(--ink-mid);
-  font-size: 13px;
+  font-size: var(--t-sub);
   margin-top: 2px;
 }
 
 .empty {
   color: var(--ink-low);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
 }
 
 /* ── Hydratation ──────────────────────────────────── */
@@ -71,16 +71,18 @@
   color: var(--ink);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--t-sub);
   padding: 14px 18px;
   transition: var(--t);
   min-width: 84px;
 }
 
-.preset:hover:not(:disabled) {
-  border-color: var(--signal);
-  color: var(--signal);
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .preset:hover:not(:disabled) {
+    border-color: var(--signal);
+    color: var(--signal);
+    transform: translateY(-1px);
+  }
 }
 
 .preset:focus-visible {
@@ -108,7 +110,7 @@
   border-radius: var(--r-sm);
   padding: 5px 8px 5px 10px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-meta);
   color: var(--ink-mid);
 }
 
@@ -118,27 +120,29 @@
   color: var(--ink-low);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--t-sub);
   line-height: 1;
   padding: 2px 4px;
 }
 
-.remove:hover {
-  color: var(--recover);
+@media (hover: hover) and (pointer: fine) {
+  .remove:hover {
+    color: var(--recover);
+  }
 }
 
 /* ── Checklist ────────────────────────────────────── */
 
 .moment {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
   margin-left: 6px;
 }
 
 .cadence {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--t-meta);
   color: var(--ink-low);
 }
 
@@ -153,4 +157,13 @@
 
 .scheduleRow:last-child {
   border-bottom: none;
+}
+
+/* Surtitre collé à ce qu'il commente, et non détaché comme un titre de section. */
+.tightEyebrow {
+  margin-top: var(--s1);
+}
+
+.emptyInset {
+  margin-top: var(--s4);
 }
