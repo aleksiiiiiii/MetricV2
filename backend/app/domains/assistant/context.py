@@ -16,6 +16,7 @@ promesse vérifiable à l'écran plutôt que déclarative dans un commentaire.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -114,4 +115,134 @@ def memory_lines(entries: list[tuple[str, str]]) -> list[str]:
     return [f"{topic} — {note}" for topic, note in entries[:MAX_MEMORY_LINES]]
 
 
-__all__ = ["MAX_MEMORY_LINES", "RECENT_INSIGHTS", "build", "memory_lines"]
+# ── Les tranches demandées à la volée (`IA-16`) ───────
+#
+# Le condensé de `build` répond aux questions ; il ne suffit pas à **agir**. Supprimer le
+# repas de midi demande son identifiant, ajouter une série demande l'exercice au
+# catalogue — et charger tout cela dans chaque question reviendrait à envoyer les fichiers,
+# ce que `IA-09` interdit précisément.
+#
+# D'où ces tranches, nommées et demandées par le modèle quand il en a besoin. Deux
+# propriétés les rendent sûres :
+#
+# **Le modèle choisit dans une liste, il ne nomme pas un fichier.** `read_need` filtre sur
+# les clés de cette table ; un nom inventé ne devient jamais une lecture.
+#
+# **Elles portent les identifiants et les jetons.** C'est ce qui referme la boucle : une
+# suppression exige un jeton (`STO-05`), et le seul endroit où le modèle peut l'obtenir est
+# une tranche qu'on lui a servie. Il ne peut donc pas effacer une ligne qu'il n'a pas lue.
+
+
+async def _exercises(store: FileStore, _today: date) -> list[str]:
+    from app.domains.activity.service import ExerciseService
+
+    catalogue = await ExerciseService(store).catalogue()
+    if not catalogue:
+        return ["Catalogue d'exercices : vide"]
+    return [
+        f"Exercice « {item.name} » (exercise_id={item.exercise_id}, {item.muscle_group})"
+        for item in catalogue
+    ]
+
+
+async def _meals_today(store: FileStore, today: date) -> list[str]:
+    from app.domains.nutrition.service import NutritionService
+
+    view = await NutritionService(store).view(today)
+    if not view.meals:
+        return ["Repas du jour : aucun"]
+    return [
+        f"Repas {meal.meal_type} à {meal.datetime:%H:%M} (row_id={meal.id}, token={meal.token})"
+        for meal in view.meals
+    ]
+
+
+async def _weights_recent(store: FileStore, _today: date) -> list[str]:
+    from app.domains.body.service import WeightService
+
+    view = await WeightService(store).view(limit=10, offset=0)
+    if not view.entries:
+        return ["Pesées récentes : aucune"]
+    return [
+        f"Pesée du {entry.date:%d/%m/%Y} : {entry.weight_kg:g} kg "
+        f"(row_id={entry.id}, token={entry.token})"
+        for entry in view.entries
+    ]
+
+
+async def _supplements_today(store: FileStore, today: date) -> list[str]:
+    from app.domains.supplements.service import SupplementService
+
+    view = await SupplementService(store).checklist(today)
+    if not view.items:
+        return ["Suppléments du jour : aucun au programme"]
+    return [
+        f"Supplément « {item.name} » à {item.time} — "
+        f"{'déjà pris' if item.taken else 'pas encore pris'} "
+        f"(schedule_id={item.schedule_id})"
+        for item in view.items
+    ]
+
+
+async def _plan_ahead(store: FileStore, today: date) -> list[str]:
+    from datetime import timedelta
+
+    from app.domains.planning.service import PlanningService
+
+    sessions = await PlanningService(store).between(today, today + timedelta(days=28))
+    if not sessions:
+        return ["Séances prévues : aucune dans les quatre semaines"]
+    return [
+        f"Prévu le {item.date:%d/%m/%Y} à {item.time} : {item.title} "
+        f"(row_id={item.id}, token={item.token})"
+        for item in sessions
+    ]
+
+
+async def _activity_recent(store: FileStore, _today: date) -> list[str]:
+    from app.domains.activity.service import RunService, WorkoutService
+
+    runs = [RunService.to_schema(row) for row in (await RunService(store).all())[-5:]]
+    workouts = (await WorkoutService(store).all())[-5:]
+
+    lines = [
+        f"Course du {run.date:%d/%m/%Y} : {run.distance_km:g} km "
+        f"(row_id={run.id}, token={run.token})"
+        for run in runs
+    ]
+    lines += [
+        f"Séance du {row.model.date:%d/%m/%Y} : {row.model.type} "
+        f"(row_id={row.index}, token={row.token})"
+        for row in workouts
+    ]
+    return lines or ["Activités récentes : aucune"]
+
+
+#: Les tranches, par nom. **La liste des clés est ce que le modèle a le droit de demander.**
+SLICES: dict[str, Callable[[FileStore, date], Awaitable[list[str]]]] = {
+    "exercices": _exercises,
+    "repas_du_jour": _meals_today,
+    "pesees_recentes": _weights_recent,
+    "supplements_du_jour": _supplements_today,
+    "planning_a_venir": _plan_ahead,
+    "activites_recentes": _activity_recent,
+}
+
+
+async def slices(store: FileStore, names: list[str], *, today: date | None = None) -> list[str]:
+    """Rend les tranches demandées, dans l'ordre où elles ont été nommées.
+
+    `names` est **déjà filtré** par `read_need` sur les clés de `SLICES` : cette fonction
+    n'a donc aucun nom inconnu à refuser, et c'est voulu — le filtre vit à un seul endroit.
+    """
+    current = today or today_local()
+    lines: list[str] = []
+    for name in names:
+        loader = SLICES.get(name)
+        if loader is None:  # pragma: no cover - `read_need` a déjà filtré
+            continue
+        lines.extend(await loader(store, current))
+    return lines
+
+
+__all__ = ["MAX_MEMORY_LINES", "RECENT_INSIGHTS", "SLICES", "build", "memory_lines", "slices"]

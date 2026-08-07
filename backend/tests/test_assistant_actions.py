@@ -317,3 +317,96 @@ def test_the_catalogue_is_shown_to_the_model(
     prompt = openrouter.calls[0].prompt
     assert "weight.add" in prompt
     assert "Ce que tu peux faire dans mes données" in prompt
+
+
+# ── 5. La seconde passe, et jamais de troisième (`IA-16`) ──
+
+
+def test_a_requested_slice_comes_back_in_a_second_call(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter, dav: FakeWebDav
+) -> None:
+    """Supprimer le repas de midi demande son identifiant, et il n'est pas dans le condensé.
+
+    Le charger dans **chaque** question reviendrait à envoyer les fichiers, ce que `IA-09`
+    interdit précisément. D'où la demande, et la tranche servie en réponse.
+    """
+    dav.seed(
+        "Metric/body/weight.csv",
+        f"date,weight_kg,note,source\n{TODAY.isoformat()},82.4,,manual\n",
+    )
+    openrouter.say(answer(reply="Je regarde.", need=["pesees_recentes"]))
+    openrouter.say(answer(reply="Voilà."))
+
+    ask(ai_app_client, auth, question="Supprime ma dernière pesée")
+
+    assert len(openrouter.calls) == 2
+    # Le *nom* de la tranche est offert dès le premier tour — c'est ainsi que le modèle
+    # sait pouvoir la demander. C'est son *contenu* qui n'arrive qu'au second.
+    assert "row_id=" not in openrouter.calls[0].prompt
+    assert "row_id=0" in openrouter.calls[1].prompt
+
+
+def test_a_second_request_for_context_is_not_honoured(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Le plafond est dans la forme du code : il y a deux appels parce qu'il y en a deux.
+
+    Aucune borne à respecter, aucune récursion à surveiller — et donc aucune façon pour un
+    modèle de faire tourner l'écran en réclamant indéfiniment.
+    """
+    openrouter.say(answer(reply="Je regarde.", need=["pesees_recentes"]))
+    openrouter.say(answer(reply="Encore.", need=["exercices"]))
+
+    response = ask(ai_app_client, auth, question="Supprime ma dernière pesée")
+
+    assert response.status_code == 200
+    assert len(openrouter.calls) == 2
+
+
+def test_an_invented_slice_never_becomes_a_read(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Le modèle choisit dans une liste, il ne nomme pas un fichier.
+
+    Sans ce filtre, `"need": ["/etc/passwd"]` serait une demande comme une autre — et le
+    seul rempart serait la bonne volonté du modèle.
+    """
+    openrouter.say(answer(reply="Je regarde.", need=["/etc/passwd", "tout"]))
+
+    ask(ai_app_client, auth)
+
+    assert len(openrouter.calls) == 1, "rien à servir : pas de seconde passe"
+
+
+def test_the_offered_slices_are_named_in_the_prompt(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Un modèle ne demande pas ce qu'il ignore pouvoir demander."""
+    openrouter.say(answer())
+
+    ask(ai_app_client, auth)
+
+    assert "repas_du_jour" in openrouter.calls[0].prompt
+
+
+def test_a_slice_carries_the_token_a_deletion_needs(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter, dav: FakeWebDav
+) -> None:
+    """C'est ce qui referme la boucle, et c'est une garantie de sécurité.
+
+    Une suppression exige le jeton de la ligne (`STO-05`), et le seul endroit où le modèle
+    peut l'obtenir est une tranche qu'on lui a servie. Il ne peut donc pas effacer une
+    ligne qu'il n'a pas lue.
+    """
+    dav.seed(
+        "Metric/body/weight.csv",
+        f"date,weight_kg,note,source\n{TODAY.isoformat()},82.4,,manual\n",
+    )
+    openrouter.say(answer(reply="Je regarde.", need=["pesees_recentes"]))
+    openrouter.say(answer(reply="Voilà."))
+
+    ask(ai_app_client, auth, question="Supprime ma dernière pesée")
+
+    second = openrouter.calls[1].prompt
+    assert "token=" in second
+    assert "82,4 kg" in second or "82.4 kg" in second

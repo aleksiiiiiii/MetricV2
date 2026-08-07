@@ -474,19 +474,42 @@ class AssistantService:
         facts = await context.build(self._store, adherence=adherence, today=current)
         memory = context.memory_lines(known)
 
-        payload = await ai.ask_json(
-            instruction=conversation.INSTRUCTION,
-            prompt=conversation.build_prompt(
+        available = list(context.SLICES)
+
+        def prompt_for(extra: list[str]) -> str:
+            return conversation.build_prompt(
                 question=request.question,
-                context=facts,
+                context=facts + extra,
                 memory=memory,
                 history=history,
                 actions=catalogue.describe_catalogue(),
-                slices=[],
+                slices=available,
                 naming=opening,
-            ),
+            )
+
+        payload = await ai.ask_json(
+            instruction=conversation.INSTRUCTION,
+            prompt=prompt_for([]),
             max_tokens=MAX_TOKENS,
         )
+
+        # ── La seconde passe, et il n'y en a jamais de troisième (`IA-16`)
+        #
+        # Supprimer le repas de midi demande son identifiant ; ajouter une série demande
+        # l'exercice au catalogue. Un agent classique boucle — lire, réfléchir, écrire,
+        # relire — et sur des modèles gratuits cela veut dire une latence imprévisible, un
+        # coût imprévisible, et un écran qui tourne sans qu'on sache pourquoi.
+        #
+        # Le plafond est donc **dans la forme du code** et non dans la consigne : deux
+        # appels, parce qu'il y a deux appels écrits. Aucune borne à respecter, aucune
+        # récursion à surveiller.
+        need = conversation.read_need(payload, available=available)
+        if need:
+            payload = await ai.ask_json(
+                instruction=conversation.INSTRUCTION,
+                prompt=prompt_for(await context.slices(self._store, need, today=current)),
+                max_tokens=MAX_TOKENS,
+            )
 
         reports = await self._run_actions(conversation.read_actions(payload))
 
