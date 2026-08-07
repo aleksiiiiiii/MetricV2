@@ -29,8 +29,15 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
-from app.domains.assistant.models import MAX_NOTE, normalise_topic
-from app.domains.assistant.schemas import MAX_PROPOSED, ProposedMemory
+from app.domains.assistant.models import MAX_NOTE, MAX_TITLE, normalise_topic
+from app.domains.assistant.schemas import (
+    MAX_ACTION_NAME,
+    MAX_ACTIONS,
+    MAX_NEED,
+    MAX_PROPOSED,
+    ProposedAction,
+    ProposedMemory,
+)
 
 #: Longueur de la réponse rendue. Une réponse plus longue n'a pas été tronquée par le
 #: modèle : elle a été coupée ici, parce qu'un mur de texte ne se lit pas sur un téléphone.
@@ -60,20 +67,20 @@ _TEMPLATE = """Réponds à la question en t'appuyant sur ce qui suit, et sur rie
 
 {memory}
 
-{history}## Question
+{history}{actions}## Question
 
 {question}
 
 ## Réponse attendue
 
-{{"reply": "…", "remember": [{{"topic": "…", "note": "…"}}]}}
+{{"reply": "…", "remember": [{{"topic": "…", "note": "…"}}]{extra}}}
 
 - "reply" : ta réponse, en français, quatre phrases au plus. Cite les chiffres ci-dessus
   quand ils répondent ; dis que tu ne sais pas quand ils ne disent rien là-dessus.
 - "remember" : ce que **je viens de t'apprendre sur moi** et qui vaudra encore dans six
   mois — une blessure, un sommeil, un traitement, une contrainte. Liste vide le plus
   souvent, et c'est le cas normal.
-
+{fields}
 Règles :
 - N'invente aucun chiffre. Si la réponse demande une donnée absente ci-dessus, dis-le.
 - Ne mets **jamais** dans "remember" ce que les données ci-dessus disent déjà : elles sont
@@ -84,6 +91,26 @@ Règles :
   professionnel dans "reply". Les deux, pas l'un ou l'autre.
 """
 
+#: Ce qui s'ajoute à la consigne quand des actions sont possibles.
+#:
+#: Rédigé en « je te demande / tu fais » et non en « tu peux » : un modèle à qui on offre
+#: une possibilité la prend, et la plupart des questions n'appellent aucune écriture. La
+#: liste vide doit être présentée comme le cas normal, sinon chaque « où j'en suis ? »
+#: repart avec une séance ajoutée.
+_ACTION_FIELDS = """- "actions" : ce que je te demande d'écrire dans mes données. **Liste vide le plus
+  souvent** — une question est une question, pas une instruction. N'agis que si je te le
+  demande explicitement, dans ce message-ci.
+- "need" : ce qui te manque pour agir, à choisir dans la liste des tranches ci-dessus.
+  Ne le remplis que si tu ne peux pas agir sans. Tu ne l'obtiendras qu'une fois."""
+
+_ACTION_RULES = """- Une action est {"name": "…", "args": {…}}. N'emploie **que** les noms listés, avec
+  exactement les arguments décrits. Un nom inventé est ignoré, et je ne le saurai pas.
+- Ne devine jamais un identifiant, une date ni une valeur. S'il te manque de quoi agir,
+  laisse "actions" vide et demande-le dans "reply", ou remplis "need".
+- Ne parle dans "reply" que des actions que tu as réellement mises dans "actions".
+- **Aucune action à la suite d'une douleur, d'une blessure ou d'un symptôme.** Tu notes,
+  tu renvoies vers un professionnel, tu n'écris rien d'autre."""
+
 
 def build_prompt(
     *,
@@ -91,15 +118,29 @@ def build_prompt(
     context: list[str],
     memory: list[str],
     history: list[tuple[str, str]] | None = None,
+    actions: list[str] | None = None,
+    slices: list[str] | None = None,
+    naming: bool = False,
 ) -> str:
     """Assemble la consigne. **Aucun fichier n'est envoyé au modèle** (`IA-09`).
 
     `context` et `memory` sont déjà des phrases : ce module ne sait pas les produire, et
-    c'est ce qui permet de le tester sur des valeurs fixes.
+    c'est ce qui permet de le tester sur des valeurs fixes. `actions` suit la même règle —
+    ce sont des lignes de description **déjà rendues** par le catalogue, que ce module se
+    contente d'insérer. Il ne connaît donc aucun nom d'action, et le catalogue reste la
+    seule autorité sur ce qui existe.
+
+    Sans `actions`, la consigne est exactement celle d'avant : un assistant qui répond. Ce
+    n'est pas une commodité de test, c'est le comportement voulu quand rien n'est
+    exécutable — inviter à agir sans pouvoir agir ne produirait que des promesses.
 
     L'historique est rendu tel quel, rôle par rôle. Le condensé, lui, est renvoyé **entier**
     à chaque tour et non résumé : il est recalculé, et une réponse au dixième tour doit
     porter sur les chiffres du moment, pas sur ceux d'il y a dix minutes.
+
+    `naming` n'est vrai qu'au premier tour : c'est là qu'un fil se nomme. Le redemander à
+    chaque tour coûterait des jetons et inviterait le modèle à rebaptiser une discussion
+    en cours, ce qu'on ne cherche pas.
     """
     turns = ""
     if history:
@@ -108,11 +149,36 @@ def build_prompt(
         )
         turns = f"## Ce qu'on s'est déjà dit\n\n{lines}\n\n"
 
-    return _TEMPLATE.format(
-        context="\n".join(f"- {line}" for line in context) or "- Aucune donnée relevée.",
-        memory="\n".join(f"- {line}" for line in memory) or "- Rien de noté pour l'instant.",
-        history=turns,
-        question=question.strip(),
+    catalogue = ""
+    extra = ""
+    fields = ""
+    rules = ""
+    if actions:
+        listed = "\n".join(f"- {line}" for line in actions)
+        available = ", ".join(slices or []) or "aucune"
+        catalogue = (
+            f"## Ce que tu peux faire dans mes données\n\n{listed}\n\n"
+            f"Tranches de contexte disponibles à la demande : {available}.\n\n"
+        )
+        extra = ', "actions": [], "need": []'
+        fields = f"{_ACTION_FIELDS}\n"
+        rules = f"\n{_ACTION_RULES}"
+
+    if naming:
+        extra = f'{extra}, "title": "…"'
+        fields = f'{fields}- "title" : cinq mots qui nomment cette discussion, pour la retrouver plus tard.\n'
+
+    return (
+        _TEMPLATE.format(
+            context="\n".join(f"- {line}" for line in context) or "- Aucune donnée relevée.",
+            memory="\n".join(f"- {line}" for line in memory) or "- Rien de noté pour l'instant.",
+            history=turns,
+            actions=catalogue,
+            question=question.strip(),
+            extra=extra,
+            fields=fields,
+        ).rstrip()
+        + f"{rules}\n"
     )
 
 
@@ -218,4 +284,85 @@ def read_reply(
     return reply, kept, dropped
 
 
-__all__ = ["INSTRUCTION", "MAX_REPLY", "MIN_NOTE", "build_prompt", "read_reply"]
+def read_actions(payload: dict[str, Any]) -> list[ProposedAction]:
+    """Extrait les actions demandées. **Rien n'est validé ni exécuté ici.**
+
+    Trois fonctions séparées plutôt qu'un `read_reply` qui rendrait cinq valeurs : chacune
+    se teste sur son propre cas limite, et l'ajout des actions n'a pas touché une ligne de
+    la relecture des notes — qui a ses vingt tests.
+
+    Ce que cette fonction garantit, et c'est tout : ce qui sort est une liste bornée
+    d'objets ayant un nom non vide et un dictionnaire d'arguments. Que le nom existe, que
+    les arguments soient les bons, que l'action soit permise — c'est l'affaire de
+    l'exécuteur, qui connaît le catalogue.
+
+    Un modèle rend parfois un objet là où la consigne demande une liste ; on l'accepte,
+    comme pour `remember`. Refuser coûterait l'action *et* l'appel.
+    """
+    raw = payload.get("actions")
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+
+    kept: list[ProposedAction] = []
+    for entry in raw:
+        if len(kept) >= MAX_ACTIONS:
+            # Un modèle qui en demande plus de cinq n'a pas compris la question — et le
+            # tour où il se trompe est celui où on ne veut pas qu'il écrive vingt lignes.
+            break
+        if not isinstance(entry, dict):
+            continue
+        name = _text(entry.get("name"))[:MAX_ACTION_NAME]
+        if not name:
+            continue
+        args = entry.get("args")
+        kept.append(ProposedAction(name=name, args=args if isinstance(args, dict) else {}))
+
+    return kept
+
+
+def read_need(payload: dict[str, Any], *, available: list[str]) -> list[str]:
+    """Extrait les tranches de contexte réclamées, **filtrées sur ce qui existe**.
+
+    Le filtre est ici et non plus haut, parce qu'il est la garantie de `IA-09` : le modèle
+    ne choisit pas ce qu'on lui envoie, il choisit dans ce qu'on lui a dit pouvoir
+    demander. Un nom inventé ne devient pas une lecture de fichier.
+    """
+    raw = payload.get("need")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+
+    allowed = set(available)
+    kept: list[str] = []
+    for entry in raw:
+        name = _text(entry)[:MAX_ACTION_NAME]
+        if name in allowed and name not in kept:
+            kept.append(name)
+        if len(kept) >= MAX_NEED:
+            break
+    return kept
+
+
+def read_title(payload: dict[str, Any], *, fallback: str) -> str:
+    """Le nom du fil, ou le repli si le modèle n'en a pas rendu d'utilisable.
+
+    Le repli est la question elle-même, tronquée : il vaut toujours mieux qu'un titre vide,
+    et c'est ce sur quoi on retrouve un fil trois mois plus tard.
+    """
+    title = " ".join(_text(payload.get("title")).split())[:MAX_TITLE]
+    return title or fallback
+
+
+__all__ = [
+    "INSTRUCTION",
+    "MAX_REPLY",
+    "MIN_NOTE",
+    "build_prompt",
+    "read_actions",
+    "read_need",
+    "read_reply",
+    "read_title",
+]

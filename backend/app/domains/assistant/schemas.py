@@ -16,7 +16,7 @@ Trois familles, et leur séparation porte les garanties du lot :
 from __future__ import annotations
 
 import datetime as dt
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,6 +37,22 @@ MAX_HISTORY = 12
 #: Notes proposées au maximum en une réponse. Une conversation ne révèle pas cinq faits
 #: durables d'un coup ; au-delà, le modèle a compris qu'on lui demandait de résumer.
 MAX_PROPOSED = 3
+
+#: Actions retenues au maximum en un tour.
+#:
+#: Cinq, et la borne est un garde-fou de sécurité plus qu'un garde-fou de coût : « note ma
+#: séance » se traduit en une action, « range mon mois » en cinquante. Un modèle qui en
+#: propose plus de cinq n'a pas compris la demande — et le tour où il se trompe est
+#: précisément celui où on ne veut pas qu'il écrive vingt lignes.
+MAX_ACTIONS = 5
+
+#: Tranches de contexte demandées au maximum en un tour. Au-delà, le modèle réclame le
+#: dossier entier, ce que `IA-09` interdit précisément.
+MAX_NEED = 4
+
+#: Longueur d'un nom d'action et d'une tranche de contexte. Bornées avant toute
+#: comparaison : un nom de mille signes n'est pas un nom, c'est une charge utile.
+MAX_ACTION_NAME = 40
 
 
 class Message(BaseModel):
@@ -72,6 +88,22 @@ class ProposedMemory(BaseModel):
 
     topic: str = Field(max_length=MAX_TOPIC)
     note: str = Field(min_length=1, max_length=MAX_NOTE)
+
+
+class ProposedAction(BaseModel):
+    """Une action que le modèle demande. **Rien n'est exécuté à ce stade.**
+
+    Même forme que `ProposedMemory`, `ProposedSession` et `ProposedGoal` — le projet n'a
+    qu'une façon de dire « pas encore fait ». Ni jeton ni identifiant : elle ne désigne
+    aucune ligne écrite, puisqu'il n'en existe encore aucune.
+
+    `name` n'est **pas** validé ici. Ce module ne connaît pas le catalogue : il extrait ce
+    que le modèle a rendu, et c'est l'exécuteur qui refuse un nom inconnu. Séparer les deux
+    est ce qui permet de tester la relecture sur des valeurs fixes, sans monter un domaine.
+    """
+
+    name: str = Field(max_length=MAX_ACTION_NAME)
+    args: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatReply(BaseModel):
