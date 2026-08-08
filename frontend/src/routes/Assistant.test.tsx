@@ -15,7 +15,7 @@ import { Assistant } from './Assistant';
  *
  * Ces tests portent sur ce qu'un test d'API ne peut pas voir :
  *
- * * une note proposée **n'est pas écrite** tant qu'on ne l'a pas retenue (`IA-10`) —
+ * * une note retenue par l'assistant est **écrite**, annoncée, et se retire (`IA-10`) —
  *   vérifié sur les requêtes réellement parties, pas sur l'intention du code ;
  * * le carnet reste entier **sans clé API**, alors que la conversation disparaît ;
  * * le condensé envoyé au modèle est affiché, ce qui rend `IA-09` vérifiable à l'écran ;
@@ -48,7 +48,17 @@ const REPLY: ChatReply = {
   thread_id: 'fil-1',
   title: 'Où j’en suis cette semaine',
   reply: 'Tu tournes à 1,8 séance par semaine, contre 2,4 le mois dernier.',
-  remember: [{ topic: 'sommeil', note: 'Je dors mal les soirs de séance tardive' }],
+  remember: [
+    {
+      id: 0,
+      token: 'jeton-note',
+      memory_id: 'n1',
+      created: '2026-08-06',
+      topic: 'sommeil',
+      note: 'Je dors mal les soirs de séance tardive',
+      source: 'ai',
+    },
+  ],
   context: [
     'Nous sommes le jeudi 06/08/2026',
     'Séances par semaine : 1,8 séances (moyenne des 4 dernières semaines complètes)',
@@ -80,9 +90,6 @@ function stub(options: { memory?: AssistantView; reply?: ChatReply; aiEnabled?: 
     }
     if (url.includes('/api/assistant/chat')) {
       return Promise.resolve(json(200, options.reply ?? REPLY));
-    }
-    if (url.includes('/api/assistant/memory/adopt')) {
-      return Promise.resolve(json(201, { id: 1, token: 't', memory_id: 'x', source: 'ai' }));
     }
     return Promise.resolve(json(200, options.memory ?? MEMORY));
   });
@@ -223,54 +230,58 @@ describe('conversation', () => {
   });
 });
 
-// ── La mémoire proposée (`IA-10`) ─────────────────────
+// ── Ce qui vient d'être retenu (`IA-10`) ──────────────
 
-describe('mémoire proposée', () => {
-  it('écrit exactement rien avant validation', async () => {
+describe('mémoire automatique', () => {
+  it('annonce ce que l’assistant vient de retenir', async () => {
+    // Le carnet se remplit tout seul. L'écran ne demande plus « à retenir ? » : il dit ce
+    // qui a été écrit, au moment où ça l'a été.
     stub();
     renderScreen();
     await askSomething();
 
     expect(await screen.findByText(proposedNote().note)).toBeInTheDocument();
-    // La question est un `POST`, mais vers `/chat` : rien n'a été écrit.
+    expect(screen.getByText('Je retiens')).toBeInTheDocument();
+  });
+
+  it('n’écrit rien de plus : la note l’a été par la conversation', async () => {
+    stub();
+    renderScreen();
+    await askSomething();
+
+    await screen.findByText(proposedNote().note);
+
+    // Une seule écriture, vers `/chat` : c'est elle qui a écrit la note côté serveur.
     expect(writes().every((call) => call.url.endsWith('/chat'))).toBe(true);
   });
 
-  it('écrit la note retenue sur la route qui la marque `ai`', async () => {
+  it('« Oublier » retire la note par la route du carnet', async () => {
+    // Le pendant exact de l'annulation d'un ajout : on est passé d'une validation *avant*
+    // à une correction *après*.
     const user = userEvent.setup();
     stub();
     renderScreen();
     await askSomething();
 
-    await user.click(await screen.findByRole('button', { name: /^Retenir/ }));
+    await user.click(await screen.findByRole('button', { name: `Oublier ${proposedNote().note}` }));
 
     await waitFor(() => {
-      expect(bodyOf('/memory/adopt')).toMatchObject(proposedNote());
+      const deletions = writes().filter((call) => call.init?.method === 'DELETE');
+      expect(deletions[0]?.url).toContain('/api/assistant/memory/0');
     });
   });
 
-  it('« Pas la peine » referme la proposition sans rien écrire', async () => {
+  it('la note oubliée disparaît du fil', async () => {
     const user = userEvent.setup();
     stub();
     renderScreen();
     await askSomething();
 
-    await user.click(await screen.findByRole('button', { name: 'Pas la peine' }));
+    await user.click(await screen.findByRole('button', { name: `Oublier ${proposedNote().note}` }));
 
-    expect(screen.queryByText(proposedNote().note)).not.toBeInTheDocument();
-    expect(writes().every((call) => call.url.endsWith('/chat'))).toBe(true);
-  });
-
-  it('retirer une note la laisse visible et barrée, sans rien écrire', async () => {
-    const user = userEvent.setup();
-    stub();
-    renderScreen();
-    await askSomething();
-
-    await user.click(await screen.findByRole('button', { name: /^Retirer/ }));
-
-    expect(screen.getByRole('button', { name: /^Remettre/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Retenir/ })).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.queryByText(proposedNote().note)).not.toBeInTheDocument();
+    });
   });
 });
 

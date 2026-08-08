@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { AiBlock, Badge, Button, Card, Chip, ChipStrip, Empty, Field, Rule } from '@/components/ui';
 import { useAiStatus } from '@/features/ai/useAiStatus';
-import { assistantApi, type MemoryEntry, type ProposedMemory } from '@/features/assistant/api';
+import { assistantApi, type MemoryEntry } from '@/features/assistant/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
 import { shortDate } from '@/lib/format';
@@ -225,80 +225,55 @@ function MemoryCard({ entries, topics }: { entries: MemoryEntry[]; topics: strin
   );
 }
 
-// ── Les notes proposées (`IA-10`) ─────────────────────
+// ── Ce qui vient d'être retenu (`IA-10`) ──────────────
 
-function Proposed({ notes, onDone }: { notes: ProposedMemory[]; onDone: () => void }) {
+/**
+ * Le carnet se remplit **tout seul**, et ce bloc annonce ce qu'il vient d'y écrire.
+ *
+ * L'écran demandait « à retenir ? » et attendait un appui. Ce qui remplace cette
+ * validation est le geste inverse — la note est déjà écrite, et on la retire si elle est
+ * fausse. C'est le pendant exact de l'annulation d'un ajout, et le compromis tient parce
+ * qu'une note fausse ne casse aucun chiffre : elle change ce que l'assistant croit
+ * savoir, et cela se lit.
+ */
+function Remembered({ notes }: { notes: MemoryEntry[] }) {
   const invalidate = useInvalidateMemory();
   const { notify } = useToast();
-  const [dropped, setDropped] = useState<Set<number>>(new Set());
+  const [removed, setRemoved] = useState<Set<number>>(new Set());
 
-  const adopt = useMutation({
-    mutationFn: async (kept: ProposedMemory[]) => {
-      // Une note à la fois : le dépôt n'a pas d'écriture groupée pour ce fichier, et une
-      // conversation en propose trois au plus.
-      for (const item of kept) await assistantApi.adopt(item.topic, item.note);
-    },
-    onSuccess: () => {
+  const forget = useMutation({
+    mutationFn: (note: MemoryEntry) => assistantApi.forget(note.id, note.token),
+    onSuccess: (_result, note) => {
+      setRemoved((current) => new Set(current).add(note.id));
       invalidate();
-      notify('Noté.', 'effort');
-      onDone();
+      notify('Oublié.', 'signal');
     },
     onError: (caught: unknown) => {
-      notify(caught instanceof ApiError ? caught.message : 'Impossible de retenir.', 'recover');
+      notify(caught instanceof ApiError ? caught.message : 'Impossible de retirer.', 'recover');
     },
   });
 
-  const kept = notes.filter((_, index) => !dropped.has(index));
+  const left = notes.filter((note) => !removed.has(note.id));
+  if (left.length === 0) return null;
 
   return (
-    <AiBlock
-      tag="À retenir ?"
-      actions={
-        <>
-          <Button
-            variant="primary"
-            busy={adopt.isPending}
-            disabled={kept.length === 0}
-            onClick={() => {
-              adopt.mutate(kept);
-            }}
-          >
-            Retenir {kept.length > 1 ? `(${String(kept.length)})` : ''}
-          </Button>
-          <Button variant="quiet" onClick={onDone}>
-            Pas la peine
-          </Button>
-        </>
-      }
-    >
-      <p className={styles.note}>
-        Rien n’est écrit tant que tu n’as pas retenu. Ce qui l’est repartira avec chaque question
-        suivante.
-      </p>
-
+    <AiBlock tag="Je retiens">
       <ul className={styles.proposed}>
-        {notes.map((item, index) => (
-          <li
-            key={`${item.topic}-${item.note}`}
-            className={cx(styles.item, dropped.has(index) && styles.itemDropped)}
-          >
+        {left.map((note) => (
+          <li key={note.memory_id} className={styles.item}>
             <div className={styles.itemBody}>
-              <span className={styles.meta}>{item.topic}</span>
-              <strong>{item.note}</strong>
+              <span className={styles.meta}>{note.topic}</span>
+              <strong>{note.note}</strong>
             </div>
             <Button
               variant="quiet"
-              aria-label={`${dropped.has(index) ? 'Remettre' : 'Retirer'} ${item.note}`}
+              busy={forget.isPending}
+              aria-label={`Oublier ${note.note}`}
               onClick={() => {
-                setDropped((current) => {
-                  const next = new Set(current);
-                  if (next.has(index)) next.delete(index);
-                  else next.add(index);
-                  return next;
-                });
+                forget.mutate(note);
               }}
             >
-              {dropped.has(index) ? 'Remettre' : 'Retirer'}
+              Oublier
             </Button>
           </li>
         ))}
@@ -327,7 +302,7 @@ export function Assistant() {
    * d'activité, bilans, carnet — et il place la dernière réponse juste sous le champ.
    */
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
-  const [proposed, setProposed] = useState<ProposedMemory[]>([]);
+  const [remembered, setRemembered] = useState<MemoryEntry[]>([]);
   const [context, setContext] = useState<string[]>([]);
 
   const { data, isPending, error } = useQuery({
@@ -344,7 +319,7 @@ export function Assistant() {
     onSuccess: (result, asked) => {
       setThreadId(result.thread_id);
       setExchanges((current) => [{ question: asked, reply: result.reply }, ...current]);
-      setProposed(result.remember);
+      setRemembered(result.remember);
       setContext(result.context);
       setQuestion('');
     },
@@ -356,7 +331,7 @@ export function Assistant() {
   function send(asked: string): void {
     const cleaned = asked.trim();
     if (cleaned === '') return;
-    setProposed([]);
+    setRemembered([]);
     ask.mutate(cleaned);
   }
 
@@ -451,14 +426,7 @@ export function Assistant() {
                   </Empty>
                 )}
 
-                {proposed.length > 0 && (
-                  <Proposed
-                    notes={proposed}
-                    onDone={() => {
-                      setProposed([]);
-                    }}
-                  />
-                )}
+                {remembered.length > 0 && <Remembered notes={remembered} />}
 
                 {exchanges.map((item, index) => (
                   <div key={`${String(exchanges.length - index)}-${item.question.slice(0, 24)}`}>

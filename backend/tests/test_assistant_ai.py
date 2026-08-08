@@ -143,10 +143,22 @@ def test_an_object_where_a_list_was_asked_is_read_all_the_same() -> None:
 
 def test_no_more_than_three_notes_come_back() -> None:
     """Une conversation ne révèle pas cinq faits durables d'un coup ; au-delà, le modèle a
-    compris qu'on lui demandait de résumer."""
+    compris qu'on lui demandait de résumer.
+
+    Six notes **réellement différentes** : les faire varier par un simple numéro les
+    rendrait indistinguables au dédoublonnage sémantique, et le test mesurerait alors
+    celui-ci au lieu de la borne.
+    """
     notes = [
-        {"topic": "autre", "note": f"Un fait durable numéro {index} sur ma santé"}
-        for index in range(6)
+        {"topic": "autre", "note": phrase}
+        for phrase in (
+            "Je travaille de nuit trois semaines sur quatre",
+            "Mon genou droit tire dans les descentes",
+            "Je suis allergique aux arachides",
+            "Je dors mal les veilles de compétition",
+            "Je prends un traitement contre la tension",
+            "Je ne supporte pas les produits laitiers",
+        )
     ]
 
     _, remember, dropped = read_reply(json.loads(answer(remember=notes)), context=CONTEXT)
@@ -234,23 +246,54 @@ def test_the_notebook_is_bounded_before_it_is_sent() -> None:
 # ── Bout en bout, contre le double ASGI ───────────────
 
 
-def test_a_conversation_writes_absolutely_nothing(
+def test_a_conversation_writes_what_it_remembers(
     ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter, dav: FakeWebDav
 ) -> None:
-    """Le cœur de `IA-10`, et la moitié de la DoD du lot.
+    """`IA-10` renversé, et c'est la décision du lot.
 
-    Ce test échouerait au premier raccourci « tant qu'on y est, notons-le » — le genre de
-    raccourci qui paraît inoffensif un vendredi soir.
+    « Rien n'est retenu sans validation » disait l'exigence, et un appui séparait la
+    proposition du carnet. Ce qui remplace la validation : la note est marquée `ia`,
+    annoncée dans le fil au moment où elle est prise, et se corrige ou se retire depuis le
+    carnet — on est passé d'une validation *avant* à une correction *après*.
+
+    Le compromis tient ici et **ne tiendrait pas pour une mesure** : une note fausse ne
+    casse aucun chiffre, elle change ce que l'assistant croit savoir, et cela se lit.
     """
     openrouter.say(
         answer(remember=[{"topic": "blessure", "note": "Genou droit douloureux depuis dix jours"}])
     )
 
-    response = ask(ai_app_client, auth)
+    body = ask(ai_app_client, auth).json()
 
-    assert response.status_code == 200, response.text
-    assert len(response.json()["remember"]) == 1
-    assert MEMORY_FILE not in dav.files
+    assert len(body["remember"]) == 1
+    assert body["remember"][0]["source"] == "ai"
+    # Avec son identifiant et son jeton : l'écran offre de la retirer, ce qui est le
+    # pendant exact de l'annulation d'un ajout.
+    assert body["remember"][0]["token"]
+    assert "Genou droit douloureux" in dav.content_of(MEMORY_FILE)
+
+
+def test_a_conversation_writes_no_data_row_of_its_own_accord(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter, dav: FakeWebDav
+) -> None:
+    """Ce qui reste vrai, et qu'il faut garder vrai.
+
+    Le carnet se remplit tout seul ; **les mesures, non**. Répondre à une question ne doit
+    toucher ni une pesée, ni un repas, ni une séance — cela demande une action nommée, et
+    ce test échouerait au premier raccourci « tant qu'on y est, notons-le ».
+    """
+    openrouter.say(
+        answer(
+            reply="Tu tournes à 1,8 séance par semaine.",
+            remember=[{"topic": "sommeil", "note": "Je dors mal les soirs de séance tardive"}],
+        )
+    )
+
+    ask(ai_app_client, auth, question="Où j'en suis cette semaine ?")
+
+    assert "Metric/body/weight.csv" not in dav.files
+    assert "Metric/nutrition/meals.csv" not in dav.files
+    assert "Metric/activity/workouts.csv" not in dav.files
 
 
 def test_the_reply_publishes_the_context_it_sent(
@@ -409,21 +452,57 @@ def test_no_image_ever_accompanies_a_question(
     assert openrouter.calls[0].with_image is False
 
 
-def test_adopting_a_proposed_note_writes_it_marked_ai(
+def test_the_same_fact_said_twice_is_only_written_once(
     ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter, dav: FakeWebDav
 ) -> None:
-    """Le second temps de `IA-10` : ce qui a été relu s'enregistre, et pas avant."""
+    """Le dédoublonnage, et il devient nécessaire parce que rien ne valide plus.
+
+    Tant qu'un appui séparait la proposition du carnet, une redite se voyait et se refusait
+    d'un geste. Maintenant elle s'écrit. Et la comparaison doit être **sémantique** : « je
+    dors mal » et « je dors mal les soirs de séance tardive » ne sont pas la même chaîne,
+    mais la seconde n'apprend rien que la première ne disait.
+
+    Sans cela, dire trois fois qu'on dort mal donne trois lignes — et le carnet part
+    entier dans chaque question.
+
+    **Le sens de la comparaison est une décision, pas un détail.** Est écartée la note qui
+    n'apprend *rien de plus* qu'une note existante. L'inverse — une note qui précise une
+    ancienne — est **gardée** : perdre « genou droit, face interne » parce que « genou
+    sensible » était déjà là coûterait plus que la redondance. C'est à la correction, dans
+    le carnet, de fusionner les deux si on le souhaite.
+    """
     openrouter.say(
         answer(remember=[{"topic": "sommeil", "note": "Je dors mal les soirs de séance tardive"}])
     )
-    proposed = ask(ai_app_client, auth).json()["remember"][0]
+    ask(ai_app_client, auth)
 
-    response = ai_app_client.post(
-        f"{ASSISTANT}/memory/adopt",
-        json={"topic": proposed["topic"], "note": proposed["note"]},
-        headers=auth,
+    openrouter.say(
+        answer(remember=[{"topic": "sommeil", "note": "Je dors mal les soirs de séance"}])
     )
+    body = ask(ai_app_client, auth).json()
 
-    assert response.status_code == 201
-    assert response.json()["source"] == "ai"
-    assert dav.content_of(MEMORY_FILE).count("\n") == 2  # en-tête + une note
+    assert body["remember"] == [], "une note qui n'apprend rien de plus n'est pas réécrite"
+    assert dav.content_of(MEMORY_FILE).count("Je dors mal") == 1
+
+
+def test_a_note_that_adds_detail_is_kept(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter, dav: FakeWebDav
+) -> None:
+    """L'autre sens, et il compte autant.
+
+    Perdre « genou droit, face interne » parce que « genou sensible » était déjà noté
+    coûterait plus que la redondance : le carnet sert exactement à porter ce genre de
+    précision.
+    """
+    openrouter.say(answer(remember=[{"topic": "blessure", "note": "Mon genou est sensible"}]))
+    ask(ai_app_client, auth)
+
+    openrouter.say(
+        answer(
+            remember=[{"topic": "blessure", "note": "Mon genou droit sensible sur la face interne"}]
+        )
+    )
+    body = ask(ai_app_client, auth).json()
+
+    assert len(body["remember"]) == 1
+    assert "face interne" in dav.content_of(MEMORY_FILE)

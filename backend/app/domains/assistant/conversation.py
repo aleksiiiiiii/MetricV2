@@ -240,6 +240,13 @@ def read_reply(
     conversation remplirait le carnet de la même phrase reformulée dix fois, et le carnet
     part entier dans chaque question.
 
+    **La comparaison est sémantique et non littérale**, et elle le devient parce que rien
+    ne valide plus avant l'écriture. Tant qu'un appui séparait la proposition du carnet,
+    une redite se voyait et se refusait d'un geste ; maintenant elle s'écrit. « Je dors
+    mal » et « je dors mal les soirs de séance tardive » ne sont pas la même chaîne, mais
+    la seconde n'apprend rien que la première ne disait — c'est le test de contenance de
+    `_echoes`, exactement celui qui écarte déjà les redites du condensé.
+
     Une réponse vide n'est pas rattrapée : compléter ce qu'un modèle n'a pas dit
     reviendrait à répondre à sa place. Le service décide plus haut ce qu'il en fait.
     """
@@ -253,7 +260,7 @@ def read_reply(
     if not isinstance(raw, list):
         return reply, [], []
 
-    seen = [note.lower() for note in (known or [])]
+    seen = list(known or [])
     kept: list[ProposedMemory] = []
     dropped: list[str] = []
 
@@ -274,12 +281,12 @@ def read_reply(
             dropped.append(f"« {note} » : les données le disaient déjà.")
             continue
 
-        if note.lower() in seen:
+        if _echoes(note, seen):
             dropped.append(f"« {note} » : déjà noté.")
             continue
 
         kept.append(ProposedMemory(topic=normalise_topic(_text(entry.get("topic"))), note=note))
-        seen.append(note.lower())
+        seen.append(note)
 
     return reply, kept, dropped
 

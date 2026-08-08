@@ -158,8 +158,14 @@ class ChatReply(BaseModel):
     thread_id: str
     title: str = ""
     reply: str
-    #: Ce qui mérite d'être retenu, en attente de validation.
-    remember: list[ProposedMemory] = Field(default_factory=list)
+    #: Ce qui vient d'être **retenu**. Écrit, pas proposé (`IA-10`).
+    #:
+    #: Les notes arrivent avec leur `id` et leur `token` : l'écran annonce « je retiens :
+    #: … » et offre de les retirer, ce qui est le pendant exact de l'annulation d'un
+    #: ajout. On est passé d'une validation *avant* à une correction *après*, et c'est le
+    #: bon compromis pour une mémoire — une note fausse ne casse aucun chiffre, elle
+    #: change ce que l'assistant croit savoir, et cela se lit.
+    remember: list[MemoryEntry] = Field(default_factory=list)
     #: Ce que l'assistant a fait, ou demande à faire. Vide le plus souvent.
     actions: list[ActionReport] = Field(default_factory=list)
     #: Le condensé factuel réellement envoyé au modèle, ligne par ligne (`IA-09`).

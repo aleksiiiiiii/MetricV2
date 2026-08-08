@@ -62,21 +62,25 @@ def test_a_note_is_written_with_the_annex_columns(
     assert line.endswith(",manual")
 
 
-def test_a_note_the_assistant_proposed_is_marked_ai(
+def test_a_note_written_by_the_assistant_reads_back_as_such(
     store_client: TestClient, auth: dict[str, str], dav: FakeWebDav
 ) -> None:
-    """`IMP-05` appliqué au carnet : l'origine d'une note reste lisible jusque dans le
-    fichier. Adopter une suggestion et l'écrire soi-même sont le même geste côté serveur ;
-    seule la colonne les distingue."""
-    response = store_client.post(
-        f"{ASSISTANT}/memory/adopt",
-        json={"topic": "sommeil", "note": "Je dors mal les soirs de séance tardive"},
-        headers=auth,
+    """`IMP-05` appliqué au carnet : l'origine d'une note reste lisible.
+
+    Le carnet se remplit tout seul pendant la conversation désormais, et la colonne
+    `source` est ce qui permet, six mois plus tard, de distinguer ce qu'on a noté de ce
+    que l'assistant a retenu à notre place. Elle se lit **sans clé API** — c'est tout
+    l'objet de ce fichier.
+    """
+    dav.seed(
+        MEMORY_FILE,
+        f"{MEMORY_HEADER}\nm1,{TODAY.isoformat()},sommeil,Je dors mal les soirs de séance,ai\n",
     )
 
-    assert response.status_code == 201
-    assert response.json()["source"] == "ai"
-    assert dav.content_of(MEMORY_FILE).splitlines()[1].endswith(",ai")
+    notes = view(store_client, auth)["memories"]
+
+    assert notes[0]["source"] == "ai"
+    assert notes[0]["note"] == "Je dors mal les soirs de séance"
 
 
 def test_the_notebook_comes_back_newest_first(
@@ -185,17 +189,21 @@ def test_forgetting_a_note_removes_only_it(
 # ── 4. Préservation de la provenance ──────────────────
 
 
-def test_correcting_a_proposed_note_does_not_make_it_manual(
-    store_client: TestClient, auth: dict[str, str]
+def test_correcting_a_note_from_the_assistant_does_not_make_it_manual(
+    store_client: TestClient, auth: dict[str, str], dav: FakeWebDav
 ) -> None:
-    """Préciser « genou droit » ne transforme pas une note proposée en note écrite de
+    """Préciser « genou droit » ne transforme pas une note de l'assistant en note écrite de
     toutes pièces. Même règle qu'une séance déplacée au L13 et qu'une macro retouchée au
-    L12."""
-    entry = store_client.post(
-        f"{ASSISTANT}/memory/adopt",
-        json={"topic": "blessure", "note": "Genou sensible"},
-        headers=auth,
-    ).json()
+    L12.
+
+    Elle compte davantage depuis que le carnet se remplit tout seul : corriger est
+    devenu le geste **principal** sur une note, et non plus l'exception.
+    """
+    dav.seed(
+        MEMORY_FILE,
+        f"{MEMORY_HEADER}\nm1,{TODAY.isoformat()},blessure,Genou sensible,ai\n",
+    )
+    entry = view(store_client, auth)["memories"][0]
 
     corrected = store_client.patch(
         f"{ASSISTANT}/memory/{entry['id']}",

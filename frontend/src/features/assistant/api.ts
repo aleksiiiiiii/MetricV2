@@ -37,18 +37,13 @@ export interface ThreadDetail {
   messages: ThreadMessage[];
 }
 
-export interface ProposedMemory {
-  topic: string;
-  note: string;
-}
-
 export interface ChatReply {
   /** Le fil, ouvert ou poursuivi. À redonner à la question suivante. */
   thread_id: string;
   title: string;
   reply: string;
-  /** Ce qui mérite d'être retenu, **en attente de validation**. */
-  remember: ProposedMemory[];
+  /** Ce qui vient d'être **retenu** — écrit, avec de quoi le retirer (`IA-10`). */
+  remember: MemoryEntry[];
   /** Le condensé factuel réellement envoyé au modèle, ligne par ligne (`IA-09`). */
   context: string[];
 }
@@ -98,13 +93,6 @@ export const assistantApi = {
   /** Écrit une note tapée à la main, marquée `manual`. */
   remember: (topic: string, note: string) =>
     request<MemoryEntry>('/api/assistant/memory', { method: 'POST', body: { topic, note } }),
-
-  /** Écrit une note **proposée** puis validée, marquée `ai` (`IA-10`). */
-  adopt: (topic: string, note: string) =>
-    request<MemoryEntry>('/api/assistant/memory/adopt', {
-      method: 'POST',
-      body: { topic, note },
-    }),
 
   update: (id: number, token: string, topic: string, note: string) =>
     request<MemoryEntry>(`/api/assistant/memory/${String(id)}`, {

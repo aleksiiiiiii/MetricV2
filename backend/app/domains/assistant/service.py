@@ -1,8 +1,24 @@
-"""Assistant conversationnel et mémoire de santé (`IA-09` → `IA-12`).
+"""Assistant conversationnel, mémoire de santé et actions (`IA-09` → `IA-16`).
 
-Deux moitiés, et leur séparation est la garantie du lot : **`ask` ne sait pas écrire**, et
-le carnet ne sait pas interroger un modèle. Entre les deux, un écran et un appui — c'est là
-que vit `IA-10`, comme `NUT-04`, `PLAN-04` et `GOAL-03` avant lui.
+## `ask` sait écrire, désormais
+
+Ce module s'ouvrait sur l'inverse : « **`ask` ne sait pas écrire**, et c'est la garantie du
+lot ». La garantie a été levée sciemment, et trois autres la remplacent — elles ne sont pas
+ici mais dans [`actions.py`](actions.py), qui est la seule autorité sur ce qui est
+faisable :
+
+* l'assistant ne peut rien que l'API ne permettrait, parce qu'il emprunte les schémas et
+  les services des domaines, sans chemin d'écriture parallèle ;
+* un ajout s'annule d'un appui, un changement ne s'écrit pas sans appui, et **le niveau
+  vient de la table, jamais du modèle** ;
+* aucune action ne fait échouer l'échange : un nom inventé rend un refus lisible, pas un
+  `500` qui emporterait la réponse et la question avec lui.
+
+Le carnet, lui, se remplit **tout seul** (`IA-10`). L'appui qui séparait la proposition de
+l'écriture a disparu ; ce qui le remplace est une correction *après* plutôt qu'une
+validation *avant* — la note est marquée `ia`, annoncée dans le fil, et se retire d'un
+geste. Le compromis tient pour une mémoire et ne tiendrait pas pour une mesure : une note
+fausse ne casse aucun chiffre, elle change ce que l'assistant croit savoir, et cela se lit.
 
 ## Le serveur tient les fils
 
@@ -529,6 +545,20 @@ class AssistantService:
                 "chiffres, eux, restent lisibles sur les autres écrans."
             )
 
+        # Le carnet se remplit tout seul (`IA-10`).
+        #
+        # Rien ne valide plus avant l'écriture. Ce qui remplace la validation : la note
+        # est marquée `ia`, annoncée dans le fil au moment où elle est prise, et se
+        # corrige ou se retire depuis le carnet — qui existe déjà. Une note fausse ne
+        # casse aucun chiffre : elle change ce que l'assistant croit savoir, et cela se
+        # lit. C'est ce qui rend le compromis tenable ici, et intenable pour une mesure.
+        remembered = [
+            await self.remember(
+                MemoryPayload(topic=note.topic, note=note.note), source="ai", today=current
+            )
+            for note in proposed
+        ]
+
         if opening:
             title = conversation.read_title(payload, fallback=title)
             thread_id = await self._open_thread(title, moment=moment)
@@ -544,7 +574,7 @@ class AssistantService:
             thread_id=thread_id,
             title=title,
             reply=reply,
-            remember=proposed,
+            remember=remembered,
             actions=reports,
             context=facts,
         )

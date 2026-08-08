@@ -78,27 +78,12 @@ async def read_memory(store: StoreDep) -> AssistantView:
 async def remember(payload: MemoryPayload, store: StoreDep) -> MemoryEntry:
     """Écrit une note, marquée `manual` (`IA-11`).
 
-    C'est aussi l'endpoint qu'emprunte une note **proposée** par l'assistant une fois
-    validée : côté serveur, adopter une suggestion et l'écrire soi-même sont le même geste.
-    Seule la colonne `source` les distingue, et c'est le client qui la demande.
+    C'était aussi l'endpoint qu'empruntait une note **proposée** par l'assistant une fois
+    validée. Plus rien ne propose : le carnet se remplit tout seul pendant la conversation,
+    et `/memory/adopt` a été retiré plutôt que laissé à rouiller. Ce qui reste ici est la
+    saisie à la main, qui n'a jamais eu besoin d'une clé API (`IA-11`).
     """
     return await AssistantService(store).remember(payload)
-
-
-@router.post(
-    "/memory/adopt",
-    response_model=MemoryEntry,
-    status_code=status.HTTP_201_CREATED,
-    summary="Retenir une note proposée",
-)
-async def adopt(payload: MemoryPayload, store: StoreDep) -> MemoryEntry:
-    """Écrit une note proposée par l'assistant, marquée `ai` (`IA-10`).
-
-    Aucune dépendance à l'IA non plus : une fois la suggestion relue et éventuellement
-    retouchée, il ne reste qu'une saisie. C'est ce qui permet de retenir une note affichée
-    il y a dix minutes, ou dont on a réécrit la moitié.
-    """
-    return await AssistantService(store).remember(payload, source="ai")
 
 
 @router.patch("/memory/{row_id}", response_model=MemoryEntry, summary="Corriger une note")
