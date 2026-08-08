@@ -48,6 +48,7 @@ const REPLY: ChatReply = {
   thread_id: 'fil-1',
   title: 'Où j’en suis cette semaine',
   reply: 'Tu tournes à 1,8 séance par semaine, contre 2,4 le mois dernier.',
+  actions: [],
   remember: [
     {
       id: 0,
@@ -90,6 +91,11 @@ function stub(options: { memory?: AssistantView; reply?: ChatReply; aiEnabled?: 
     }
     if (url.includes('/api/assistant/chat')) {
       return Promise.resolve(json(200, options.reply ?? REPLY));
+    }
+    if (url.includes('/api/assistant/actions/confirm')) {
+      return Promise.resolve(
+        json(200, { ...PENDING, status: 'done', summary: 'Pesée supprimée.' }),
+      );
     }
     return Promise.resolve(json(200, options.memory ?? MEMORY));
   });
@@ -285,6 +291,106 @@ describe('mémoire automatique', () => {
   });
 });
 
+// ── Ce que l'assistant fait (`IA-15`) ─────────────────
+
+const ADDED = {
+  name: 'weight.add',
+  level: 'add' as const,
+  status: 'done' as const,
+  summary: 'Pesée de 82,4 kg notée le 08/08/2026.',
+  args: { date: '2026-08-08', weight_kg: 82.4 },
+  undo: { domain: 'body/weight', row_id: 0, token: 'jeton-pesee' },
+};
+
+const PENDING = {
+  name: 'weight.delete',
+  level: 'change' as const,
+  status: 'pending' as const,
+  summary: 'Supprimer une pesée',
+  args: { row_id: 0, token: 'jeton-pesee' },
+  undo: null,
+};
+
+describe('actions', () => {
+  it('annonce ce qui a été écrit, en français', async () => {
+    stub({ reply: { ...REPLY, actions: [ADDED] } });
+    renderScreen();
+    await askSomething();
+
+    expect(await screen.findByText(ADDED.summary)).toBeInTheDocument();
+  });
+
+  it('« Annuler » appelle la route du domaine, pas une route d’assistant', async () => {
+    // L'annulation est le geste que l'utilisateur ferait lui-même depuis l'écran Corps.
+    // Aucune machinerie d'annulation n'a été inventée, et ce test le verrouille.
+    const user = userEvent.setup();
+    stub({ reply: { ...REPLY, actions: [ADDED] } });
+    renderScreen();
+    await askSomething();
+
+    await user.click(await screen.findByRole('button', { name: 'Annuler' }));
+
+    await waitFor(() => {
+      const deletions = writes().filter((call) => call.init?.method === 'DELETE');
+      expect(deletions[0]?.url).toContain('/api/body/weight/0');
+    });
+  });
+
+  it('une action en attente n’écrit rien tant qu’on n’a pas confirmé', async () => {
+    stub({ reply: { ...REPLY, actions: [PENDING] } });
+    renderScreen();
+    await askSomething();
+
+    expect(await screen.findByRole('button', { name: 'Confirmer' })).toBeInTheDocument();
+    // La seule écriture est la question elle-même.
+    expect(writes().every((call) => call.url.endsWith('/chat'))).toBe(true);
+  });
+
+  it('« Confirmer » repasse par la revalidation du serveur', async () => {
+    const user = userEvent.setup();
+    stub({ reply: { ...REPLY, actions: [PENDING] } });
+    renderScreen();
+    await askSomething();
+
+    await user.click(await screen.findByRole('button', { name: 'Confirmer' }));
+
+    await waitFor(() => {
+      expect(bodyOf('/actions/confirm')).toMatchObject({
+        name: 'weight.delete',
+        args: PENDING.args,
+      });
+    });
+  });
+
+  it('« Non » écarte l’action sans rien appeler', async () => {
+    const user = userEvent.setup();
+    stub({ reply: { ...REPLY, actions: [PENDING] } });
+    renderScreen();
+    await askSomething();
+
+    await user.click(await screen.findByRole('button', { name: 'Non' }));
+
+    expect(screen.queryByText(PENDING.summary)).not.toBeInTheDocument();
+    expect(writes().every((call) => call.url.endsWith('/chat'))).toBe(true);
+  });
+
+  it('un refus s’affiche et ne propose aucun geste', async () => {
+    const refused = {
+      ...ADDED,
+      status: 'refused' as const,
+      summary: 'Il me manque de quoi le faire : date.',
+      undo: null,
+    };
+    stub({ reply: { ...REPLY, actions: [refused] } });
+    renderScreen();
+    await askSomething();
+
+    expect(await screen.findByText(refused.summary)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirmer' })).not.toBeInTheDocument();
+  });
+});
+
 // ── Le carnet (`IA-11`) ───────────────────────────────
 
 describe('carnet', () => {
@@ -294,7 +400,9 @@ describe('carnet', () => {
 
     const item = itemOf(await screen.findByText(storedNote()));
 
-    expect(within(item).getByText('proposée')).toBeInTheDocument();
+    // « retenue seule » et non « proposée » : plus rien ne propose, le carnet se remplit
+    // pendant la conversation et se corrige après.
+    expect(within(item).getByText('retenue seule')).toBeInTheDocument();
     expect(within(item).getByText('blessure')).toBeInTheDocument();
   });
 

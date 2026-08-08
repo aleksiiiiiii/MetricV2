@@ -94,8 +94,10 @@ class Level(StrEnum):
 class Undo:
     """De quoi défaire un ajout : c'est la suppression que l'utilisateur ferait lui-même.
 
-    `domain` nomme la ressource côté API — l'écran sait en déduire la route, qu'il appelle
-    déjà pour ses propres suppressions. Rien de neuf n'a été inventé.
+    `domain` est **le chemin exact de la ressource**, sans le préfixe `/api/` ni la ligne :
+    l'annulation est donc un `DELETE /api/{domain}/{row_id}` avec la garde `If-Match`, et
+    l'écran n'a aucune table de correspondance à tenir. Un nom qui ne serait pas une route
+    réelle se verrait au premier essai plutôt qu'à la lecture d'un `switch`.
     """
 
     domain: str
@@ -217,7 +219,7 @@ async def _add_meal(store: FileStore, payload: MealPayload) -> Outcome:
     )
     return Outcome(
         summary=f"Repas « {meal.meal_type} » ajouté au journal du jour.",
-        undo=Undo("nutrition/meals", meal.id, meal.token),
+        undo=Undo("nutrition", meal.id, meal.token),
     )
 
 
@@ -265,7 +267,7 @@ async def _add_plan(store: FileStore, payload: PlanPayload) -> Outcome:
     session = await PlanningService(store).create(payload, source=SOURCE)
     return Outcome(
         summary=f"« {session.title} » prévu le {session.date:%d/%m/%Y} à {session.time}.",
-        undo=Undo("planning", session.id, session.token),
+        undo=Undo("planning/sessions", session.id, session.token),
     )
 
 

@@ -78,6 +78,9 @@ export const keys = {
   },
   assistant: {
     all: () => ['assistant'] as const,
+    /** Les fils de discussion (`IA-13`). Ils vivent sur le serveur depuis le lot L18. */
+    threads: () => ['assistant', 'threads'] as const,
+    thread: (id: string) => ['assistant', 'threads', id] as const,
     /** Le carnet de mémoire (`IA-11`). Le fil de conversation, lui, n'est jamais mis en
      *  cache : il n'existe pas côté serveur. */
     memory: () => ['assistant', 'memory'] as const,

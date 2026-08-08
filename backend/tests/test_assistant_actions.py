@@ -410,3 +410,48 @@ def test_a_slice_carries_the_token_a_deletion_needs(
     second = openrouter.calls[1].prompt
     assert "token=" in second
     assert "82,4 kg" in second or "82.4 kg" in second
+
+
+# ── 6. L'annulation vise de vraies routes ─────────────
+
+
+def test_every_undo_domain_is_a_real_delete_route(ai_app_client: TestClient) -> None:
+    """Le nom d'un domaine d'annulation **est** le chemin de sa ressource.
+
+    L'écran ne tient aucune table de correspondance : il appelle
+    `DELETE /api/{domain}/{row_id}`. Une faute de frappe dans le catalogue ne se verrait
+    donc qu'au moment où l'utilisateur appuie sur « annuler », c'est-à-dire au pire
+    moment — juste après que l'assistant a écrit quelque chose qu'il ne voulait pas.
+
+    Ce test lit les routes réellement publiées et refuse un nom qui n'en désigne aucune.
+    """
+    from app.domains.assistant import actions as catalogue
+
+    published = {
+        path
+        for path, operations in ai_app_client.app.openapi()["paths"].items()  # type: ignore[attr-defined]
+        if "delete" in operations
+    }
+
+    domains = {
+        "body/weight",
+        "hydration",
+        "nutrition",
+        "activity/runs",
+        "activity/workouts",
+        "activity/exercises",
+        "planning/sessions",
+    }
+    for domain in domains:
+        assert f"/api/{domain}/{{row_id}}" in published, domain
+
+    # Et le catalogue n'en emploie pas d'autres : sans cette moitié, ajouter demain une
+    # action avec un domaine inventé passerait au travers.
+    source = (catalogue.__file__ or "").replace(".pyc", ".py")
+    with open(source, encoding="utf-8") as handle:
+        used = {
+            line.split('Undo("', 1)[1].split('"', 1)[0]
+            for line in handle
+            if 'Undo("' in line and "class" not in line
+        }
+    assert used <= domains, f"domaines inconnus : {used - domains}"

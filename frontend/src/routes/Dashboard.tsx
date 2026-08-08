@@ -340,12 +340,25 @@ export function Dashboard() {
 
       <Rule>Aujourd’hui</Rule>
 
+      {/* L'état vide **porte** le geste au lieu de le décrire.
+          « Une pesée » et « un verre d'eau » étaient des liens en ligne dans une phrase :
+          19 px de haut, mesurés — soit deux cibles sous le plancher tactile sur l'écran
+          qu'on ouvre le plus. Et il fallait lire la phrase pour comprendre où aller. */}
       {nothingToday && (
-        <Empty title="Aucun relevé aujourd’hui">
+        <Empty
+          title="Aucun relevé aujourd’hui"
+          action={
+            <div className="row">
+              <Link className={styles.emptyAction} to="/corps">
+                Noter une pesée
+              </Link>
+              <Link className={styles.emptyAction} to="/routine">
+                Boire un verre
+              </Link>
+            </div>
+          }
+        >
           Deux chiffres suffisent pour que la journée compte.
-          <br />
-          <Link to="/corps">Une pesée</Link>, <Link to="/routine">un verre d’eau</Link>, et la série
-          tient.
         </Empty>
       )}
 

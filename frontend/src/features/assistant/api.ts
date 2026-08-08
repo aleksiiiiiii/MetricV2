@@ -37,6 +37,25 @@ export interface ThreadDetail {
   messages: ThreadMessage[];
 }
 
+export interface UndoRef {
+  /** Le **chemin** de la ressource, sans `/api/` ni la ligne : « body/weight ». */
+  domain: string;
+  row_id: number;
+  token: string;
+}
+
+export interface ActionReport {
+  name: string;
+  level: 'add' | 'change';
+  /** `done` — écrit, annulable. `pending` — un appui décidera. `refused` — rien n'a eu lieu. */
+  status: 'done' | 'pending' | 'refused';
+  /** Une phrase française, destinée à être lue telle quelle. */
+  summary: string;
+  /** Les arguments relus, à renvoyer pour confirmer une action en attente. */
+  args: Record<string, unknown>;
+  undo: UndoRef | null;
+}
+
 export interface ChatReply {
   /** Le fil, ouvert ou poursuivi. À redonner à la question suivante. */
   thread_id: string;
@@ -44,6 +63,8 @@ export interface ChatReply {
   reply: string;
   /** Ce qui vient d'être **retenu** — écrit, avec de quoi le retirer (`IA-10`). */
   remember: MemoryEntry[];
+  /** Ce que l'assistant a fait, ou demande à faire. Vide le plus souvent. */
+  actions: ActionReport[];
   /** Le condensé factuel réellement envoyé au modèle, ligne par ligne (`IA-09`). */
   context: string[];
 }
@@ -89,6 +110,26 @@ export const assistantApi = {
     request<undefined>(`/api/assistant/threads/${threadId}`, { method: 'DELETE' }),
 
   forgetAllThreads: () => request<undefined>('/api/assistant/threads', { method: 'DELETE' }),
+
+  /** Exécute une action laissée en attente. Elle est revalidée côté serveur. */
+  confirmAction: (name: string, args: Record<string, unknown>) =>
+    request<ActionReport>('/api/assistant/actions/confirm', {
+      method: 'POST',
+      body: { name, args },
+    }),
+
+  /**
+   * Défait un ajout, par la route du domaine.
+   *
+   * Aucune table de correspondance ici : `domain` **est** le chemin de la ressource, et un
+   * test du serveur vérifie qu'il désigne une route de suppression réelle. C'est la même
+   * requête que celle qu'un écran envoie quand on supprime une ligne à la main.
+   */
+  undo: (ref: UndoRef) =>
+    request<undefined>(`/api/${ref.domain}/${String(ref.row_id)}`, {
+      method: 'DELETE',
+      headers: ifMatch(ref.token),
+    }),
 
   /** Écrit une note tapée à la main, marquée `manual`. */
   remember: (topic: string, note: string) =>

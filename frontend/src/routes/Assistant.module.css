@@ -226,3 +226,103 @@
 .itemDropped .itemBody strong {
   text-decoration: line-through;
 }
+
+/* ── Ce que l'assistant a fait (`IA-15`) ──────────── */
+
+/* Une action se lit **avec** la réponse qui l'explique : elle est en retrait sous elle,
+   comme une conséquence, et non alignée avec les messages comme un troisième
+   interlocuteur. */
+.action {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+  margin-left: var(--s5);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.actionBody {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* La pastille reprend le ton, pour que l'état se lise sans lire — fait, en attente,
+   refusé — sur une ligne qu'on parcourt vite. */
+.actionMark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.actionText {
+  font-size: var(--t-sub);
+  color: var(--ink);
+  min-width: 0;
+  text-wrap: pretty;
+}
+
+.actionChoice {
+  display: flex;
+  gap: var(--s2);
+  flex: none;
+}
+
+.action_effort {
+  border-left-color: var(--effort);
+}
+.action_effort .actionMark {
+  background: var(--effort);
+}
+
+/* En attente, le trait est discontinu : c'est le vocabulaire de la charte pour ce qui
+   n'est pas acquis, celui du `Stepper` proposé et de l'état vide. */
+.action_load {
+  border-left-color: var(--load);
+  border-style: dashed;
+  border-left-style: solid;
+}
+.action_load .actionMark {
+  background: var(--load);
+}
+
+.action_recover {
+  border-left-color: var(--recover);
+}
+.action_recover .actionMark {
+  background: var(--recover);
+}
+
+/* ── Les fils ─────────────────────────────────────── */
+
+/* Le titre du fil à gauche, l'accès à la liste à droite : sur un téléphone les deux
+   passent l'un sous l'autre plutôt que de se serrer. */
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+
+/* Une ligne de la feuille et son bouton de suppression. Supprimer une discussion n'est
+   pas la choisir : les deux cibles sont distinctes, et la destructive est la plus
+   petite. */
+.threadRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.threadRow > *:first-child {
+  flex: 1;
+  min-width: 0;
+}

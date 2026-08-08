@@ -1,9 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import { AiBlock, Badge, Button, Card, Chip, ChipStrip, Empty, Field, Rule } from '@/components/ui';
+import {
+  AiBlock,
+  Badge,
+  Button,
+  Card,
+  Chip,
+  ChipStrip,
+  Empty,
+  Field,
+  Rule,
+  Sheet,
+  SheetGroup,
+  SheetRow,
+} from '@/components/ui';
 import { useAiStatus } from '@/features/ai/useAiStatus';
-import { assistantApi, type MemoryEntry } from '@/features/assistant/api';
+import {
+  assistantApi,
+  type ActionReport,
+  type MemoryEntry,
+  type UndoRef,
+} from '@/features/assistant/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
 import { shortDate } from '@/lib/format';
@@ -22,15 +40,17 @@ import styles from './Assistant.module.css';
  * des services qui en détiennent chacun la règle. L'écran le reçoit, l'affiche, et ne le
  * réécrit pas.
  *
- * Il ne décide pas non plus de ce qui mérite d'être retenu. Le modèle propose, l'écran
- * montre, un appui écrit — c'est `NUT-04`, `PLAN-04` et `GOAL-03` appliqués à du texte.
+ * Il ne décide pas non plus de ce qui mérite d'être retenu, ni de ce qui s'écrit dans les
+ * données. Le carnet se remplit **côté serveur** pendant la conversation, et les actions
+ * sont validées et exécutées là-bas : cet écran reçoit un compte rendu et offre le geste
+ * qui va avec — annuler un ajout, confirmer un changement, oublier une note.
  *
- * ## Le fil ne survit pas au rechargement, et c'est voulu
+ * ## Le fil vit sur le serveur
  *
- * Le serveur ne stocke aucune conversation : c'est cet écran qui lui rend l'historique à
- * chaque question. Un état qui survivrait au rechargement serait un état écrit quelque
- * part, et il n'y a rien à écrire dans un échange dont trois lignes de carnet retiennent
- * l'essentiel.
+ * Il n'y vivait pas : cet écran rendait l'historique à chaque question et le perdait au
+ * rechargement. Depuis que la conversation peut **écrire**, le passé ne peut plus venir de
+ * l'appelant — un client fabriquerait sinon le passé qui justifie l'action qu'il veut voir
+ * prendre. L'écran ne rend donc plus qu'un identifiant de fil, et le serveur lit le reste.
  */
 
 /** Questions offertes en un appui, pour que l'écran vide ne soit pas un champ nu. */
@@ -44,6 +64,8 @@ const EXAMPLES = [
 interface Exchange {
   question: string;
   reply: string;
+  /** Ce que l'assistant a fait ou demande à faire **à ce tour-là**. */
+  actions: ActionReport[];
 }
 
 function useInvalidateMemory() {
@@ -101,8 +123,8 @@ function MemoryCard({ entries, topics }: { entries: MemoryEntry[]; topics: strin
 
       {entries.length === 0 && (
         <Empty title="Carnet vide">
-          Note ce qui explique tes chiffres sans y figurer. L’assistant proposera aussi d’en retenir
-          au fil des questions.
+          Note ce qui explique tes chiffres sans y figurer. L’assistant en retient aussi tout seul
+          au fil des questions — tu peux corriger ou oublier ce qu’il garde.
         </Empty>
       )}
 
@@ -113,7 +135,7 @@ function MemoryCard({ entries, topics }: { entries: MemoryEntry[]; topics: strin
               <div className={styles.itemBody}>
                 <div className={styles.meta}>
                   <span>{entry.topic}</span>
-                  {entry.source === 'ai' && <Badge tone="signal">proposée</Badge>}
+                  {entry.source === 'ai' && <Badge tone="signal">retenue seule</Badge>}
                   {entry.created !== null && <span>{shortDate(`${entry.created}T12:00:00`)}</span>}
                 </div>
                 <span>{entry.note}</span>
@@ -225,6 +247,200 @@ function MemoryCard({ entries, topics }: { entries: MemoryEntry[]; topics: strin
   );
 }
 
+// ── Les fils (`IA-13`) ────────────────────────────────
+
+/**
+ * La liste des discussions, dans une feuille.
+ *
+ * Une feuille et non une page : on y entre pour choisir une ligne et en ressortir, ce qui
+ * est exactement ce qu'un `Sheet` fait — il monte sous le pouce, il n'efface pas l'écran
+ * qu'on regardait, et il se referme d'un geste vers le bas.
+ */
+function ThreadSheet({
+  open,
+  onClose,
+  current,
+  onOpenThread,
+}: {
+  open: boolean;
+  onClose: () => void;
+  current: string | null;
+  onOpenThread: (id: string | null) => void;
+}) {
+  const client = useQueryClient();
+  const { notify } = useToast();
+
+  const { data } = useQuery({
+    queryKey: keys.assistant.threads(),
+    queryFn: assistantApi.threads,
+    enabled: open,
+  });
+
+  const forget = useMutation({
+    mutationFn: (id: string) => assistantApi.forgetThread(id),
+    onSuccess: (_result, id) => {
+      void client.invalidateQueries({ queryKey: keys.assistant.threads() });
+      if (id === current) onOpenThread(null);
+      notify('Discussion supprimée.', 'signal');
+    },
+    onError: (caught: unknown) => {
+      notify(caught instanceof ApiError ? caught.message : 'Suppression impossible.', 'recover');
+    },
+  });
+
+  const threads = data?.threads ?? [];
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="Tes discussions"
+      lede="Tout est gardé. Rien ne s’efface tout seul."
+    >
+      <SheetRow
+        label="Nouvelle discussion"
+        hint="+"
+        onClick={() => {
+          onOpenThread(null);
+          onClose();
+        }}
+      />
+
+      {threads.length === 0 ? (
+        <p className={styles.note}>Aucune discussion pour l’instant.</p>
+      ) : (
+        <SheetGroup title="Précédentes">
+          {threads.map((thread) => (
+            <div key={thread.thread_id} className={styles.threadRow}>
+              <SheetRow
+                label={thread.title}
+                hint={`${String(thread.messages)} message${thread.messages > 1 ? 's' : ''}`}
+                onClick={() => {
+                  onOpenThread(thread.thread_id);
+                  onClose();
+                }}
+              />
+              <Button
+                variant="quiet"
+                aria-label={`Supprimer « ${thread.title} »`}
+                busy={forget.isPending}
+                onClick={() => {
+                  forget.mutate(thread.thread_id);
+                }}
+              >
+                Supprimer
+              </Button>
+            </div>
+          ))}
+        </SheetGroup>
+      )}
+    </Sheet>
+  );
+}
+
+// ── Ce que l'assistant a fait, ou demande à faire (`IA-15`) ──
+
+/**
+ * Une action, avec le geste qui va avec.
+ *
+ * Trois états, trois discours, et la différence entre eux est ce qui rend le lot tenable :
+ *
+ * * `done` — c'est écrit. Un bouton défait, en appelant la route du domaine : le geste
+ *   que l'utilisateur ferait lui-même depuis l'écran concerné.
+ * * `pending` — **rien n'est écrit**. L'action dit ce qu'elle changerait, et deux boutons
+ *   tranchent. Le projet n'a pas de corbeille : effacer se demande.
+ * * `refused` — rien n'a eu lieu, et la phrase dit pourquoi. Elle vient du serveur, en
+ *   français, et s'affiche telle quelle.
+ */
+function ActionCard({ report }: { report: ActionReport }) {
+  const client = useQueryClient();
+  const { notify } = useToast();
+  const [settled, setSettled] = useState<'undone' | 'confirmed' | 'dismissed' | null>(null);
+
+  /** Une écriture de l'assistant touche un domaine quelconque : on rafraîchit large. */
+  function refreshEverything(): void {
+    void client.invalidateQueries();
+  }
+
+  const undo = useMutation({
+    mutationFn: (ref: UndoRef) => assistantApi.undo(ref),
+    onSuccess: () => {
+      setSettled('undone');
+      refreshEverything();
+      notify('Annulé.', 'signal');
+    },
+    onError: (caught: unknown) => {
+      notify(caught instanceof ApiError ? caught.message : 'Annulation impossible.', 'recover');
+    },
+  });
+
+  const confirm = useMutation({
+    mutationFn: () => assistantApi.confirmAction(report.name, report.args),
+    onSuccess: (result) => {
+      if (result.status !== 'done') {
+        notify(result.summary, 'recover');
+        return;
+      }
+      setSettled('confirmed');
+      refreshEverything();
+      notify(result.summary, 'effort');
+    },
+    onError: (caught: unknown) => {
+      notify(caught instanceof ApiError ? caught.message : 'Impossible.', 'recover');
+    },
+  });
+
+  if (settled === 'dismissed') return null;
+
+  const tone =
+    report.status === 'refused' ? 'recover' : report.status === 'pending' ? 'load' : 'effort';
+
+  return (
+    <div className={cx(styles.action, styles[`action_${tone}`])}>
+      <div className={styles.actionBody}>
+        <span className={styles.actionMark} aria-hidden="true" />
+        <p className={styles.actionText}>
+          {settled === 'undone' ? 'Annulé.' : settled === 'confirmed' ? 'Fait.' : report.summary}
+        </p>
+      </div>
+
+      {settled === null && report.status === 'done' && report.undo !== null && (
+        <Button
+          variant="quiet"
+          busy={undo.isPending}
+          onClick={() => {
+            undo.mutate(report.undo as UndoRef);
+          }}
+        >
+          Annuler
+        </Button>
+      )}
+
+      {settled === null && report.status === 'pending' && (
+        <div className={styles.actionChoice}>
+          <Button
+            variant="primary"
+            busy={confirm.isPending}
+            onClick={() => {
+              confirm.mutate();
+            }}
+          >
+            Confirmer
+          </Button>
+          <Button
+            variant="quiet"
+            onClick={() => {
+              setSettled('dismissed');
+            }}
+          >
+            Non
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Ce qui vient d'être retenu (`IA-10`) ──────────────
 
 /**
@@ -313,12 +529,54 @@ export function Assistant() {
   // L'identifiant du fil courant. Le passé n'est plus reconstruit par l'écran : le
   // serveur le lit dans le fil, et l'écran ne lui donne que de quoi le retrouver.
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadsOpen, setThreadsOpen] = useState(false);
+
+  // Ouvrir un fil ancien le rejoue dans l'écran. Le serveur le détient : l'écran ne
+  // reconstruit rien, il affiche ce qu'on lui rend.
+  const opened = useQuery({
+    queryKey: keys.assistant.thread(threadId ?? ''),
+    queryFn: () => assistantApi.thread(threadId ?? ''),
+    enabled: threadId !== null && exchanges.length === 0,
+  });
+
+  /**
+   * Le passé du fil, **dérivé** de ce que le serveur rend — jamais recopié dans un état.
+   *
+   * Le recopier dans un effet marchait, et c'était fragile : deux sources pour la même
+   * liste, qu'il fallait garder d'accord à chaque ouverture, chaque question et chaque
+   * suppression. Ici il n'y en a qu'une, et `exchanges` ne porte plus que les tours de
+   * cette session-ci.
+   */
+  const past = useMemo((): Exchange[] => {
+    const messages = opened.data?.messages ?? [];
+    const rebuilt: Exchange[] = [];
+    for (let index = 0; index < messages.length; index += 1) {
+      const turn = messages[index];
+      if (turn?.role !== 'user') continue;
+      const answer = messages[index + 1];
+      rebuilt.unshift({
+        question: turn.content,
+        reply: answer?.role === 'assistant' ? answer.content : '',
+        // Les actions ne sont pas rejouées : l'annulation d'un ajout a expiré avec le
+        // jeton de sa ligne, et proposer un geste qui échouerait serait pire que de ne
+        // rien proposer.
+        actions: [],
+      });
+    }
+    return rebuilt;
+  }, [opened.data]);
+
+  // Les tours de cette session d'abord — ils sont les plus récents.
+  const shown = [...exchanges, ...past];
 
   const ask = useMutation({
     mutationFn: (asked: string) => assistantApi.ask(asked, threadId),
     onSuccess: (result, asked) => {
       setThreadId(result.thread_id);
-      setExchanges((current) => [{ question: asked, reply: result.reply }, ...current]);
+      setExchanges((current) => [
+        { question: asked, reply: result.reply, actions: result.actions },
+        ...current,
+      ]);
       setRemembered(result.remember);
       setContext(result.context);
       setQuestion('');
@@ -338,9 +596,37 @@ export function Assistant() {
   return (
     <div className={cx('wrap', styles.screen)}>
       <header className={styles.head}>
-        <p className="eyebrow">Assistant</p>
-        <h2 className={styles.title}>Pose une question sur tes données</h2>
+        <div>
+          <p className="eyebrow">Assistant</p>
+          <h2 className={styles.title}>
+            {opened.data?.title ?? 'Pose une question sur tes données'}
+          </h2>
+        </div>
+        <Button
+          variant="ghost"
+          aria-haspopup="dialog"
+          aria-expanded={threadsOpen}
+          onClick={() => {
+            setThreadsOpen(true);
+          }}
+        >
+          Discussions
+        </Button>
       </header>
+
+      <ThreadSheet
+        open={threadsOpen}
+        current={threadId}
+        onClose={() => {
+          setThreadsOpen(false);
+        }}
+        onOpenThread={(id) => {
+          setThreadId(id);
+          setExchanges([]);
+          setRemembered([]);
+          setContext([]);
+        }}
+      />
 
       {/* `IA-12` — permanent, jamais repliable : une mention qu'on ferme est une mention
           qu'on ne lit plus. */}
@@ -392,7 +678,7 @@ export function Assistant() {
                     }}
                   />
 
-                  {exchanges.length === 0 && (
+                  {shown.length === 0 && (
                     <div className={styles.examples}>
                       {EXAMPLES.map((example) => (
                         <Chip
@@ -419,7 +705,7 @@ export function Assistant() {
                   </Button>
                 </form>
 
-                {exchanges.length === 0 && (
+                {shown.length === 0 && (
                   <Empty title="Rien demandé pour l’instant">
                     L’assistant lit tes chiffres — poids, séances, protéines, hydratation, objectif,
                     planning — et ton carnet. Il ne voit aucun de tes fichiers.
@@ -428,8 +714,8 @@ export function Assistant() {
 
                 {remembered.length > 0 && <Remembered notes={remembered} />}
 
-                {exchanges.map((item, index) => (
-                  <div key={`${String(exchanges.length - index)}-${item.question.slice(0, 24)}`}>
+                {shown.map((item, index) => (
+                  <div key={`${String(shown.length - index)}-${item.question.slice(0, 24)}`}>
                     <div className={styles.thread}>
                       <div className={cx(styles.turn, styles.mine)}>
                         <span className={styles.role}>Moi</span>
@@ -439,6 +725,12 @@ export function Assistant() {
                         <span className={styles.role}>Assistant</span>
                         {item.reply}
                       </div>
+
+                      {/* Sous la réponse qui les a produites, et non en pied d'écran :
+                          une action se lit avec la phrase qui l'explique. */}
+                      {item.actions.map((report, position) => (
+                        <ActionCard key={`${report.name}-${String(position)}`} report={report} />
+                      ))}
                     </div>
 
                     {/* Le condensé accompagne **la** réponse qu'il a produite, et lui

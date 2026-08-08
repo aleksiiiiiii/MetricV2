@@ -48,11 +48,19 @@ import { cx } from '@/lib/cx';
 import { QuickLog } from './QuickLog';
 import styles from './TabBar.module.css';
 
-/** Les trois destinations de la barre. L'ordre suit celui d'une journée. */
+/**
+ * Les trois destinations de la barre.
+ *
+ * **`Nutrition` a cédé sa place à `Assistant`** au lot L18. C'est le seul écran qu'on
+ * ouvre pour *parler*, et depuis qu'il sait écrire dans les données il est aussi la porte
+ * la plus courte vers la plupart des gestes — « note ma séance de ce matin » remplace une
+ * navigation et un formulaire. Nutrition redescend dans la feuille : elle demande un
+ * formulaire que rien n'abrège, et le `⊕` couvre déjà ce qui se saisit en un chiffre.
+ */
 const TABS = [
   { to: '/', label: 'Accueil', end: true, icon: IconHome },
   { to: '/activite', label: 'Activité', end: false, icon: IconActivity },
-  { to: '/nutrition', label: 'Nutrition', end: false, icon: IconNutrition },
+  { to: '/assistant', label: 'Assistant', end: false, icon: IconChat },
 ] as const;
 
 /** Ce que la feuille « Plus » contient, groupé par ce à quoi ça sert. */
@@ -67,9 +75,9 @@ const MORE = [
   {
     title: 'Décider',
     entries: [
+      { to: '/nutrition', label: 'Nutrition', icon: IconNutrition },
       { to: '/objectif', label: 'Objectif', icon: IconTarget },
       { to: '/planning', label: 'Planning', icon: IconCalendar },
-      { to: '/assistant', label: 'Assistant', icon: IconChat },
     ],
   },
   {
