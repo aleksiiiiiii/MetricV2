@@ -1,118 +1,196 @@
-/* Écran Assistant (`L14b-07`, `L17-07`).
-
-   Écrit **mobile d'abord** : les règles de base valent pour 390 px, les `min-width`
-   ajoutent ce que la place permet.
-
-   L'écran a deux sujets et l'ordre compte : la conversation d'abord — c'est pour elle
-   qu'on ouvre la page —, le carnet ensuite. C'est la leçon du calendrier du L13, où trois
-   tuiles d'indicateurs repoussaient le sujet de l'écran sous le pli.
-
-   Toute cible se touche à `--tap` au minimum, l'action qui **termine** un geste à
-   `--tap-lg`. */
+/* L'assistant : un écran de discussion, pleine hauteur.
+ *
+ * Trois bandes empilées — l'en-tête, le fil, la saisie — dont **seule celle du milieu
+ * défile**. C'est ce qui distingue une discussion d'une page : le champ ne s'éloigne
+ * jamais, quel que soit le nombre de questions posées. */
 
 .screen {
   display: flex;
   flex-direction: column;
-  gap: var(--s5);
+  /* Ce que la coquille laisse : la hauteur dynamique, moins l'en-tête de l'application,
+     la barre d'onglets et les deux zones sûres.
+     `dvh` et non `vh` : sur iOS le clavier système réduit le viewport dynamique, donc la
+     saisie remonte avec lui **sans une ligne de JavaScript**. Avec `vh` elle resterait
+     dessous — le défaut classique des interfaces de discussion sur téléphone. */
+  height: calc(100dvh - 48px - var(--safe-t) - var(--tabbar) - var(--safe-b));
+  padding-inline: var(--gutter);
+  max-width: var(--wrap);
+  margin: 0 auto;
+  width: 100%;
 }
 
-.head {
+@media (min-width: 960px) {
+  .screen {
+    /* Pas de barre d'onglets sur grand écran, et un en-tête de 56 px. */
+    height: calc(100dvh - 56px);
+  }
+}
+
+/* ── L'en-tête du fil ─────────────────────────────── */
+
+.bar {
+  flex: none;
   display: flex;
-  flex-direction: column;
-  gap: var(--s2);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding-block: var(--s3);
 }
 
 .title {
-  font-size: var(--t-title);
-  font-weight: 500;
-  letter-spacing: -0.02em;
+  font-size: var(--t-head);
+  min-width: 0;
+  /* Un titre de fil peut être long ; il cède plutôt que de pousser les deux boutons hors
+     de l'écran. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* ── Le garde-fou médical (`IA-12`) ────────────────── */
-
-/* Permanent, pas repliable, et pas une alerte non plus : une bannière rouge qu'on ferme
-   est une bannière qu'on ne lit plus. Le ton `recover` du projet dit « dette, alerte »
-   sans crier, et la mention reste sous les yeux à chaque question. */
-.caution {
+.barActions {
+  flex: none;
   display: flex;
-  gap: var(--s3);
-  padding: var(--s3) var(--s4);
-  background: rgb(var(--recover-rgb) / 0.09);
-  border: 1px solid rgb(var(--recover-rgb) / 0.32);
-  border-radius: var(--r-sm);
-  font-size: var(--t-sub);
-  color: var(--ink-mid);
+  align-items: center;
+  gap: var(--s2);
 }
 
-/* ── Le fil de conversation (`IA-09`) ──────────────── */
+/* `IA-12` — permanent, jamais repliable. Discret pour ne pas manger le fil, mais toujours
+   lisible : c'est une mention de sécurité, pas une décoration. */
+.caution {
+  flex: none;
+  font-size: var(--t-meta);
+  line-height: 1.45;
+  color: var(--ink-mid);
+  border-left: 2px solid rgb(var(--recover-rgb) / 0.5);
+  padding: var(--s2) var(--s3);
+  margin-bottom: var(--s3);
+  background: rgb(var(--recover-rgb) / 0.05);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  text-wrap: pretty;
+}
 
-.thread {
+/* ── Le fil ───────────────────────────────────────── */
+
+.stream {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Le rebond ne tire pas la page derrière : sans lui, arriver en haut du fil fait
+     glisser l'application entière. */
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
-  gap: var(--s3);
-  margin: var(--s4) 0;
+  gap: var(--s5);
+  padding-bottom: var(--s4);
+}
+
+/* Une conversation pousse **depuis le bas**. Le premier élément absorbe la place libre,
+   si bien qu'un fil court se pose au-dessus de la saisie au lieu de flotter au milieu
+   d'un grand vide. `margin-top: auto` plutôt que `justify-content: flex-end`, qui
+   couperait le haut du fil dès qu'il déborde. */
+.stream > *:first-child {
+  margin-top: auto;
 }
 
 .turn {
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
-  max-width: 90%;
+  gap: var(--s2);
+}
+
+/* ── Les bulles ───────────────────────────────────── */
+
+.bubble {
+  max-width: 85%;
   padding: var(--s3) var(--s4);
-  border-radius: var(--r-sm);
-  font-size: var(--t-sub);
-  line-height: 1.55;
+  border-radius: var(--r);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  /* Une réponse contient des retours à la ligne : ils se voient. */
+  white-space: pre-wrap;
+  text-wrap: pretty;
   overflow-wrap: anywhere;
 }
 
-/* Ce que j'ai dit : aligné à droite, teinte du signal. Ce que le modèle a répondu :
-   à gauche, surface neutre. La distinction ne repose pas que sur la couleur — la position
-   la porte aussi, ce qui la garde lisible pour un daltonien. */
+/* La question, à droite et pleine : c'est ce qu'on vient de dire. */
 .mine {
   align-self: flex-end;
-  background: rgb(var(--signal-rgb) / 0.14);
-  border: 1px solid rgb(var(--signal-rgb) / 0.28);
+  background: var(--signal);
+  color: var(--bg);
+  border-bottom-right-radius: var(--r-sm);
 }
 
+/* La réponse, à gauche et en surface : elle appartient à l'application. */
 .theirs {
   align-self: flex-start;
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--line);
-}
-
-.role {
-  font-family: var(--mono);
-  font-size: var(--t-meta);
-  letter-spacing: 0.12em;
-  color: var(--ink-low);
-  text-transform: uppercase;
-}
-
-/* ── La question ───────────────────────────────────── */
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s4);
-  margin-top: var(--s4);
-}
-
-/* L'action qui **termine** le geste : pleine largeur au pouce, `--tap-lg` de haut. */
-.submit {
-  min-height: var(--tap-lg);
-  width: 100%;
+  color: var(--ink);
+  border-bottom-left-radius: var(--r-sm);
 }
 
 @media (min-width: 600px) {
-  .submit {
-    width: auto;
-    min-width: 220px;
+  .bubble {
+    max-width: 72%;
   }
 }
 
-.note {
-  font-size: var(--t-sub);
+/* Les trois points de l'attente. Ils remplacent un libellé « chargement… » : dans une
+   discussion, l'attente se montre là où la réponse arrivera. */
+.thinking {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: var(--s4);
+}
+
+.thinking span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-low);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.thinking span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ── L'écran vide ─────────────────────────────────── */
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.welcomeText {
   color: var(--ink-mid);
+  font-size: var(--t-sub);
+  text-wrap: pretty;
 }
 
 .examples {
@@ -121,125 +199,80 @@
   gap: var(--s2);
 }
 
-/* ── Le condensé envoyé (`IA-09`) ──────────────────── */
+/* ── La saisie, collée en bas ─────────────────────── */
 
-/* Replié : il est là pour être **vérifiable**, pas pour être lu à chaque fois. Le
-   `summary` reste une cible tactile à part entière — c'est un contrôle, pas un titre. */
-.facts {
-  margin-top: var(--s3);
-  font-size: var(--t-meta);
+.composer {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s2);
+  padding-block: var(--s3);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  color: var(--ink);
+  font-family: var(--display);
+  /* 16 px : en deçà, iOS zoome à la mise au point et décale la page. C'est le plancher
+     qui a décidé de toute l'échelle typographique. */
+  font-size: var(--t-body);
+  line-height: 1.45;
+  min-height: var(--tap);
+  /* Le champ grandit avec le texte, jusqu'à cinq lignes. `field-sizing` fait ça sans
+     JavaScript ; là où il manque, le champ reste à une ligne et défile — dégradé,
+     jamais cassé. */
+  field-sizing: content;
+  max-height: 7.5rem;
+  transition: border-color var(--t);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--signal);
+}
+
+.input::placeholder {
   color: var(--ink-low);
 }
 
-.facts summary {
-  display: flex;
-  align-items: center;
+.input:disabled {
+  opacity: 0.5;
+}
+
+/* Un carré, pas un rectangle : le bouton d'envoi d'une messagerie se vise sans le lire. */
+.send {
+  flex: none;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
   min-height: var(--tap);
-  cursor: pointer;
-  font-family: var(--mono);
-  letter-spacing: 0.04em;
-}
-
-.facts ul {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: var(--s3);
-  background: var(--surface-2);
-  border-radius: var(--r-sm);
-  list-style: none;
-}
-
-/* ── Le carnet (`IA-10`, `IA-11`) ──────────────────── */
-
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  margin-top: var(--s3);
-}
-
-.item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  padding: var(--s3);
-  background: var(--surface-2);
-  border-radius: var(--r-sm);
-}
-
-.itemBody {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.meta {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  font-family: var(--mono);
-  font-size: var(--t-meta);
-  letter-spacing: 0.04em;
-  color: var(--ink-mid);
-}
-
-.itemActions {
-  display: flex;
-  gap: var(--s2);
-}
-
-.itemActions button {
-  flex: 1;
-  min-height: var(--tap);
-}
-
-@media (min-width: 600px) {
-  .item {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .itemActions button {
-    flex: initial;
-  }
-}
-
-/* ── Notes proposées ───────────────────────────────── */
-
-.proposed {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  margin: var(--s3) 0;
-}
-
-/* Une note retirée reste visible et grisée plutôt que de disparaître : rien n'est écrit,
-   le geste doit donc rester réversible d'un appui — et une ligne qui s'évapore laisse
-   douter de ce qu'on vient de faire. */
-.itemDropped {
-  opacity: 0.45;
-}
-
-.itemDropped .itemBody strong {
-  text-decoration: line-through;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 20px;
+  line-height: 1;
 }
 
 /* ── Ce que l'assistant a fait (`IA-15`) ──────────── */
 
-/* Une action se lit **avec** la réponse qui l'explique : elle est en retrait sous elle,
-   comme une conséquence, et non alignée avec les messages comme un troisième
-   interlocuteur. */
+/* Une action se lit **avec** la réponse qui l'explique : alignée sur elle, en retrait,
+   comme une conséquence — et non au centre comme un troisième interlocuteur. */
 .action {
+  align-self: flex-start;
+  max-width: 85%;
   display: flex;
   align-items: center;
   gap: var(--s3);
   flex-wrap: wrap;
-  margin-top: var(--s2);
-  margin-left: var(--s5);
-  padding: var(--s3) var(--s4);
+  margin-left: var(--s4);
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--line);
   border-left-width: 3px;
   border-radius: var(--r-sm);
@@ -250,12 +283,11 @@
   display: flex;
   align-items: center;
   gap: var(--s3);
-  flex: 1 1 12rem;
+  flex: 1 1 10rem;
   min-width: 0;
 }
 
-/* La pastille reprend le ton, pour que l'état se lise sans lire — fait, en attente,
-   refusé — sur une ligne qu'on parcourt vite. */
+/* La pastille reprend le ton : l'état se lit sans lire — fait, en attente, refusé. */
 .actionMark {
   flex: none;
   width: 8px;
@@ -301,21 +333,67 @@
   background: var(--recover);
 }
 
-/* ── Les fils ─────────────────────────────────────── */
+/* ── Ce qui vient d'être retenu (`IA-10`) ─────────── */
 
-/* Le titre du fil à gauche, l'accès à la liste à droite : sur un téléphone les deux
-   passent l'un sous l'autre plutôt que de se serrer. */
-.head {
+.kept {
+  align-self: flex-start;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--s4);
+  align-items: center;
+  gap: var(--s2);
   flex-wrap: wrap;
+  margin-left: var(--s4);
+  font-size: var(--t-meta);
+  color: var(--ink-mid);
 }
 
-/* Une ligne de la feuille et son bouton de suppression. Supprimer une discussion n'est
-   pas la choisir : les deux cibles sont distinctes, et la destructive est la plus
-   petite. */
+.keptMark {
+  color: var(--ink-low);
+}
+
+.keptText {
+  min-width: 0;
+}
+
+.keptText strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* ── Le condensé publié (`IA-09`) ─────────────────── */
+
+.facts {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-left: var(--s4);
+  font-size: var(--t-meta);
+  color: var(--ink-low);
+}
+
+.facts summary {
+  cursor: pointer;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+}
+
+.facts ul {
+  margin: var(--s2) 0 0 var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Les feuilles : fils et carnet ────────────────── */
+
+.hint {
+  color: var(--ink-low);
+  font-size: var(--t-meta);
+  padding-block: var(--s3);
+}
+
+/* Supprimer une discussion n'est pas la choisir : deux cibles distinctes, et la
+   destructive est la plus petite. */
 .threadRow {
   display: flex;
   align-items: center;
@@ -325,4 +403,62 @@
 .threadRow > *:first-child {
   flex: 1;
   min-width: 0;
+}
+
+.list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  padding: var(--s3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.itemBody {
+  flex: 1 1 12rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--t-sub);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--ink-low);
+}
+
+.itemActions {
+  display: flex;
+  gap: var(--s2);
+  flex: none;
+}
+
+.memoryForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+/* Une cible carrée au plancher tactile : l'icône ne rétrécit pas le bouton. */
+.iconButton {
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  padding: 0;
 }

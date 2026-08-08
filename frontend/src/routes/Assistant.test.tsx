@@ -77,7 +77,14 @@ function json(status: number, body: unknown): Response {
   return { ok: status < 400, status, json: () => Promise.resolve(body) } as Response;
 }
 
-function stub(options: { memory?: AssistantView; reply?: ChatReply; aiEnabled?: boolean } = {}) {
+function stub(
+  options: {
+    memory?: AssistantView;
+    reply?: ChatReply;
+    aiEnabled?: boolean;
+    chatFails?: boolean;
+  } = {},
+) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     // `request` n'envoie que des chaînes : le typage de `fetch` est plus large que
     // l'usage, et `String(objet)` rendrait « [object Object] » sans le dire.
@@ -90,6 +97,11 @@ function stub(options: { memory?: AssistantView; reply?: ChatReply; aiEnabled?: 
       );
     }
     if (url.includes('/api/assistant/chat')) {
+      if (options.chatFails === true) {
+        return Promise.resolve(
+          json(503, { code: 'ai_unavailable', message: 'Modèle injoignable.' }),
+        );
+      }
       return Promise.resolve(json(200, options.reply ?? REPLY));
     }
     if (url.includes('/api/assistant/actions/confirm')) {
@@ -151,7 +163,13 @@ function itemOf(note: HTMLElement): HTMLElement {
 async function askSomething(): Promise<void> {
   const user = userEvent.setup();
   await user.type(await screen.findByLabelText('Ta question'), 'Pourquoi je stagne ?');
-  await user.click(screen.getByRole('button', { name: 'Demander' }));
+  await user.click(screen.getByRole('button', { name: 'Envoyer' }));
+}
+
+/** Ouvre la feuille du carnet — il ne vit plus sous le fil. */
+async function openMemory(): Promise<void> {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: 'Mémoire' }));
 }
 
 beforeEach(() => {
@@ -214,7 +232,7 @@ describe('conversation', () => {
 
     await screen.findByText(REPLY.reply);
     await user.type(await screen.findByLabelText('Ta question'), 'Et la semaine prochaine ?');
-    await user.click(screen.getByRole('button', { name: 'Demander' }));
+    await user.click(screen.getByRole('button', { name: 'Envoyer' }));
 
     await waitFor(() => {
       const asked = writes().filter((call) => call.url.endsWith('/chat'));
@@ -232,7 +250,7 @@ describe('conversation', () => {
     renderScreen();
 
     await screen.findByLabelText('Ta question');
-    expect(screen.getByRole('button', { name: 'Demander' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Envoyer' })).toBeDisabled();
   });
 });
 
@@ -247,7 +265,7 @@ describe('mémoire automatique', () => {
     await askSomething();
 
     expect(await screen.findByText(proposedNote().note)).toBeInTheDocument();
-    expect(screen.getByText('Je retiens')).toBeInTheDocument();
+    expect(screen.getByText(/Je retiens/)).toBeInTheDocument();
   });
 
   it('n’écrit rien de plus : la note l’a été par la conversation', async () => {
@@ -397,6 +415,7 @@ describe('carnet', () => {
   it('affiche les notes retenues et leur provenance', async () => {
     stub();
     renderScreen();
+    await openMemory();
 
     const item = itemOf(await screen.findByText(storedNote()));
 
@@ -410,6 +429,7 @@ describe('carnet', () => {
     const user = userEvent.setup();
     stub({ memory: EMPTY_MEMORY });
     renderScreen();
+    await openMemory();
 
     await user.type(await screen.findByLabelText('La note'), 'Je travaille de nuit en août');
     await user.click(screen.getByRole('button', { name: 'Noter' }));
@@ -425,6 +445,7 @@ describe('carnet', () => {
     const user = userEvent.setup();
     stub();
     renderScreen();
+    await openMemory();
 
     const button = await screen.findByRole('button', {
       name: `Oublier ${storedNote()}`,
@@ -443,6 +464,7 @@ describe('carnet', () => {
     const user = userEvent.setup();
     stub();
     renderScreen();
+    await openMemory();
 
     await user.click(await screen.findByRole('button', { name: `Corriger ${storedNote()}` }));
     const field = screen.getByLabelText('La note');
@@ -461,14 +483,62 @@ describe('carnet', () => {
 
 describe('sans clé API', () => {
   it('ne propose aucune conversation mais garde le carnet utilisable', async () => {
+    // `IA-07` : l'IA est un confort, le carnet est un carnet. Sans clé, la saisie est
+    // fermée — mais la mémoire se lit et s'écrit, dans sa feuille, sans rien demander.
     stub({ aiEnabled: false });
     renderScreen();
 
     expect(await screen.findByText('Assistance indisponible')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Ta question')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Ta question')).toBeDisabled();
 
-    // Le carnet, lui, est entier : la liste et le formulaire répondent.
-    expect(screen.getByText(storedNote())).toBeInTheDocument();
+    await openMemory();
+
+    expect(await screen.findByText(storedNote())).toBeInTheDocument();
     expect(screen.getByLabelText('La note')).toBeInTheDocument();
+  });
+});
+
+// ── L'attente (`IA-09`) ───────────────────────────────
+
+describe('attente', () => {
+  it('affiche la question tout de suite, sans attendre la réponse', async () => {
+    // Dans une messagerie, ce qu'on envoie apparaît immédiatement : attendre la réponse
+    // pour afficher sa propre phrase donne l'impression d'un envoi qui n'est pas parti.
+    const user = userEvent.setup();
+    stub();
+    renderScreen();
+
+    await user.type(await screen.findByLabelText('Ta question'), 'Pourquoi je stagne ?');
+    await user.click(screen.getByRole('button', { name: 'Envoyer' }));
+
+    expect(await screen.findByText('Pourquoi je stagne ?')).toBeInTheDocument();
+  });
+
+  it('retire les trois points dès que la réponse est là', async () => {
+    // Ils étaient pilotés par `isPending` de la mutation et restaient affichés après
+    // l'arrivée de la réponse. L'état est maintenant à nous, remis à zéro dans
+    // `onSettled` — donc au succès comme à l'échec.
+    stub();
+    renderScreen();
+    await askSomething();
+
+    await screen.findByText(REPLY.reply);
+
+    expect(screen.queryByLabelText('L’assistant réfléchit')).not.toBeInTheDocument();
+  });
+
+  it('vide le champ à l’envoi, et le rend si la question échoue', async () => {
+    const user = userEvent.setup();
+    stub({ chatFails: true });
+    renderScreen();
+
+    const field = await screen.findByLabelText('Ta question');
+    await user.type(field, 'Pourquoi je stagne ?');
+    await user.click(screen.getByRole('button', { name: 'Envoyer' }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('L’assistant réfléchit')).not.toBeInTheDocument();
+    });
+    expect(field).toHaveValue('Pourquoi je stagne ?');
   });
 });

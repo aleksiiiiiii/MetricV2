@@ -170,3 +170,22 @@ export function IconExit(props: IconProps) {
     </Svg>
   );
 }
+
+/** Les discussions — une pile de fils. */
+export function IconThreads(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 6.5h16M4 12h16M4 17.5h10" />
+    </Svg>
+  );
+}
+
+/** La mémoire — le carnet qu'on garde ouvert à côté. */
+export function IconBook(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.5 5.5a1.5 1.5 0 0 1 1.5-1.5h4a2.5 2.5 0 0 1 2.5 2.5v13a2 2 0 0 0-2-2H6a1.5 1.5 0 0 1-1.5-1.5Z" />
+      <path d="M19.5 5.5A1.5 1.5 0 0 0 18 4h-4a2.5 2.5 0 0 0-2.5 2.5v13a2 2 0 0 1 2-2H18a1.5 1.5 0 0 0 1.5-1.5Z" />
+    </Svg>
+  );
+}
