@@ -4,6 +4,10 @@ Transformer `/assistant` d'un écran qui **répond** en un écran qui **fait** :
 discussion qu'on retrouve, une IA qui écrit dans les données comme le ferait l'utilisateur,
 et une mémoire qui se remplit toute seule.
 
+> **État au 8 août 2026 — les sept phases sont faites**, sur la branche `assistant-agent`.
+> Ce qui suit reste le document de référence des décisions ; le tableau de la
+> [§8](#8-ordre-dexécution) dit ce qui a été livré et ce qui a bougé en chemin.
+
 Ce document tient les décisions et l'ordre d'exécution. Il se lit avec
 [`front.md`](front.md) pour le front et le §2 de [`etat-du-projet.md`](etat-du-projet.md)
 pour les invariants — dont **trois** changent ici, et c'est le sujet de la première
@@ -250,15 +254,52 @@ Points de mise en page qui comptent sur un téléphone :
 
 ## 8. Ordre d'exécution
 
-| Phase | Contenu | Vérification |
+| Phase | Contenu | État |
 |---|---|---|
-| **1** | Fils : schéma CSV, dépôt, routes `GET/POST/DELETE /api/assistant/threads`, migration de `chat` vers un fil | `pytest` sur le dépôt et les routes |
-| **2** | Contrat étendu : `actions` et `need` dans `conversation.py`, analyse et relecture pures | `pytest` sur valeurs fixes, sans réseau |
-| **3** | Catalogue d'actions : table nom → schéma → service → niveau, et l'exécuteur | `pytest` par action, y compris les refus |
-| **4** | Deuxième passe (`need`) et le plafond à deux appels | `fake_openrouter` |
-| **5** | Mémoire automatique et dédoublonnage | `pytest` |
-| **6** | L'écran : fil, feuille des fils, cartes d'action, saisie ancrée | `vitest` + `audit-mobile.mjs` + **la page regardée** |
-| **7** | Documents : `backlogV2.md` (`IA-10`, `IA-13`…), `etat-du-projet.md` §2, `front.md` | relecture |
+| **1** | Fils : `threads.csv`, `messages.csv`, quatre routes, historique lu côté serveur | ✅ 12 tests |
+| **2** | Contrat étendu : `actions`, `need`, `title` — trois relectures pures et séparées | ✅ 22 tests, sans réseau |
+| **3** | Catalogue : 13 actions, deux niveaux, exécuteur, confirmation, annulation | ✅ 20 tests qui relisent les CSV |
+| **4** | Seconde passe : 6 tranches nommées, plafond à deux appels | ✅ 5 tests |
+| **5** | Mémoire automatique et dédoublonnage sémantique | ✅ |
+| **6** | L'écran : discussion pleine hauteur, cartes d'action, feuilles | ✅ 24 tests + 12/12 à l'audit |
+| **7** | Documents : `backlogV2.md`, `etat-du-projet.md` §2, `front.md` | ✅ |
+
+**Ce qui a changé en chemin, et qui n'était pas dans le plan.**
+
+* **Le piège des imports circulaires.** L'en-tête de `assistant/router.py` le documentait ;
+  il s'est refermé exactement comme annoncé. Importer un service de domaine fait exécuter
+  son paquet, donc son routeur — et les *schémas* n'y échappent pas, `planning/__init__.py`
+  important le routeur. Le catalogue se construit donc à la demande sous `@cache`, et ses
+  imports vivent dans le corps des fonctions.
+* **`WeightService.create` ne savait pas dire d'où venait une pesée** alors que la
+  correction préservait déjà la source. Réparé ; `measurements.csv` et `intake_log.csv`
+  n'ont toujours pas la colonne, et c'est noté dans l'en-tête du catalogue.
+* **`CsvDateTime` et `local_moment`** ajoutés au socle : un fil se range à la seconde, et
+  comparer un horodatage naïf — une ligne retapée dans un tableur — à un horodatage situé
+  lève une `TypeError`.
+* **`useAiStatus` expose `pending`.** Sans lui, `enabled` valait `false` pendant le
+  chargement et l'écran déclarait « assistance indisponible » avant d'avoir posé la
+  question.
+* **Les trois points de l'attente** étaient pilotés par le `isPending` de la mutation et
+  restaient affichés après la réponse. L'état est à nous, remis à zéro dans `onSettled`.
+
+**Ce qui n'a pas été fait**, et qui reste ouvert :
+
+* les actions d'un fil **rouvert** ne sont pas rejouées — l'annulation d'un ajout a expiré
+  avec le jeton de sa ligne, et proposer un geste qui échouerait serait pire que rien ;
+* **la table porte 13 actions, la [§4](#4-le-catalogue-dactions) en annonçait 20.** Ce qui
+  y est : `weight.add`, `water.add`, `supplement.take`, `meal.add`, `run.add`,
+  `workout.add`, `exercise.create`, `plan.add`, et les cinq suppressions correspondantes.
+  Ce qui n'y est pas, et pourquoi :
+  * `measurement.add` — `measurements.csv` n'a pas de colonne `source`, donc rien ne
+    distinguerait un tour de taille noté par l'assistant d'une saisie ;
+  * `set.add` — une série se rattache à une séance existante, ce que le contrat actuel ne
+    sait pas désigner ;
+  * `goal.create`, `goal.close`, `goal.abandon` — un objectif se pose pour huit semaines,
+    et le proposer était déjà le travail de `GOAL-02` ; le doublon aurait deux discours ;
+  * `settings.update` et les quatre `*.edit` — corriger champ à champ demande de lire la
+    ligne existante pour n'en changer qu'une partie, ce que le contrat ne porte pas ;
+* la mesure du taux d'actions correctes sur modèles gratuits, qui ne se fait qu'à l'usage.
 
 À chaque phase : `make check`, puis la page dans un navigateur — **jamais l'un sans
 l'autre**. C'est ce qui a trouvé la moitié des défauts de la refonte mobile.

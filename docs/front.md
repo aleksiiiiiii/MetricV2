@@ -64,7 +64,8 @@ ramenés à deux**, tous deux en `min-width`. `.rule` perd 34 px de marge sur mo
 [icons.tsx](../frontend/src/components/ui/icons.tsx),
 [TabBar.tsx](../frontend/src/app/TabBar.tsx),
 [QuickLog.tsx](../frontend/src/app/QuickLog.tsx). Sous 960 px, la navigation est **en bas**,
-sous le pouce : `Accueil · Activité · ⊕ · Nutrition · Plus`. Le `⊕` écrit un verre d'eau, un
+sous le pouce : `Accueil · Activité · Assistant · ⊕ · Plus` (Nutrition y était jusqu'au
+lot L18). Le `⊕` écrit un verre d'eau, un
 supplément ou une pesée **sans changer d'écran** ; un repas et une séance restent des liens,
 parce qu'ils demandent un vrai formulaire. Au-delà de 960 px la barre du haut reprend la
 main, avec « Tableau de bord » raccourci en « Accueil » — ~80 px rendus, la demande tombe de
@@ -198,9 +199,12 @@ tableau de bord et un lien de l'écran Objectif. La barre demandait déjà 806 p
 disponibles ; une dixième entrée l'aurait portée à ~897. Le coût est réel — c'est l'écran
 qu'on ouvre pour poser une question, donc souvent — et il est assumé jusqu'à `L17-07`.
 
-> **Dépassé sur mobile depuis la phase B** ([§0](#0--où-en-est-la-refonte-mobile)) :
-> l'assistant a désormais une entrée dans la feuille « Plus », la contrainte des 806 px
-> ayant disparu avec la barre du haut. Sur ordinateur, rien ne change.
+> **Dépassé.** Sur mobile, `/assistant` **est un onglet plein** depuis le lot L18 —
+> `Accueil · Activité · Assistant · ⊕ · Plus` —, et Nutrition est descendue dans la
+> feuille. C'est le seul écran qu'on ouvre pour *parler*, et depuis qu'il sait écrire dans
+> les données il est aussi la porte la plus courte vers la plupart des gestes ; Nutrition
+> demande un formulaire que rien n'abrège, et le `⊕` couvre déjà ce qui se saisit en un
+> chiffre. Sur ordinateur, rien ne change : il reste hors de la barre du haut.
 
 ### Le routage
 

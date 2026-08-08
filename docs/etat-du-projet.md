@@ -9,10 +9,10 @@ Apple, propose un planning, fixe un objectif, rend un bilan et répond aux quest
 **Ses quatre lots ont une DoD vérifiée à moitié** — L12, L13, L14, L14b — et le §7 dit
 lesquelles, ce qui reste, et pourquoi cela ne peut pas se vérifier autrement qu'à la main.
 
-| Mesure | Valeur *(vérifiée le 2026-08-06)* |
+| Mesure | Valeur *(vérifiée le 2026-08-08)* |
 |---|---|
-| Tests backend | **1026**, dont 35 de sécurité sur les photos, **135 sur le moteur d'assiduité**, **120 sur la couche IA**, **110 sur le planning**, **93 sur les objectifs** et **48 sur l'assistant** |
-| Tests frontend | **230**, dont 28 sur les parcours d'estimation et d'import, 19 sur le planning, 19 sur les objectifs, 15 sur l'assistant |
+| Tests backend | **1099**, dont 35 de sécurité sur les photos, **135 sur le moteur d'assiduité**, **120 sur la couche IA**, **110 sur le planning**, **93 sur les objectifs** et **105 sur l'assistant** — carnet, fils, contrat, actions |
+| Tests frontend | **239**, dont 28 sur les parcours d'estimation et d'import, 19 sur le planning, 19 sur les objectifs, 24 sur l'assistant |
 | Couverture du moteur | **100 %** de `heatmap/engine.py` |
 | Qualité | `ruff`, `mypy --strict`, `eslint`, `tsc --noEmit` sans avertissement |
 | Build de production | 127 ko gzip |
@@ -192,9 +192,24 @@ Le geste a **une seule implémentation**, `lib/swipe.ts`. Deux en donneraient de
 
 ### Une valeur proposée n'est pas une mesure
 
-Ce qu'un modèle rend est **proposé** : affiché comme tel — trait discontinu, teinte du bloc
-IA, `aria-description` —, corrigeable au doigt, et jamais écrit sans validation
-(`NUT-04`, `IMP-02`). Retoucher une proposition la fait sienne, et la marque disparaît.
+Ce qu'un modèle rend comme **valeur** est proposé : affiché comme tel — trait discontinu,
+teinte du bloc IA, `aria-description` —, corrigeable au doigt, et jamais écrit sans
+validation (`NUT-04`, `IMP-02`). Retoucher une proposition la fait sienne, et la marque
+disparaît.
+
+> **Ce que le lot L18 a changé, et ce qu'il n'a pas changé.** L'assistant peut désormais
+> **agir** : ajouter une séance, créer un exercice, supprimer un repas. L'invariant tient
+> quand même, parce qu'il porte sur les valeurs *estimées* — une macro lue sur une photo,
+> une charge devinée — et non sur un geste demandé explicitement. Ce qui le remplace pour
+> les actions est écrit dans `domains/assistant/actions.py` : deux niveaux fixés par la
+> table et non par le modèle, un ajout annulable d'un appui, une correction ou une
+> suppression qui n'écrit rien sans confirmation, et **aucun chemin d'écriture parallèle**
+> — les schémas et les services des domaines sont ceux de l'API.
+>
+> La mémoire, elle, a bel et bien changé de régime : `IA-10` retient sans valider, et la
+> correction vient après. Le compromis tient pour un carnet et **ne tiendrait pas pour une
+> mesure** — une note fausse ne casse aucun chiffre, elle change ce que l'assistant croit
+> savoir, et cela se lit.
 
 C'est « aucune valeur inventée à l'écran » appliqué à l'estimation, et c'est le cas
 **difficile** : un zéro se repère, un chiffre inventé par un modèle est plausible.
