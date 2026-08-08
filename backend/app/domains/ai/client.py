@@ -231,6 +231,30 @@ class OpenRouterClient:
         cascade veut pouvoir distinguer « le modèle n'a pas répondu » de « le modèle a
         répondu quelque chose d'inexploitable ».
         """
+        body = self.build_body(
+            model,
+            instruction=instruction,
+            prompt=prompt,
+            image_url=image_url,
+            max_tokens=max_tokens,
+        )
+
+        try:
+            response = await self._client.post("/chat/completions", json=body)
+        except httpx2.HTTPError as exc:
+            raise ModelUnusableError(f"{model} injoignable : {exc}") from exc
+        return self._read(model, response)
+
+    def build_body(
+        self,
+        model: str,
+        *,
+        instruction: str,
+        prompt: str,
+        image_url: str | None = None,
+        max_tokens: int = 900,
+    ) -> dict[str, Any]:
+        """Le corps de la requête, séparé pour être vérifiable sans réseau."""
         content: list[dict[str, Any]] | str = prompt
         if image_url is not None:
             content = [
@@ -238,7 +262,7 @@ class OpenRouterClient:
                 {"type": "image_url", "image_url": {"url": image_url}},
             ]
 
-        body = {
+        return {
             "model": model,
             "messages": [
                 {"role": "system", "content": instruction},
@@ -248,13 +272,25 @@ class OpenRouterClient:
             # 32 g de protéines puis 41 g selon l'humeur du tirage.
             "temperature": 0.1,
             "max_tokens": max_tokens,
+            # **Le mode JSON du fournisseur**, et il a été ajouté sur constat.
+            #
+            # Les modèles gratuits du catalogue sont pour moitié des modèles de
+            # raisonnement. Ils écrivent parfois leur réflexion en prose — « The user is
+            # asking… » — et se font tronquer par `max_tokens` **avant d'avoir produit la
+            # moindre accolade**. Relevé sur `nemotron-3-ultra` : 3 788 caractères de
+            # raisonnement, aucun JSON, une tentative brûlée pour rien. Comme le défaut est
+            # intermittent, il ne se voit qu'en production, un jour où les autres modèles
+            # sont au quota.
+            #
+            # La consigne demandait déjà « uniquement un objet JSON » ; ce champ le dit au
+            # fournisseur plutôt qu'au modèle. Vérifié sur les six candidats du jour :
+            # cinq répondus, aucun refus — le sixième était au quota, pas en erreur.
+            "response_format": {"type": "json_object"},
         }
 
-        try:
-            response = await self._client.post("/chat/completions", json=body)
-        except httpx2.HTTPError as exc:
-            raise ModelUnusableError(f"{model} injoignable : {exc}") from exc
-
+    @staticmethod
+    def _read(model: str, response: httpx2.Response) -> str:
+        """Traduit une réponse HTTP en texte, ou en refus nommé."""
         if response.status_code == 429:
             raise ModelQuotaError(f"{model} : quota atteint")
         if response.status_code >= 400:

@@ -221,3 +221,41 @@ def test_a_title_is_bounded_and_collapsed() -> None:
     assert "\n" not in title
     assert "  " not in title
     assert len(title) <= 80
+
+
+# ── 5. Ce qui protège des modèles de raisonnement ─────
+
+
+def test_the_provider_is_asked_for_json_not_only_the_model() -> None:
+    """Le mode JSON du fournisseur, ajouté sur constat de panne (`IA-14`).
+
+    La moitié des modèles gratuits du catalogue raisonnent à voix haute avant de répondre.
+    Relevé sur `nemotron-3-ultra` : 3 788 caractères de « The user is asking… », tronqués
+    par `max_tokens` **avant la moindre accolade** — une tentative brûlée, et un `503`
+    quand les autres candidats étaient au quota.
+
+    La consigne demandait déjà « uniquement un objet JSON » ; ce champ le dit au
+    fournisseur, qui contraint le décodage au lieu d'espérer l'obéissance.
+    """
+    from app.domains.ai.client import OpenRouterClient
+
+    client = OpenRouterClient(api_key="x", base_url="https://exemple.test")
+    body = client.build_body("un-modele", instruction="i", prompt="p", max_tokens=900)
+
+    assert body["response_format"] == {"type": "json_object"}
+
+
+def test_the_assistant_leaves_room_for_a_model_that_thinks_aloud() -> None:
+    """900 jetons suffisaient à `{reply, remember}` ; le contrat en porte cinq.
+
+    Une réponse utile occupe moins de 400 caractères — la marge n'est pas pour elle, elle
+    est pour le raisonnement qui la précède parfois. Tronquée en plein milieu, la réponse
+    ne rend aucun JSON, donc rien du tout.
+    """
+    from app.domains.ai.service import MAX_ATTEMPTS
+    from app.domains.assistant.service import MAX_TOKENS
+
+    assert MAX_TOKENS >= 1600
+    # Et le budget de tentatives tient compte du quota : les modèles gratuits y tombent
+    # souvent, et trois essais partaient parfois entièrement en quotas.
+    assert MAX_ATTEMPTS >= 5

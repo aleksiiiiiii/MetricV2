@@ -41,7 +41,7 @@ from app.domains.ai.extract import first_json_object
 CATALOGUE_TTL = 3600.0
 
 #: Modèles interrogés au maximum pour une même demande.
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 5
 
 
 class ModelCatalogue:

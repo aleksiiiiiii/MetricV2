@@ -78,9 +78,13 @@ from app.storage.paths import MEMORY, MESSAGES, THREADS
 if TYPE_CHECKING:  # pragma: no cover - import de typage seulement
     from app.domains.planning.schemas import AdherenceView
 
-#: Jetons laissés au modèle. Une réponse tient en quatre phrases et deux notes ; au-delà,
-#: ce n'est pas la place qui manquait, c'est la consigne qui a été comprise autrement.
-MAX_TOKENS = 900
+#: Jetons laissés au modèle.
+#:
+#: 900 suffisaient à `{reply, remember}`. Le contrat en porte cinq champs depuis le L18, et
+#: la moitié des modèles gratuits raisonnent à voix haute avant de répondre — une réponse
+#: tronquée en plein raisonnement ne rend aucun JSON, donc rien du tout. La marge est là
+#: pour ce cas ; une réponse utile en occupe toujours moins de 400.
+MAX_TOKENS = 1600
 
 
 def _sortable(summary: ThreadSummary) -> tuple[bool, datetime]:

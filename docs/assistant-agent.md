@@ -308,7 +308,30 @@ l'autre**. C'est ce qui a trouvé la moitié des défauts de la refonte mobile.
 
 ## 9. Les deux risques à surveiller
 
-**Les modèles gratuits vont peiner.** Rendre un JSON valide, ils savent à peu près faire ;
+**Les modèles gratuits vont peiner — et ils ont peiné.** Le premier `503` est tombé au
+premier usage réel : `nemotron-3-ultra`, premier candidat du catalogue, a écrit **3 788
+caractères de raisonnement en prose** — « The user is asking… » — et s'est fait tronquer par
+`max_tokens` avant la moindre accolade. Une tentative brûlée, deux autres au quota, et
+l'échange perdu. Le défaut est **intermittent** : le même modèle rend du JSON propre la fois
+suivante, donc il ne se voit qu'en production.
+
+Trois correctifs, chacun mesuré avant d'être posé :
+
+* **`response_format: {"type": "json_object"}`** sur toutes les requêtes. La consigne
+  demandait déjà « uniquement un objet JSON » ; ce champ le dit au *fournisseur*, qui
+  contraint le décodage au lieu d'espérer l'obéissance. Vérifié sur les six candidats du
+  jour : cinq répondus, aucun refus, le sixième au quota.
+* **`MAX_TOKENS` de 900 à 1 600.** 900 suffisaient à `{reply, remember}` ; le contrat en
+  porte cinq champs, et la marge sert au raisonnement qui précède parfois la réponse — une
+  réponse utile occupe moins de 400 caractères.
+* **`MAX_ATTEMPTS` de 3 à 5.** Les modèles gratuits tombent souvent au quota, et trois
+  essais partaient parfois entièrement en refus.
+
+Vérifié en conditions réelles après correctif : quatre demandes d'écriture sur quatre
+donnent `weight.add` avec un titre juste, et les quatre questions d'essai — dont « j'ai mal
+au genou droit » — n'écrivent **rien**, ce qui est le garde-fou de `IA-12`.
+
+**Le fond du risque demeure.** Rendre un JSON valide, ils savent à peu près faire ;
 choisir la bonne action avec les bons arguments demande plus. Deux garde-fous : le serveur
 **ignore silencieusement** une action inconnue ou mal formée plutôt que d'échouer l'échange,
 et la réponse dit toujours en français ce qui a été fait — si l'action a été ignorée, le
