@@ -361,6 +361,13 @@ et la réponse dit toujours en français ce qui a été fait — si l'action a �
 texte ne mentionne rien et l'utilisateur le voit. À surveiller à l'usage : si le taux
 d'actions correctes est trop bas, la réponse est une clé payante, pas un correctif de code.
 
+**La borne d'actions mord sur un usage légitime.** `MAX_ACTIONS` valait cinq ; « planifie
+4 séances et 3 courses la semaine prochaine » en demande sept, et deux étaient coupées
+**en silence** — l'assistant annonçait sept séances et en inscrivait cinq. Portée à dix :
+une semaine entière de planning passe, et « réorganise tout » est toujours arrêté net. Le
+silence de la coupe reste le vrai défaut ; il se verra le jour où quelqu'un demandera
+onze choses.
+
 **Une action juste sur la mauvaise ligne.** « Supprime ma pesée » quand il y en a deux le
 même jour. Le condensé rendu au modèle porte des identifiants explicites, et une action de
 modification affiche **la ligne visée en clair** avant confirmation — c'est précisément ce

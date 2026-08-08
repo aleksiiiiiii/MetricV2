@@ -40,11 +40,15 @@ MAX_PROPOSED = 3
 
 #: Actions retenues au maximum en un tour.
 #:
-#: Cinq, et la borne est un garde-fou de sécurité plus qu'un garde-fou de coût : « note ma
-#: séance » se traduit en une action, « range mon mois » en cinquante. Un modèle qui en
-#: propose plus de cinq n'a pas compris la demande — et le tour où il se trompe est
-#: précisément celui où on ne veut pas qu'il écrive vingt lignes.
-MAX_ACTIONS = 5
+#: La borne reste un garde-fou de **sécurité** plus que de coût : « note ma séance » se
+#: traduit en une action, « range mon mois » en cinquante, et le tour où le modèle se
+#: trompe est précisément celui où on ne veut pas qu'il écrive vingt lignes.
+#:
+#: Elle valait cinq, et cinq mordait sur un usage légitime : « planifie 4 séances et
+#: 3 courses la semaine prochaine » en demande sept, et deux étaient silencieusement
+#: coupées. Dix laisse passer une semaine entière de planning — la plus grosse demande
+#: raisonnable — et arrête toujours net celui qui a compris « réorganise tout ».
+MAX_ACTIONS = 10
 
 #: Tranches de contexte demandées au maximum en un tour. Au-delà, le modèle réclame le
 #: dossier entier, ce que `IA-09` interdit précisément.
