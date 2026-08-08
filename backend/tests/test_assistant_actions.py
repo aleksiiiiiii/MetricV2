@@ -455,3 +455,83 @@ def test_every_undo_domain_is_a_real_delete_route(ai_app_client: TestClient) -> 
             if 'Undo("' in line and "class" not in line
         }
     assert used <= domains, f"domaines inconnus : {used - domains}"
+
+
+# ── 7. La description des arguments vient du schéma ───
+
+
+def test_a_constrained_field_shows_its_allowed_values() -> None:
+    """La description est **la seule spécification** que le modèle ait jamais.
+
+    Elle était écrite à côté du schéma : `plan.add` annonçait `"kind": texte` alors que le
+    champ n'accepte que `course`, `muscu` ou `autre`. Le modèle envoyait
+    « abdos/pecs/bras », Pydantic refusait, et l'action échouait — cinq fois de suite,
+    parce qu'une consigne fausse ne s'améliore pas en la répétant.
+    """
+    from app.domains.assistant.actions import catalogue
+
+    plan = catalogue()["plan.add"].describe
+
+    assert '"course" | "muscu" | "autre"' in plan
+    assert '"AAAA-MM-JJ"' in plan
+    assert '"HH:MM"' in plan
+
+
+def test_the_model_never_sees_nor_sets_the_provenance() -> None:
+    """`MealPayload` porte `source`, et l'exposer défaisait `IMP-05` par un argument.
+
+    Un modèle pouvait écrire `"source": "manual"` sur un repas qu'il venait de créer. Le
+    champ est retiré de la description **et** des arguments reçus : cacher sans filtrer
+    n'aurait protégé que du modèle honnête.
+    """
+    from app.domains.assistant.actions import catalogue, validate
+
+    assert "source" not in catalogue()["meal.add"].describe
+
+    checked = validate("meal.add", {"meal_type": "déjeuner", "source": "manual"})
+    assert not isinstance(checked, str)
+    assert checked[1].model_dump().get("source") is None, "la provenance ne vient jamais du modèle"
+
+
+def test_the_day_never_comes_from_the_model_either() -> None:
+    """L'horodatage vient du serveur, dans le fuseau local (`HEAT-32`)."""
+    from app.domains.assistant.actions import catalogue, validate
+
+    assert "datetime" not in catalogue()["water.add"].describe
+
+    checked = validate("water.add", {"volume_ml": 500, "datetime": "1999-01-01T00:00:00"})
+    assert not isinstance(checked, str)
+    assert checked[1].model_dump().get("datetime") is None
+
+
+# ── 8. Un refus dit la bonne cause ────────────────────
+
+
+def test_a_missing_field_says_it_is_missing() -> None:
+    from app.domains.assistant.actions import validate
+
+    refusal = validate("plan.add", {"kind": "muscu"})
+
+    assert isinstance(refusal, str)
+    assert "Il me manque" in refusal
+    assert "title" in refusal and "date" in refusal
+
+
+def test_a_value_out_of_range_does_not_pretend_the_field_is_missing() -> None:
+    """« Il me manque de quoi le faire : kind » s'affichait alors que `kind` était fourni.
+
+    Un message qui désigne la mauvaise cause envoie corriger la mauvaise chose — et c'est
+    celui-là que l'utilisateur lit cinq fois de suite.
+    """
+    from app.domains.assistant.actions import validate
+
+    refusal = validate(
+        "plan.add",
+        {"date": "2026-08-10", "title": "Abdos", "duration_min": 40, "kind": "abdos/pecs/bras"},
+    )
+
+    assert isinstance(refusal, str)
+    assert "Il me manque" not in refusal
+    assert "kind" in refusal
+    assert "'course'" in refusal, "la valeur possible doit être dite, pas seulement refusée"
+    assert " or " not in refusal, "le message est lu par l'utilisateur, et il est français"

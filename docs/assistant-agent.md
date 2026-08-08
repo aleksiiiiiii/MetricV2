@@ -308,12 +308,16 @@ l'autre**. C'est ce qui a trouvé la moitié des défauts de la refonte mobile.
 
 ## 9. Les deux risques à surveiller
 
-**Les modèles gratuits vont peiner — et ils ont peiné.** Le premier `503` est tombé au
-premier usage réel : `nemotron-3-ultra`, premier candidat du catalogue, a écrit **3 788
-caractères de raisonnement en prose** — « The user is asking… » — et s'est fait tronquer par
-`max_tokens` avant la moindre accolade. Une tentative brûlée, deux autres au quota, et
-l'échange perdu. Le défaut est **intermittent** : le même modèle rend du JSON propre la fois
-suivante, donc il ne se voit qu'en production.
+**Les modèles gratuits peuvent peiner — mais ce n'est pas ce qui a cassé.** Le premier
+`503` a d'abord été attribué à `nemotron-3-ultra`, qui écrit parfois 3 788 caractères de
+raisonnement en prose avant la moindre accolade et se fait tronquer. **Le diagnostic était
+faux** : `OPENROUTER_MODEL` vaut `anthropic/claude-sonnet-5`, qui passe en tête des
+candidats, et Sonnet répond correctement dans toutes les configurations essayées — y
+compris l'ancienne, à 900 jetons et sans mode JSON. Le `503` était donc passager.
+
+Les trois correctifs ci-dessous sont conservés parce qu'ils protègent le **repli**, qui
+reste peuplé de modèles gratuits, et parce qu'aucun ne coûte rien. Ils ne sont pas la
+réparation d'une panne reproduite.
 
 Trois correctifs, chacun mesuré avant d'être posé :
 
@@ -327,9 +331,28 @@ Trois correctifs, chacun mesuré avant d'être posé :
 * **`MAX_ATTEMPTS` de 3 à 5.** Les modèles gratuits tombent souvent au quota, et trois
   essais partaient parfois entièrement en refus.
 
-Vérifié en conditions réelles après correctif : quatre demandes d'écriture sur quatre
-donnent `weight.add` avec un titre juste, et les quatre questions d'essai — dont « j'ai mal
-au genou droit » — n'écrivent **rien**, ce qui est le garde-fou de `IA-12`.
+**La panne reproductible, elle, était ailleurs.** « Il me manque de quoi le faire : kind »,
+cinq fois de suite sur une demande de planning. Deux défauts, tous deux réels :
+
+* **la description des arguments était écrite à côté du schéma.** `plan.add` annonçait
+  `"kind": texte` alors que le champ n'accepte que `course`, `muscu` ou `autre` : le modèle
+  envoyait « abdos/pecs/bras » et Pydantic refusait. Une consigne fausse ne s'améliore pas
+  en la répétant. **La description se génère désormais depuis le schéma** — même source que
+  la validation, donc elle ne peut plus mentir ;
+* **le refus désignait la mauvaise cause.** `kind` *était* fourni ; il était hors liste. Un
+  message qui envoie corriger la mauvaise chose est celui qu'on lit cinq fois.
+
+Et la génération a révélé deux trous que personne ne cherchait : `meal.add` exposait
+`source`, donc un modèle pouvait **se déclarer humain** (`IMP-05` défait par un argument),
+et `water.add` exposait `datetime`, donc dater une prise d'hier avec l'heure d'aujourd'hui.
+Les deux sont retirés de la description **et** des arguments reçus — cacher sans filtrer
+n'aurait protégé que du modèle honnête.
+
+Vérifié en conditions réelles : la demande de planning qui échouait cinq fois passe
+**5 sur 5** avec le bon `kind`, quatre demandes d'écriture sur quatre donnent `weight.add`
+avec un titre juste, et quatre questions d'essai — dont « j'ai mal au genou droit » —
+n'écrivent **rien**, ce qui est le garde-fou de `IA-12` tenu par le modèle et pas seulement
+par la consigne.
 
 **Le fond du risque demeure.** Rendre un JSON valide, ils savent à peu près faire ;
 choisir la bonne action avec les bons arguments demande plus. Deux garde-fous : le serveur

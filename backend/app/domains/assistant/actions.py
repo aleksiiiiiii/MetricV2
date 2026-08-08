@@ -116,27 +116,85 @@ class Outcome:
 Runner = Callable[[FileStore, Any], Awaitable[Outcome]]
 
 
+def _field_doc(name: str, schema: dict[str, Any], required: bool) -> str:
+    """Un argument, décrit depuis son schéma."""
+    branches = schema.get("anyOf") or [schema]
+    main = next((b for b in branches if b.get("type") != "null"), branches[0])
+    nullable = any(b.get("type") == "null" for b in branches)
+
+    enum = main.get("enum")
+    if enum:
+        kind = " | ".join(f'"{value}"' for value in enum)
+    elif main.get("format") == "date":
+        kind = '"AAAA-MM-JJ"'
+    elif main.get("pattern") == "^([01]\\d|2[0-3]):[0-5]\\d$":
+        kind = '"HH:MM"'
+    elif main.get("type") in {"number", "integer"}:
+        low, high = main.get("minimum", main.get("exclusiveMinimum")), main.get("maximum")
+        span = f" {low}–{high}" if low is not None and high is not None else ""
+        kind = f"nombre{span}"
+    else:
+        kind = "texte"
+
+    if required:
+        return f"{name} ({kind}, requis)"
+    default = schema.get("default")
+    if default not in (None, ""):
+        return f'{name} ({kind}, défaut "{default}")'
+    return f"{name} ({kind}{', ou null' if nullable else ''})"
+
+
+#: Champs qu'un schéma de domaine porte mais que le modèle ne doit **ni voir ni fournir**.
+#:
+#: Deux trous, découverts en lisant le catalogue rendu :
+#:
+#: * `source` — `MealPayload` le porte, et l'exposer laissait le modèle écrire
+#:   `"source": "manual"` sur un repas qu'il venait de créer. `IMP-05` défait par un
+#:   argument. L'exécuteur force `ia`, et c'est à lui seul de le décider.
+#: * `datetime` — l'horodatage vient du serveur, dans le fuseau local. Le laisser au
+#:   modèle, c'est l'inviter à dater une prise d'hier avec l'heure d'aujourd'hui.
+#:
+#: Ils sont retirés de la description **et** des arguments reçus : cacher sans filtrer
+#: n'aurait protégé que du modèle honnête.
+HIDDEN_ARGS = frozenset({"source", "datetime"})
+
+
+def _args_doc(payload: type[BaseModel]) -> str:
+    """Les arguments d'une action, **rendus depuis le schéma** et jamais à la main.
+
+    C'est un correctif, et il vaut d'être expliqué. La description était écrite à côté du
+    schéma : `plan.add` annonçait `"kind": texte` alors que le champ n'accepte que
+    `course`, `muscu` ou `autre`. Le modèle envoyait « abdos/pecs/bras », Pydantic
+    refusait, et l'action échouait — cinq fois de suite, parce qu'une consigne fausse ne
+    s'améliore pas en la répétant. La seule spécification que le modèle ait jamais est
+    cette ligne : elle doit venir de la même source que la validation.
+    """
+    schema = payload.model_json_schema()
+    required = set(schema.get("required", ()))
+    return ", ".join(
+        _field_doc(name, field, name in required)
+        for name, field in schema.get("properties", {}).items()
+        if name not in HIDDEN_ARGS
+    )
+
+
 @dataclass(frozen=True)
 class ActionSpec:
     """Une action du catalogue."""
 
     name: str
     level: Level
-    #: La ligne montrée au modèle. Elle dit le nom, l'effet, et les arguments attendus —
-    #: c'est la seule description qu'il aura, et elle doit se suffire.
-    describe: str
+    #: La phrase française de l'action — « supprimer une pesée ». Montrée au modèle **et**
+    #: à l'utilisateur : deux libellés différents pour un même geste seraient une trace
+    #: qu'on ne peut pas relire.
+    label: str
     payload: type[BaseModel]
     run: Runner
 
     @property
-    def label(self) -> str:
-        """La phrase française de l'action — « supprimer une pesée ».
-
-        Extraite de la description plutôt qu'écrite à côté : une action dont le libellé
-        montré à l'utilisateur diffère de celui montré au modèle est une action dont on ne
-        peut pas relire la trace.
-        """
-        return self.describe.split(" — ", 1)[-1].split(". args", 1)[0]
+    def describe(self) -> str:
+        """La ligne montrée au modèle : le nom, l'effet, et les arguments du schéma."""
+        return f"{self.name} — {self.label}. args : {{{_args_doc(self.payload)}}}"
 
 
 # ── Les charges utiles propres à l'assistant ──────────
@@ -319,8 +377,8 @@ async def _delete_workout(store: FileStore, payload: DeleteByRowArgs) -> Outcome
 # ── La table ──────────────────────────────────────────
 
 
-def _spec(name: str, level: Level, describe: str, payload: type[BaseModel], run: Any) -> ActionSpec:
-    return ActionSpec(name=name, level=level, describe=describe, payload=payload, run=run)
+def _spec(name: str, level: Level, label: str, payload: type[BaseModel], run: Any) -> ActionSpec:
+    return ActionSpec(name=name, level=level, label=label, payload=payload, run=run)
 
 
 @cache
@@ -342,66 +400,56 @@ def catalogue() -> dict[str, ActionSpec]:
         _spec(
             "weight.add",
             Level.ADD,
-            'weight.add — noter une pesée. args : {"date": "AAAA-MM-JJ", "weight_kg": nombre, '
-            '"note": texte ou null}',
+            "noter une pesée",
             WeightPayload,
             _add_weight,
         ),
         _spec(
             "water.add",
             Level.ADD,
-            'water.add — noter une boisson. args : {"volume_ml": entier, "kind": texte ou null}',
+            "noter une boisson",
             IntakePayload,
             _add_water,
         ),
         _spec(
             "supplement.take",
             Level.ADD,
-            "supplement.take — cocher un supplément du jour. args : "
-            '{"schedule_id": identifiant vu dans le condensé}',
+            "cocher un supplément du jour (schedule_id vu dans le condensé)",
             TakeSupplementArgs,
             _take_supplement,
         ),
         _spec(
             "meal.add",
             Level.ADD,
-            'meal.add — noter un repas du jour. args : {"meal_type": texte, "comment": texte ou '
-            'null, "protein_g": nombre ou null, "added_sugar_g": nombre ou null, "calories": '
-            "entier ou null}",
+            "noter un repas du jour",
             MealPayload,
             _add_meal,
         ),
         _spec(
             "run.add",
             Level.ADD,
-            'run.add — noter une course. args : {"date": "AAAA-MM-JJ", "distance_km": nombre, '
-            '"duration_min": nombre, "avg_hr": entier ou null, "elevation_m": entier ou null, '
-            '"note": texte ou null}',
+            "noter une course",
             RunPayload,
             _add_run,
         ),
         _spec(
             "workout.add",
             Level.ADD,
-            'workout.add — noter une séance. args : {"date": "AAAA-MM-JJ", "type": texte, '
-            '"duration_min": nombre, "calories": entier ou null, "rpe": entier ou null, '
-            '"note": texte ou null}',
+            "noter une séance",
             WorkoutPayload,
             _add_workout,
         ),
         _spec(
             "exercise.create",
             Level.ADD,
-            'exercise.create — ajouter un exercice au catalogue. args : {"name": texte, '
-            '"muscle_group": texte}',
+            "ajouter un exercice au catalogue",
             ExercisePayload,
             _create_exercise,
         ),
         _spec(
             "plan.add",
             Level.ADD,
-            'plan.add — prévoir une séance. args : {"date": "AAAA-MM-JJ", "time": "HH:MM", '
-            '"kind": texte, "title": texte, "duration_min": entier, "note": texte ou null}',
+            "prévoir une séance",
             PlanPayload,
             _add_plan,
         ),
@@ -409,35 +457,35 @@ def catalogue() -> dict[str, ActionSpec]:
         _spec(
             "weight.delete",
             Level.CHANGE,
-            'weight.delete — supprimer une pesée. args : {"row_id": entier, "token": jeton}',
+            "supprimer une pesée",
             DeleteByRowArgs,
             _delete_weight,
         ),
         _spec(
             "meal.delete",
             Level.CHANGE,
-            'meal.delete — supprimer un repas. args : {"row_id": entier, "token": jeton}',
+            "supprimer un repas",
             DeleteByRowArgs,
             _delete_meal,
         ),
         _spec(
             "run.delete",
             Level.CHANGE,
-            'run.delete — supprimer une course. args : {"row_id": entier, "token": jeton}',
+            "supprimer une course",
             DeleteByRowArgs,
             _delete_run,
         ),
         _spec(
             "workout.delete",
             Level.CHANGE,
-            'workout.delete — supprimer une séance. args : {"row_id": entier, "token": jeton}',
+            "supprimer une séance",
             DeleteByRowArgs,
             _delete_workout,
         ),
         _spec(
             "plan.delete",
             Level.CHANGE,
-            'plan.delete — retirer une séance prévue. args : {"row_id": entier, "token": jeton}',
+            "retirer une séance prévue",
             DeleteByRowArgs,
             _delete_plan,
         ),
@@ -466,16 +514,43 @@ def validate(name: str, args: dict[str, Any]) -> tuple[ActionSpec, BaseModel] | 
         return f"« {name} » n'est pas quelque chose que je sais faire."
 
     try:
-        payload = spec.payload.model_validate(args)
+        payload = spec.payload.model_validate(
+            {key: value for key, value in args.items() if key not in HIDDEN_ARGS}
+        )
     except ValidationError as error:
-        missing = sorted({str(item["loc"][0]) for item in error.errors() if item["loc"]})
-        detail = ", ".join(missing) or "les arguments"
-        return f"Il me manque de quoi le faire : {detail}."
+        return _refusal(error)
 
     return spec, payload
 
 
+def _refusal(error: ValidationError) -> str:
+    """Dit **pourquoi** en français, et sans confondre deux causes.
+
+    « Il me manque de quoi le faire : kind » s'affichait alors que `kind` était fourni —
+    avec une valeur hors de la liste. Un message qui désigne la mauvaise cause envoie
+    corriger la mauvaise chose, et c'est celui-là que l'utilisateur lit cinq fois de suite.
+    """
+    problems = error.errors()
+
+    missing = sorted({str(item["loc"][0]) for item in problems if item["type"] == "missing"})
+    if missing:
+        return f"Il me manque de quoi le faire : {', '.join(missing)}."
+
+    if not problems:  # pragma: no cover - Pydantic ne lève jamais sans détail
+        return "Cette action n'est pas recevable."
+    first = problems[0]
+    location = first["loc"]
+    field = str(location[0]) if location else "un argument"
+    expected = (first.get("ctx") or {}).get("expected")
+    if expected:
+        # Pydantic énumère en anglais — « 'a', 'b' or 'c' ». Le message est lu par
+        # l'utilisateur, et la moitié du projet existe pour qu'il soit en français.
+        return f"« {field} » n'accepte que {str(expected).replace(' or ', ' ou ')}."
+    return f"La valeur donnée pour « {field} » n'est pas acceptable."
+
+
 __all__ = [
+    "HIDDEN_ARGS",
     "SOURCE",
     "ActionSpec",
     "DeleteByRowArgs",
