@@ -149,7 +149,9 @@ def test_actions_are_bounded() -> None:
     La borne est un garde-fou de sécurité plus que de coût : le tour où le modèle se
     trompe est exactement celui où on ne veut pas qu'il écrive vingt lignes.
     """
-    many = [{"name": "weight.add", "args": {"n": index}} for index in range(20)]
+    # L'entrée se dérive de la borne : fabriquer un nombre fixe d'actions rendait ce test
+    # vert par accident dès que la borne le dépassait, et il ne mesurait alors plus rien.
+    many = [{"name": "weight.add", "args": {"n": index}} for index in range(MAX_ACTIONS + 5)]
 
     assert len(read_actions({"actions": many})) == MAX_ACTIONS
 

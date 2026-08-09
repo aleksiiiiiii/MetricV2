@@ -361,12 +361,18 @@ et la réponse dit toujours en français ce qui a été fait — si l'action a �
 texte ne mentionne rien et l'utilisateur le voit. À surveiller à l'usage : si le taux
 d'actions correctes est trop bas, la réponse est une clé payante, pas un correctif de code.
 
-**La borne d'actions mord sur un usage légitime.** `MAX_ACTIONS` valait cinq ; « planifie
-4 séances et 3 courses la semaine prochaine » en demande sept, et deux étaient coupées
-**en silence** — l'assistant annonçait sept séances et en inscrivait cinq. Portée à dix :
-une semaine entière de planning passe, et « réorganise tout » est toujours arrêté net. Le
-silence de la coupe reste le vrai défaut ; il se verra le jour où quelqu'un demandera
-onze choses.
+**La borne d'actions mord sur un usage légitime.** `MAX_ACTIONS` a valu cinq, puis dix,
+puis trente. Chaque palier coupait quelque chose de raisonnable : sept séances pour une
+semaine, une trentaine pour un mois. À trente, ce n'est plus l'erreur du modèle que la
+borne retient d'abord, c'est **l'attente** — les actions s'exécutent une par une, et chacune
+est une lecture-écriture complète d'un CSV sur Nextcloud. Trente écritures sont trente
+allers-retours, et une coupure à mi-parcours laisse la moitié écrite : le projet n'a pas de
+transaction.
+
+**Le silence de la coupe reste le vrai défaut**, et il n'a pas bougé. Au-delà de la borne,
+le surplus disparaît sans que rien ne le dise — l'assistant annonce ce qu'il a demandé, pas
+ce qui a été retenu. Le corriger demande de faire remonter « j'en ai ignoré 3 » jusqu'à
+l'écran, donc de toucher au contrat des rapports d'action.
 
 **Une action juste sur la mauvaise ligne.** « Supprime ma pesée » quand il y en a deux le
 même jour. Le condensé rendu au modèle porte des identifiants explicites, et une action de

@@ -44,11 +44,17 @@ MAX_PROPOSED = 3
 #: traduit en une action, « range mon mois » en cinquante, et le tour où le modèle se
 #: trompe est précisément celui où on ne veut pas qu'il écrive vingt lignes.
 #:
-#: Elle valait cinq, et cinq mordait sur un usage légitime : « planifie 4 séances et
-#: 3 courses la semaine prochaine » en demande sept, et deux étaient silencieusement
-#: coupées. Dix laisse passer une semaine entière de planning — la plus grosse demande
-#: raisonnable — et arrête toujours net celui qui a compris « réorganise tout ».
-MAX_ACTIONS = 10
+#: Elle a valu cinq, puis dix, et chaque palier mordait sur un usage légitime : « planifie
+#: 4 séances et 3 courses la semaine prochaine » en demande sept, un mois de planning en
+#: demande une trentaine. Trente laisse passer ce mois-là.
+#:
+#: **Ce que trente coûte, et qu'il faut savoir.** Les actions s'exécutent une par une, et
+#: chacune est une lecture-écriture complète d'un CSV sur Nextcloud. Trente écritures, ce
+#: sont trente allers-retours : une demande qui les emploie toutes prendra visiblement du
+#: temps, et une coupure de réseau à mi-parcours laisse la moitié écrite — le projet n'a
+#: pas de transaction. La borne reste donc un garde-fou, mais elle protège désormais
+#: surtout de l'attente, et plus seulement de l'erreur.
+MAX_ACTIONS = 30
 
 #: Tranches de contexte demandées au maximum en un tour. Au-delà, le modèle réclame le
 #: dossier entier, ce que `IA-09` interdit précisément.
