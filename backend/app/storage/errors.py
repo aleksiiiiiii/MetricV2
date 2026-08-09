@@ -32,6 +32,27 @@ class StorageUnavailableError(StorageError):
     message = "Le stockage est momentanément injoignable. Réessaie dans un instant."
 
 
+class StorageLockedError(StorageError):
+    """Un fichier est **verrouillé** sur Nextcloud, et le verrou n'est pas passager.
+
+    Distinct de `StorageUnavailableError` parce que la conduite à tenir est l'inverse.
+    « Réessaie dans un instant » est vrai d'une saturation ; c'est faux d'un verrou posé
+    par l'éditeur Text — il tient jusqu'à ce que quelqu'un ferme la session, et réessayer
+    n'y changera rien. Relevé sur `hydration/intake_log.csv` : verrou posé un vendredi
+    soir, encore là deux jours plus tard, et l'écran conseillait toujours de réessayer.
+
+    `409` et non `503` : rien n'est en panne côté serveur, c'est l'état du fichier qui
+    s'oppose à l'écriture. Le client n'a rien à rejouer, il a quelque chose à dire.
+    """
+
+    code = "storage_locked"
+    status_code = 409
+    message = (
+        "Ce fichier est ouvert dans Nextcloud et bloque l'écriture. "
+        "Ferme-le dans l'interface web, puis réessaie."
+    )
+
+
 class StorageNotConfiguredError(StorageError):
     """Aucune URL ni identifiant Nextcloud dans la configuration."""
 

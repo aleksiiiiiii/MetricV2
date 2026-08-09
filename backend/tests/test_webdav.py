@@ -11,11 +11,12 @@ import pytest
 from app.storage.errors import (
     StorageAuthFailedError,
     StorageConflictError,
+    StorageLockedError,
     StorageNotFoundError,
     StorageUnavailableError,
 )
 from app.storage.webdav import WebDavClient
-from tests.fake_webdav import FakeWebDav
+from tests.fake_webdav import FakeWebDav, Fault
 
 # ── Verbes ────────────────────────────────────────────
 
@@ -204,3 +205,45 @@ async def test_error_messages_never_leak_the_username(
 
     assert "aleksi" not in caught.value.message
     assert "secret" not in str(caught.value)
+
+
+async def test_a_held_lock_is_not_retried_and_says_so(
+    webdav: WebDavClient, dav: FakeWebDav, sleeps: list[float]
+) -> None:
+    """Nextcloud rend 423 dans deux situations opposées, et une seule se rejoue.
+
+    La synchro qui écrit au même instant relâche en quelques centaines de millisecondes.
+    Un verrou d'application — l'éditeur Text, ouvert dans l'interface web — **tient jusqu'à
+    ce que la session se ferme** : un `intake_log.csv` ouvert un vendredi soir bloquait
+    encore l'écriture le dimanche, et l'écran conseillait toujours de réessayer.
+
+    Sabre le signale par `lock-token-submitted`. Insister ne peut pas aboutir : le client
+    n'a pas de jeton de verrou et n'en obtiendra pas.
+    """
+    dav.seed("Metric/body/weight.csv", "date\n")
+    tenu: Fault = (
+        423,
+        {},
+        b'<?xml version="1.0"?><d:error xmlns:d="DAV:">'
+        b"<d:lock-token-submitted><d:href>x</d:href></d:lock-token-submitted></d:error>",
+    )
+    dav.faults = [tenu, tenu, tenu, tenu]
+
+    with pytest.raises(StorageLockedError):
+        await webdav.get("body/weight.csv")
+
+    assert dav.count("GET") == 1, "un verrou tenu ne se rejoue pas"
+    assert sleeps == [], "et ne fait pas attendre pour rien"
+
+
+async def test_a_lock_without_the_marker_is_still_retried(
+    webdav: WebDavClient, dav: FakeWebDav
+) -> None:
+    """L'autre moitié du 423 : la synchro qui passe, et qui relâche."""
+    dav.seed("Metric/body/weight.csv", "date\n")
+    dav.faults = [(423, {}), (423, {})]
+
+    fetched = await webdav.get("body/weight.csv")
+
+    assert fetched.content == b"date\n"
+    assert dav.count("GET") == 3

@@ -20,8 +20,11 @@ Scope = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
 Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
 
-# Une panne scénarisée : soit une réponse HTTP forcée, soit une exception de transport.
-Fault = tuple[int, dict[str, str]] | Exception
+#: Une panne scénarisée : soit une réponse HTTP forcée, soit une exception de transport. : un statut et des en-têtes, éventuellement un corps.
+#:
+#: Le corps compte pour un cas au moins : Nextcloud distingue le verrou passager du verrou
+#: **tenu** par le corps de son 423, pas par le statut.
+Fault = tuple[int, dict[str, str]] | tuple[int, dict[str, str], bytes] | Exception
 
 
 @dataclass(slots=True)
@@ -87,8 +90,8 @@ class FakeWebDav:
             if isinstance(fault, Exception):
                 raise fault
             if fault is not None:
-                status, extra = fault
-                await self._respond(send, status, headers=extra)
+                status, extra, *reste = fault
+                await self._respond(send, status, headers=extra, body=reste[0] if reste else b"")
                 return
 
         handler = {

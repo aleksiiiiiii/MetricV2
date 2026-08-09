@@ -32,6 +32,7 @@ from app.storage.errors import (
     StorageAuthFailedError,
     StorageConflictError,
     StorageError,
+    StorageLockedError,
     StorageNotFoundError,
     StorageUnavailableError,
 )
@@ -39,6 +40,19 @@ from app.storage.errors import (
 # Statuts qui justifient un nouvel essai : saturation et pannes passagères.
 # 423 est le verrou de fichier Nextcloud — fréquent quand la synchro tourne en parallèle.
 RETRYABLE_STATUS = frozenset({423, 429, 500, 502, 503, 504, 507})
+
+# Ce qui distingue, dans un 423, le verrou **tenu** du verrou passager.
+#
+# Nextcloud rend le même statut dans deux situations opposées. La synchro qui écrit au même
+# instant relâche en quelques centaines de millisecondes — réessayer marche, et c'est ce que
+# fait la boucle. Un verrou d'application, lui, est posé par l'éditeur Text quand on ouvre
+# le fichier dans l'interface web, et il **tient jusqu'à ce que la session se ferme** : un
+# `intake_log.csv` ouvert un vendredi soir bloquait encore l'écriture le dimanche.
+#
+# Sabre le signale par cette précondition, qui veut dire « il fallait présenter un jeton de
+# verrou ». Un client qui n'en a pas ne l'obtiendra pas en insistant : trois secondes de
+# réessais partent en pure perte, et le message conseille ensuite de recommencer.
+HELD_LOCK_MARKER = b"lock-token-submitted"
 
 # Erreurs de transport passagères.
 RETRYABLE_ERRORS: tuple[type[Exception], ...] = (
@@ -260,6 +274,9 @@ class WebDavClient:
             if method == "DELETE" and status == 404 and attempted_delete:
                 return response
 
+            if status == 423 and HELD_LOCK_MARKER in response.content:
+                raise StorageLockedError(detail=f"{method} {path} → verrou tenu")
+
             if status in RETRYABLE_STATUS and attempt < self._max_attempts:
                 if method == "DELETE":
                     attempted_delete = True
@@ -318,6 +335,8 @@ class WebDavClient:
             # 412 : `If-Match` refusé, le fichier a changé.
             # 409 : parent absent — côté appelant, cela veut dire dossier à créer.
             return StorageConflictError(detail=where)
+        if status == 423 and HELD_LOCK_MARKER in response.content:
+            return StorageLockedError(detail=where)
         if status in RETRYABLE_STATUS:
             return StorageUnavailableError(detail=where)
         return StorageError(detail=where)
