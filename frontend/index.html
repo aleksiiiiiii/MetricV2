@@ -6,8 +6,46 @@
          dynamique comme l'indicateur d'accueil rognent l'interface.
          Ni `maximum-scale` ni `user-scalable=no` : le zoom reste possible. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Valeurs de départ : le sombre est le thème de la charte. Le script ci-dessous les
+         corrige avant la première peinture si le thème résolu est le clair. -->
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0B0F16" />
+    <!--
+      Le thème, posé avant que quoi que ce soit ne s'affiche.
+
+      Il doit tourner ici, en ligne et synchrone : monté dans React, il s'exécuterait
+      après la première peinture et chaque chargement commencerait par un éclair sombre
+      sur un thème clair. C'est la seule logique d'application qui vit dans ce fichier,
+      et elle est volontairement réduite à trois lignes — la suite est dans
+      `lib/theme.ts`, qui reprend cet état et le tient.
+
+      Les deux couleurs répètent `--bg` des deux thèmes de `tokens.css`, parce qu'aucune
+      feuille de style n'est encore chargée à cet instant. `tokens.test.ts` vérifie
+      qu'elles ne dérivent pas, et `applyTheme` les relit sur le token dès que possible.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('metric.theme');
+          var mode = stored === 'light' || stored === 'dark' ? stored : 'system';
+          var theme =
+            mode === 'system'
+              ? matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+              : mode;
+
+          document.documentElement.dataset.theme = theme;
+          document.querySelector('meta[name="color-scheme"]').content = theme;
+          document.querySelector('meta[name="theme-color"]').content =
+            theme === 'light' ? '#F5F7F9' : '#0B0F16';
+        } catch (error) {
+          // Stockage refusé ou `matchMedia` absent : le sombre des balises ci-dessus
+          // reste en place, et l'application s'affiche.
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
     <!-- Ajoutée à l'écran d'accueil, l'application s'ouvre sans la barre d'adresse
          de Safari : 745 px utiles deviennent 874 sur un iPhone 16 Pro. -->
     <meta name="mobile-web-app-capable" content="yes" />

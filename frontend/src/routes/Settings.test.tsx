@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Toaster } from '@/components/ui';
+import { ThemeProvider } from '@/app/ThemeProvider';
 import { createQueryClient } from '@/lib/query';
 import { SETTINGS, TRACKS } from '@/test/fixtures';
 
@@ -42,13 +43,17 @@ function stub(custom?: (url: string, init?: RequestInit) => Response | undefined
 
 function renderSettings() {
   return render(
-    <QueryClientProvider client={createQueryClient()}>
-      <MemoryRouter>
-        <Toaster>
-          <Settings />
-        </Toaster>
-      </MemoryRouter>
-    </QueryClientProvider>,
+    // L'écran porte la section « Apparence » depuis le thème clair : sans le provider,
+    // `useTheme` lève, et le test dirait « écran cassé » sans que l'écran le soit.
+    <ThemeProvider>
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter>
+          <Toaster>
+            <Settings />
+          </Toaster>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </ThemeProvider>,
   );
 }
 

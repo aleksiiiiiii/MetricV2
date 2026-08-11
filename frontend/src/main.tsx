@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router';
 
 import { Toaster } from '@/components/ui';
 import { AuthProvider } from '@/app/AuthProvider';
+import { ThemeProvider } from '@/app/ThemeProvider';
 import { App } from '@/App';
 import { createQueryClient } from '@/lib/query';
 
@@ -20,16 +21,20 @@ if (!root) {
 }
 
 // `Toaster` enveloppe `AuthProvider` : c'est lui qui annonce une session expirée.
+// `ThemeProvider` les enveloppe tous : le thème vaut aussi pour l'écran de connexion et
+// pour l'attente de session, qui sont rendus hors de la coquille.
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={createQueryClient()}>
-      <BrowserRouter>
-        <Toaster>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </Toaster>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={createQueryClient()}>
+        <BrowserRouter>
+          <Toaster>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </Toaster>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 );

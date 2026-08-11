@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { Badge, Button, Card, Empty, Field, PageHead, Rule } from '@/components/ui';
+import { Badge, Button, Card, Empty, Field, PageHead, Rule, Segmented } from '@/components/ui';
 import {
   settingsApi,
   type SettingsPayload,
@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
 import { num } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
+import { useTheme, type ThemeMode } from '@/lib/theme';
 import { useToast } from '@/lib/toast';
 
 import { Tracks } from './settings/Tracks';
@@ -116,6 +117,56 @@ function changes(draft: Draft, current: SettingsValues): SettingsPayload {
   return payload;
 }
 
+const THEMES: readonly { value: ThemeMode; label: string }[] = [
+  { value: 'system', label: 'Système' },
+  { value: 'light', label: 'Clair' },
+  { value: 'dark', label: 'Sombre' },
+];
+
+/**
+ * Le thème de l'interface.
+ *
+ * **C'est le seul réglage de cet écran qui ne va pas au serveur**, et la carte le dit :
+ * un thème est une préférence d'appareil, pas une donnée du journal. Le téléphone peut
+ * vouloir le sombre quand l'ordinateur veut le clair, et rien dans le fichier de réglages
+ * ne saurait arbitrer.
+ *
+ * La section est rendue dans les trois états de l'écran — chargement, erreur, données.
+ * Elle ne dépend d'aucune requête, et un utilisateur qui trouve l'interface illisible
+ * doit pouvoir la corriger même quand l'API ne répond pas.
+ */
+function Appearance() {
+  const { mode, theme, setMode } = useTheme();
+
+  return (
+    <>
+      <Rule>Apparence</Rule>
+      <Card>
+        <div className="spread">
+          <span className={styles.name}>Thème</span>
+          {/* Même vocabulaire que les objectifs plus haut : ce qui est choisi porte
+              « réglé », ce qui suit un défaut dit lequel il suit. */}
+          <Badge tone={mode === 'system' ? 'load' : 'signal'}>
+            {mode === 'system' ? `système · ${theme === 'light' ? 'clair' : 'sombre'}` : 'réglé'}
+          </Badge>
+        </div>
+        <p className={cx(styles.note, styles.noteSpaced)}>
+          « Système » suit la préférence de l’appareil et change avec elle. Un choix explicite
+          l’emporte, et il reste sur ce navigateur — il n’est pas enregistré au serveur.
+        </p>
+        <div className={styles.row}>
+          <Segmented
+            label="Thème de l’interface"
+            options={THEMES}
+            value={mode}
+            onChange={setMode}
+          />
+        </div>
+      </Card>
+    </>
+  );
+}
+
 function Origin({ view, field }: { view: SettingsView; field: keyof SettingsValues }) {
   const chosen = view.stored.includes(field);
   return <Badge tone={chosen ? 'signal' : 'load'}>{chosen ? 'réglé' : 'valeur par défaut'}</Badge>;
@@ -171,6 +222,7 @@ export function Settings() {
           d'attente se lit comme un écran qui n'a pas répondu. */}
         <PageHead eyebrow="Réglages" title={<>Objectifs &amp; repères</>} />
         <p className={styles.empty}>chargement…</p>
+        <Appearance />
       </div>
     );
   }
@@ -182,6 +234,7 @@ export function Settings() {
         <Empty title="Réglages indisponibles">
           {error instanceof Error ? error.message : 'Le serveur n’a pas répondu.'}
         </Empty>
+        <Appearance />
       </div>
     );
   }
@@ -288,6 +341,8 @@ export function Settings() {
       </form>
 
       <Tracks />
+
+      <Appearance />
 
       <AiSection />
     </div>

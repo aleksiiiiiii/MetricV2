@@ -88,7 +88,7 @@
 }
 
 .action:active .actionDisc {
-  background: #93b8c3;
+  background: var(--signal-hover);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -97,7 +97,7 @@
   }
 
   .action:hover .actionDisc {
-    background: #93b8c3;
+    background: var(--signal-hover);
   }
 }
 

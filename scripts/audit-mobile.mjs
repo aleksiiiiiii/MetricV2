@@ -22,6 +22,14 @@
  *   # 3. l'audit
  *   node scripts/audit-mobile.mjs --base http://localhost:5174 --token "$JETON"
  *
+ *   # …et le même dans l'autre thème, captures rangées à part
+ *   node scripts/audit-mobile.mjs --base http://localhost:5174 --token "$JETON" \
+ *     --theme light --shots audit-shots-clair
+ *
+ * `--theme light|dark` force le thème comme le ferait un choix dans `/reglages`. Sans
+ * lui, le thème suit la préférence de Chrome — le sombre en headless : un audit qui ne
+ * le passe pas ne regarde qu'une moitié de l'application.
+ *
  * Sans `--token`, seules les pages publiques sont visitées : `/connexion` et
  * `/_kitchen-sink`. C'est déjà de quoi vérifier toute la charte — mais aucun des douze
  * écrans, qui sont derrière la session.
@@ -209,7 +217,15 @@ const PROBE = `(() => {
     .filter(visible)[0];
   const avant = chiffre ? Math.round(chiffre.getBoundingClientRect().top + window.scrollY) : null;
 
+  // 8. le thème réellement peint, et le fond calculé qui en découle. Un --theme qui
+  //    n'aurait pas pris rendrait douze captures d'un thème pour l'autre, sans que rien
+  //    ne le signale. (Pas d'accent grave ici : la sonde vit dans un gabarit de chaîne.)
+  const theme = doc.dataset.theme || '(absent)';
+  const fond = getComputedStyle(document.body).backgroundColor;
+
   return {
+    theme,
+    fond,
     taps: taps.slice(0, 8),
     tapsTotal: taps.length,
     deborde,
@@ -231,6 +247,11 @@ async function main() {
   const token = arg('token', null);
   const port = arg('cdp', '9222');
   const shots = arg('shots', 'audit-shots');
+  const theme = arg('theme', null);
+
+  if (theme !== null && theme !== 'light' && theme !== 'dark') {
+    throw new Error(`--theme attend « light » ou « dark », pas « ${theme} »`);
+  }
 
   const routes = token ? [...PUBLIC_ROUTES, ...PRIVATE_ROUTES] : PUBLIC_ROUTES;
   await mkdir(shots, { recursive: true });
@@ -245,10 +266,18 @@ async function main() {
   await cdp.send('Emulation.setDeviceMetricsOverride', DEVICE);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 
-  if (token) {
-    // La session se pose sur l'origine de l'application, pas avant de l'avoir chargée.
+  // La session et le thème se posent sur l'origine de l'application, pas avant de
+  // l'avoir chargée. `/connexion` est publique : elle sert d'origine même sans jeton.
+  if (token || theme !== null) {
     await goto(cdp, `${base}/connexion`);
-    await cdp.eval(`localStorage.setItem('metric.token', ${JSON.stringify(token)})`);
+    if (token) {
+      await cdp.eval(`localStorage.setItem('metric.token', ${JSON.stringify(token)})`);
+    }
+    if (theme !== null) {
+      // La même clé que `/reglages` écrit : l'audit exerce le chemin réel, il ne pose
+      // pas l'attribut à la main.
+      await cdp.eval(`localStorage.setItem('metric.theme', ${JSON.stringify(theme)})`);
+    }
   }
 
   const lignes = [];
@@ -276,7 +305,7 @@ async function main() {
   }
 
   cdp.close();
-  rapport(lignes);
+  rapport(lignes, theme);
 }
 
 async function goto(cdp, url) {
@@ -293,9 +322,16 @@ async function goto(cdp, url) {
 
 // ── Le rapport ───────────────────────────────────────
 
-function rapport(lignes) {
+function rapport(lignes, theme) {
   const ok = (bon) => (bon ? '  ok' : 'FAUX');
-  console.log(`\nAudit mobile — ${DEVICE.width} × ${DEVICE.height}, DPR ${DEVICE.deviceScaleFactor}\n`);
+  const peint = [...new Set(lignes.map((l) => l.theme).filter(Boolean))];
+  const demande = theme === null ? 'préférence du navigateur' : `--theme ${theme}`;
+  console.log(`\nAudit mobile — ${DEVICE.width} × ${DEVICE.height}, DPR ${DEVICE.deviceScaleFactor}`);
+  console.log(`Thème — demandé : ${demande} · peint : ${peint.join(', ') || '—'}`);
+  if (theme !== null && (peint.length !== 1 || peint[0] !== theme)) {
+    console.log('  ⚠ le thème peint ne suit pas celui demandé');
+  }
+  console.log('');
   console.log('écran          cibles<44  déborde  zoom  align  min-px  svg<12  1er chiffre  hauteur');
   console.log('─'.repeat(92));
 

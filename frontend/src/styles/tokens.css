@@ -7,9 +7,23 @@
    ci-dessous en sont la reprise exacte — ne pas les modifier sans modifier la charte.
    Le bloc « Extensions » ajoute ce que la charte utilisait en valeurs littérales et
    qu'une application a besoin de nommer.
+
+   ── Deux thèmes ────────────────────────────────────
+   Le sombre est celui de la charte et reste la valeur par défaut de `:root`. Le clair
+   est une **seconde table**, en fin de fichier, sous `:root[data-theme='light']` : il
+   n'écrase que des valeurs, il n'ajoute aucun token et n'en retire aucun.
+
+   L'attribut est posé sur `<html>` avant la première peinture par le script en tête
+   d'`index.html`, puis tenu par `lib/theme.ts`. C'est pour ça qu'aucune règle ici ne
+   consulte `prefers-color-scheme` : le choix système est résolu en JavaScript, une
+   fois, et la feuille de style n'a qu'un seul cas à connaître.
    ═══════════════════════════════════════════════════ */
 
 :root {
+  /* Les champs natifs, les barres de défilement et la barre d'état suivent le thème.
+     Sans ça, un menu déroulant du système reste sombre sur une page claire. */
+  color-scheme: dark;
+
   /* ── Charte — fond & surfaces ──────────────────── */
   --bg: #0b0f16;
   --surface: #131a24;
@@ -105,8 +119,25 @@
   --t: 0.16s ease;
   --t-fast: 0.1s ease;
 
+  /* ── Survols, nommés ────────────────────────────
+     Ces deux teintes vivaient en dur dans `primitives.module.css` et
+     `TabBar.module.css` — trois occurrences de `#93b8c3`, une de `#1b2530`. Elles
+     tenaient parce qu'un survol *éclaircit* sur fond sombre ; sur fond clair il doit
+     assombrir, et un littéral ne sait pas faire les deux. */
+  --signal-hover: #93b8c3;
+  --log-hover: #1b2530;
+
   /* Élévation des surfaces flottantes (infobulles, tiroirs). */
   --shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+
+  /* Voile derrière une feuille. Il assombrit dans les deux thèmes — c'est ce qui dit
+     que l'écran est en retrait —, mais pas de la même quantité : sur fond clair, la
+     même valeur donnerait une nuit en plein jour. */
+  --scrim: rgb(0 0 0 / 0.55);
+
+  /* Liseré d'une cellule de heatmap. Un cheveu clair sur fond sombre, sombre sur fond
+     clair : il détache la cellule vide de la carte sans se lire comme une bordure. */
+  --heat-edge: rgb(255 255 255 / 0.02);
 
   /* Largeur de lecture du contenu. */
   --wrap: 1080px;
@@ -177,4 +208,88 @@
   :root {
     --gutter: 56px;
   }
+}
+
+/* ═══ Thème clair ════════════════════════════════
+   La seconde table. Elle ne redéfinit que ce qui dépend de la clarté du fond :
+   surfaces, encres, les quatre tons, et les opacités qui en dérivent. Tout le reste —
+   échelles, rayons, cibles tactiles, durées — est commun aux deux thèmes et n'a rien
+   à faire ici.
+
+   **Les quatre tons gardent leur sens et leur ordre de lecture** : `signal` mesure,
+   `effort` tient, `load` approche, `recover` alerte. Ils ne changent pas de teinte,
+   ils changent de clarté — même angle de teinte à ±2°, saturation relevée, luminance
+   descendue de moitié. C'est ce qu'il faut pour garder le même contraste contre un
+   fond blanc plutôt que noir.
+
+   Chaque valeur ci-dessous est mesurée, pas choisie à l'œil : texte à 4,5:1 minimum,
+   éléments d'interface à 3:1. `--ink-low` tient **4,9:1 sur `--bg`** là où le thème
+   sombre le laisse à 3,4 — le défaut connu de la charte n'est pas reproduit ici. */
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* ── Fond & surfaces ─────────────────────────────
+     Trois niveaux, dans l'ordre inverse du sombre : la carte est *au-dessus* de la
+     page, donc plus claire, et la surface en retrait est plus sombre que les deux. */
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --surface-2: #e6ebf1;
+  --line: #cfd8e1;
+  --line-soft: #e2e8ef;
+
+  /* ── Les 4 couleurs de signal ────────────────────
+     Même sémantique, même ordre, teintes conservées : 192° / 99° / 33° / 338°. */
+  --signal: #2b6b7b; /* cyan ardoise — mesure / neutre */
+  --effort: #4a6b38; /* sauge — activité, série tenue */
+  --load: #8a5a1f; /* argile — charge, seuil approché */
+  --recover: #8c3f5b; /* mauve — repos, alerte, dette */
+
+  /* ── Texte ───────────────────────────────────── */
+  --ink: #131b24;
+  --ink-mid: #4c5a68;
+  --ink-low: #5f6d7a;
+
+  /* Les composantes RVB **doivent** suivre leur hex : tout ce qui dérive une opacité
+     lit celles-ci, et une paire désaccordée donne un badge d'une couleur et son texte
+     d'une autre. `tokens.test.ts` le vérifie sur les deux thèmes. */
+  --signal-rgb: 43 107 123;
+  --effort-rgb: 74 107 56;
+  --load-rgb: 138 90 31;
+  --recover-rgb: 140 63 91;
+  --ink-rgb: 19 27 36;
+
+  /* ── Heatmap : le vrai travail du thème clair ────
+     Les quatre niveaux d'intensité ne sont **que** des opacités posées sur la carte.
+     Sur fond sombre elles éclaircissent et la cellule vide (`--surface-2`) est plus
+     sombre qu'elles : les deux séries divergent, et 0.2 suffit à décoller du fond.
+
+     Sur fond clair, la cellule vide *et* le dégradé vont tous deux vers le sombre —
+     ils se disputent le haut de l'échelle. Reprendre 0.2 collerait le niveau 1 à la
+     cellule vide : 5 points de L* d'écart, invisibles sur un carré de 12 px.
+
+     Ces quatre valeurs sont le résultat d'une recherche du jeu qui maximise le plus
+     petit pas de la suite vide → 1 → 2 → 3 → 4, sur les quatre tons à la fois —
+     chaque piste choisit son accent. Le pas le plus serré vaut **ΔL* 12,4**, contre
+     6,6 pour le thème sombre : les niveaux sont plus également espacés en clair
+     qu'en sombre. */
+  --heat-a1: 0.35;
+  --heat-a2: 0.57;
+  --heat-a3: 0.79;
+  --heat-a4: 1;
+
+  /* Badges : un fond teinté un rien plus dense et une bordure plus franche. Sur blanc,
+     9 % d'une couleur sombre disparaît là où 9 % d'une couleur claire se voyait. */
+  --badge-bg-a: 0.1;
+  --badge-border-a: 0.42;
+
+  /* Un survol assombrit, au lieu d'éclaircir. */
+  --signal-hover: #1e5666;
+  --log-hover: #eef2f7;
+
+  /* Une ombre portée sur fond clair se lit à 12 % là où il en fallait 45 sur fond
+     sombre : au-delà, elle salit la page au lieu de détacher la surface. */
+  --shadow: 0 8px 24px rgb(19 27 36 / 0.12);
+  --scrim: rgb(19 27 36 / 0.38);
+  --heat-edge: rgb(19 27 36 / 0.06);
 }

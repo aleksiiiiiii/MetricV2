@@ -28,7 +28,7 @@
   width: var(--heat-cell);
   height: var(--heat-cell);
   border-radius: var(--heat-radius);
-  border: 1px solid rgb(255 255 255 / 0.02);
+  border: 1px solid var(--heat-edge);
   padding: 0;
   background: var(--surface-2);
   transition: var(--t-fast);
@@ -181,7 +181,7 @@
   height: 11px;
   border-radius: var(--heat-radius);
   display: block;
-  border: 1px solid rgb(255 255 255 / 0.02);
+  border: 1px solid var(--heat-edge);
 }
 
 .legendSpacer {

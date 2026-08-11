@@ -13,7 +13,7 @@
   inset: 0;
   border: none;
   padding: 0;
-  background: rgb(0 0 0 / 0.55);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
   cursor: pointer;
   animation: fade 0.18s ease;

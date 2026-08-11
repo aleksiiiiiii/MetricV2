@@ -150,6 +150,11 @@ Pour rejouer l'audit :
 ```bash
 make dev                                   # vérifier le port annoncé
 node scripts/audit-mobile.mjs --base http://localhost:<port> --token "<jeton>"
+
+# et l'autre thème, captures rangées à part — sans `--theme`, l'audit ne regarde
+# qu'une moitié de l'application : Chrome en headless annonce « sombre ».
+node scripts/audit-mobile.mjs --base http://localhost:<port> --token "<jeton>" \
+  --theme light --shots audit-shots-clair
 ```
 
 ---
@@ -283,6 +288,8 @@ Quatre tons partout, et ils ont un sens fixé par la charte : `signal` (mesure, 
 | Ce que tu veux changer | Le fichier | Portée |
 |---|---|---|
 | Une couleur, un rayon, un espacement | `styles/tokens.css` | **toute l'application** |
+| Une couleur **du thème clair** | `tokens.css`, bloc `:root[data-theme='light']` | le thème clair |
+| Comment le thème est choisi ou retenu | [lib/theme.ts](../frontend/src/lib/theme.ts) | — |
 | La police | `styles/fonts.css` **et** `--display` / `--mono` | toute l'application |
 | La taille des titres, le corps de texte | `styles/base.css` | toute l'application |
 | Les marges de page, la largeur de lecture | `.wrap` dans `base.css`, `--wrap` dans les tokens | toute l'application |
@@ -303,6 +310,41 @@ Quatre tons partout, et ils ont un sens fixé par la charte : `signal` (mesure, 
 
 Les deux dernières lignes ne sont pas une commodité de rangement : voir la
 [§7](#7--ce-quune-refonte-ne-doit-pas-casser).
+
+### Les deux thèmes
+
+Le sombre est celui de `GuidelinesUI.html` et reste le défaut de `:root`. Le clair est une
+**seconde table de valeurs** dans le même fichier, sous `:root[data-theme='light']` : il
+n'écrase que ce qui dépend de la clarté du fond — surfaces, encres, les quatre tons, et
+les opacités qui en dérivent. Il n'ajoute aucun token et n'en retire aucun.
+
+Quatre points valent d'être connus avant d'y toucher :
+
+* **Aucune règle ne consulte `prefers-color-scheme`.** Le mode est résolu une fois, en
+  JavaScript, et posé en `data-theme` sur `<html>` — par le script en tête d'`index.html`
+  avant la première peinture, puis par `ThemeProvider`. Deux résolutions, une en CSS et
+  une en JS, donneraient deux réponses le jour où l'une changerait.
+* **Les quatre tons gardent leur sens et leur ordre.** `signal` mesure, `effort` tient,
+  `load` approche, `recover` alerte. Même teinte à ±2°, saturation relevée, luminance
+  descendue de moitié : c'est ce qu'il faut pour tenir le même contraste sur blanc.
+* **Une couleur se change par paires.** `--x` et `--x-rgb` : le texte lit la première, tout
+  ce qui dérive une opacité lit la seconde. Les désaccorder donne un badge d'une couleur et
+  son libellé d'une autre, sans que rien ne casse.
+* **Les opacités de heatmap ne sont pas transposables.** Sur fond sombre, la cellule vide
+  est plus sombre que le dégradé et les deux séries divergent ; sur fond clair elles vont
+  toutes deux vers le sombre et se disputent le haut de l'échelle. Reprendre `0.2` en clair
+  colle le niveau 1 à la cellule vide — **ΔL\* 4, invisible sur un carré de 12 px**. D'où
+  `0.35 / 0.57 / 0.79 / 1`, qui tient un pas minimal de **ΔL\* 12,4** sur les quatre tons.
+
+[`styles/tokens.test.ts`](../frontend/src/styles/tokens.test.ts) garde les quatre : accord
+hex/RVB, aucun token de couleur oublié dans le clair, séparation des niveaux de heatmap, et
+les seuils de contraste. Il lit la feuille de tokens comme une table de valeurs — il ne
+rend aucun composant.
+
+> **Deux écarts connus, portés par la charte sombre et hors périmètre du thème clair** :
+> `--ink-low` tient 3,4:1 sur `--bg` (AA en demande 4,5) et le badge `recover` 4,2:1. Ils
+> sont nommés dans le test avec leur valeur actuelle pour plancher : ils ne peuvent plus
+> empirer, et le thème clair, lui, passe partout — `--ink-low` y vaut 4,9:1.
 
 ### Le patron d'un écran
 
@@ -526,6 +568,16 @@ latence.
 
 Aucune couleur en dur hors de `KitchenSink.tsx`, qui les affiche **volontairement** comme
 contenu — c'est la page qui documente la charte. Tout le reste passe par les tokens.
+
+> **C'est vrai à la lettre depuis le thème clair, et ça ne l'était pas avant.** Quatre
+> littéraux traînaient — `#93b8c3` trois fois (survol du bouton primaire et du disque
+> `⊕`), `#1b2530` une fois (survol de `LogButton`) —, plus deux valeurs que seul un fond
+> sombre rendait correctes : le voile de `Sheet` en `rgb(0 0 0 / .55)` et le liseré de
+> cellule de heatmap en `rgb(255 255 255 / .02)`. Les six sont devenus des tokens
+> (`--signal-hover`, `--log-hover`, `--scrim`, `--heat-edge`). Un survol qui *éclaircit*
+> n'a pas de sens sur fond clair, où il doit assombrir : un littéral ne sait pas faire les
+> deux. Le `#000` du `mask-image` de `Shell.module.css` reste, et c'est normal — un masque
+> n'est pas une couleur.
 
 ---
 

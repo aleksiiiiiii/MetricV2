@@ -71,7 +71,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .primary:hover:not(:disabled) {
-    background: #93b8c3;
+    background: var(--signal-hover);
     transform: translateY(-1px);
   }
 
@@ -109,7 +109,7 @@
 @media (hover: hover) and (pointer: fine) {
   .log:hover:not(:disabled) {
     border-color: var(--effort);
-    background: #1b2530;
+    background: var(--log-hover);
   }
 }
 
