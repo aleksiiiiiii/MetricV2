@@ -9,6 +9,7 @@ calcule cette borne.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from datetime import date, timedelta
 
 from app.core.dates import week_start
@@ -69,13 +70,21 @@ class ActivityStats:
         current = week_start(today)
         minutes, sessions = self._per_day(runs, workouts)
 
+        # Séries par séance : ce que la suppression d'une séance emporterait avec elle
+        # (`ACT-04`). Compté ici, sur un journal déjà lu pour le tonnage — l'écran ne peut
+        # pas le dériver, et il n'aurait pas le droit.
+        per_workout: defaultdict[str, int] = defaultdict(int)
+        for entry in entries:
+            per_workout[entry.model.workout_id] += 1
+
         return ActivityOverview(
+            today=today,
             week=self._week_totals(runs, workouts, current),
             days=self._days(minutes, current),
             weeks=self._weeks(minutes, sessions, current),
             muscles=self._muscles(entries, current),
             neglected=self._neglected(entries, today),
-            history=self._history(runs, workouts)[:limit],
+            history=self._history(runs, workouts, per_workout)[:limit],
             total=len(runs) + len(workouts),
         )
 
@@ -316,16 +325,21 @@ class ActivityStats:
     # ── Historique fusionné (`ACT-13`) ────────────────
 
     @staticmethod
-    def _history(runs: list, workouts: list) -> list[ActivityItem]:  # type: ignore[type-arg]
+    def _history(
+        runs: list[Row[RunRow]],
+        workouts: list[Row[WorkoutRow]],
+        per_workout: Mapping[str, int] | None = None,
+    ) -> list[ActivityItem]:
+        counts = per_workout or {}
         items: list[ActivityItem] = []
 
-        for row in runs:
-            model = row.model
+        for run in runs:
+            model = run.model
             items.append(
                 ActivityItem(
                     kind="run",
-                    id=row.index,
-                    token=row.token,
+                    id=run.index,
+                    token=run.token,
                     date=model.date,
                     label="Course",
                     duration_min=model.duration_min,
@@ -338,18 +352,19 @@ class ActivityStats:
                 )
             )
 
-        for row in workouts:
-            model = row.model
+        for workout in workouts:
+            session = workout.model
             items.append(
                 ActivityItem(
                     kind="workout",
-                    id=row.index,
-                    token=row.token,
-                    date=model.date,
-                    label=model.type,
-                    duration_min=model.duration_min,
-                    rpe=model.rpe,
-                    source=model.source,
+                    id=workout.index,
+                    token=workout.token,
+                    date=session.date,
+                    label=session.type,
+                    duration_min=session.duration_min,
+                    rpe=session.rpe,
+                    entries=counts.get(session.id, 0),
+                    source=session.source,
                 )
             )
 

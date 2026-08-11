@@ -23,6 +23,7 @@ function json(status: number, body: unknown): Response {
 const MONDAY = '2026-07-20';
 
 const OVERVIEW = {
+  today: '2026-07-26',
   week: {
     week_start: MONDAY,
     minutes: 151.87,
@@ -60,6 +61,7 @@ const OVERVIEW = {
       distance_km: null,
       pace_min_km: null,
       rpe: 8,
+      entries: 2,
       source: 'manual',
     },
     {
@@ -72,6 +74,7 @@ const OVERVIEW = {
       distance_km: 8.4,
       pace_min_km: 5.262,
       rpe: null,
+      entries: 0,
       source: 'manual',
     },
     {
@@ -84,6 +87,7 @@ const OVERVIEW = {
       distance_km: null,
       pace_min_km: null,
       rpe: null,
+      entries: 0,
       source: 'manual',
     },
   ],
@@ -139,6 +143,7 @@ const CATALOGUE = [
     exercise_id: 'e1',
     name: 'Développé couché',
     muscle_group: 'pectoraux',
+    entries: 4,
     last_weight_kg: 90,
     last_reps: 8,
     last_sets: 3,
@@ -239,6 +244,7 @@ describe('écran Activité', () => {
     stub();
     renderActivity();
 
+    await userEvent.click(await screen.findByRole('button', { name: 'Nouvelle course' }));
     await userEvent.type(await screen.findByLabelText('Distance'), '8,40');
     await userEvent.type(screen.getByLabelText('Durée'), '44:12');
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer la course' }));
@@ -265,6 +271,7 @@ describe('écran Activité', () => {
     );
     renderActivity();
 
+    await userEvent.click(await screen.findByRole('button', { name: 'Nouvelle course' }));
     await userEvent.type(await screen.findByLabelText('Distance'), '8,4');
     await userEvent.type(screen.getByLabelText('Durée'), "n'importe quoi");
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer la course' }));
@@ -279,7 +286,7 @@ describe('écran Activité', () => {
     // Deux appuis : le premier arme, le second exécute. Sans annulation dans le projet,
     // une suppression au doigt ne doit pas partir d'un geste unique.
     await userEvent.click(
-      await screen.findByRole('button', { name: /^Supprimer l'activité du 20/ }),
+      await screen.findByRole('button', { name: /^Supprimer la course du 20/ }),
     );
     await userEvent.click(screen.getByRole('button', { name: /du 20.*confirmer/ }));
 
@@ -452,6 +459,7 @@ describe('écran Activité', () => {
     });
     renderActivity();
 
+    await userEvent.click(await screen.findByRole('button', { name: 'Nouvelle séance' }));
     await userEvent.type(await screen.findByLabelText('Durée de séance'), '30');
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer la séance' }));
 
@@ -627,7 +635,7 @@ describe('écran Activité', () => {
     stub();
     renderActivity();
 
-    const supprimer = await screen.findByRole('button', { name: /^Supprimer l'activité du 20/ });
+    const supprimer = await screen.findByRole('button', { name: /^Supprimer la course du 20/ });
     await userEvent.click(supprimer);
 
     // Premier appui : rien n'est parti.
@@ -659,9 +667,211 @@ describe('écran Activité', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /Ouvrir la séance du 18/ }));
     await screen.findByText(/45 min/);
-    await userEvent.click(screen.getByRole('button', { name: /^Supprimer l'activité du 18/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^Supprimer la séance du 18/ }));
     await userEvent.click(screen.getByRole('button', { name: /du 18.*confirmer/ }));
 
     expect(await screen.findByText(/1 h 18/)).toBeInTheDocument();
+  });
+
+  // ── Corriger, et ce que ça coûte ────────────────────
+
+  it('dit combien de séries une suppression de séance emporte', async () => {
+    // « Confirmer ? » emploie les mêmes mots qu'elle en emporte zéro ou douze : le coût
+    // se lit sur la ligne, avant que le geste ne s'arme.
+    stub();
+    renderActivity();
+
+    expect(
+      await screen.findByRole('button', { name: /^Supprimer la séance du 21.*2 séries/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('relit la séance avant de la corriger, et renvoie son jeton', async () => {
+    // L'historique ne porte ni la note ni l'effort perçu : les corriger à l'aveugle les
+    // effacerait. La relecture rend au passage un jeton frais pour la garde.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Corriger la séance du 21/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Corriger la séance' }));
+
+    await waitFor(() => {
+      const patch = calls.find((call) => call.init?.method === 'PATCH');
+      expect(patch?.url).toContain('/api/activity/workouts/0');
+      expect((patch?.init?.headers as Record<string, string>)['If-Match']).toBe('jeton-seance');
+    });
+  });
+
+  it('corrige une course par la même feuille que la séance', async () => {
+    stub((url) =>
+      /\/activity\/runs\/0$/.test(url)
+        ? json(200, {
+            id: 0,
+            token: 'jeton-course',
+            date: MONDAY,
+            distance_km: 8.4,
+            duration_min: 44.2,
+            pace_min_km: 5.262,
+            speed_kmh: 11.4,
+            avg_hr: 152,
+            elevation_m: null,
+            note: null,
+            source: 'manual',
+          })
+        : undefined,
+    );
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Corriger la course du 20/ }));
+
+    // La feuille repart des valeurs de la ligne, y compris celles que l'historique ne
+    // porte pas.
+    expect(await screen.findByLabelText('FC moyenne')).toHaveValue('152');
+    expect(screen.getByLabelText('Distance')).toHaveValue('8,4');
+  });
+
+  it('charge une série dans le formulaire quand on appuie sur sa ligne', async () => {
+    stub((url) =>
+      /\/activity\/workouts\/0$/.test(url)
+        ? json(200, {
+            ...WORKOUT_DETAIL,
+            exercises: [
+              {
+                id: 3,
+                token: 'jeton-serie',
+                workout_id: 'w1',
+                date: '2026-07-21',
+                exercise_id: 'e1',
+                exercise_name: 'Développé couché',
+                muscle_group: 'pectoraux',
+                weight_kg: 80,
+                sets: 3,
+                reps: 8,
+                note: null,
+                volume_kg: 1920,
+                one_rep_max_kg: 100,
+              },
+            ],
+          })
+        : undefined,
+    );
+    renderActivity();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^Corriger la série — Développé couché, 80 kg/ }),
+    );
+
+    expect(screen.getByLabelText('Charge (kg)')).toHaveValue('80');
+    // Ce que la correction remplace, sous les yeux jusqu'à l'envoi.
+    expect(screen.getByText(/était : Développé couché, 80 kg, 3×8/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Corriger la série' }));
+
+    await waitFor(() => {
+      const patch = calls.find((call) => call.init?.method === 'PATCH');
+      expect(patch?.url).toContain('/api/activity/exercise-log/3');
+      expect((patch?.init?.headers as Record<string, string>)['If-Match']).toBe('jeton-serie');
+    });
+  });
+
+  it('reprend les séries et les réps réellement soulevées la dernière fois', async () => {
+    // Le formulaire partait de « 3×8 » écrit en dur — deux valeurs que personne n'avait
+    // jamais soulevées. Le catalogue rend les vraies (`ACT-08`).
+    stub((url) =>
+      url.includes('/activity/exercises')
+        ? json(200, [{ ...CATALOGUE[0], last_sets: 5, last_reps: 5 }])
+        : undefined,
+    );
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: /Développé couché/ }));
+
+    expect(screen.getByLabelText('Séries')).toHaveValue('5');
+    expect(screen.getByLabelText('Réps')).toHaveValue('5');
+    // La charge, elle, reste vide : c'est elle qui progresse.
+    expect(screen.getByLabelText('Charge (kg)')).toHaveValue('');
+  });
+
+  // ── Le catalogue ────────────────────────────────────
+
+  it('montre les exercices déclarés et ce qu’un retrait laisserait', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Gérer le catalogue' }));
+
+    const liste = await screen.findByRole('list', { name: 'Exercices déclarés' });
+    expect(within(liste).getByText(/4 séries · dernière 90 kg/)).toBeInTheDocument();
+  });
+
+  it('renvoie le jeton de la ligne pour corriger un exercice', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Gérer le catalogue' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Corriger Développé couché' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Enregistrer' }));
+
+    await waitFor(() => {
+      const patch = calls.find((call) => call.init?.method === 'PATCH');
+      expect(patch?.url).toContain('/api/activity/exercises/0');
+      expect((patch?.init?.headers as Record<string, string>)['If-Match']).toBe('jeton-ex');
+    });
+  });
+
+  it('annonce ce qu’une correction de catalogue répercute', async () => {
+    // Rien ne la défait : ce que le geste touche se dit avant le geste.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Gérer le catalogue' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Corriger Développé couché' }));
+
+    expect(screen.getByText(/met aussi à jour les 4 séries déjà consignées/)).toBeInTheDocument();
+  });
+
+  it('demande deux appuis pour retirer un exercice du catalogue', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Gérer le catalogue' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Retirer Développé couché du catalogue' }),
+    );
+
+    // Premier appui : rien n'est parti.
+    expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(false);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Retirer Développé couché du catalogue — confirmer/ }),
+    );
+
+    await waitFor(() => {
+      const remove = calls.find((call) => call.init?.method === 'DELETE');
+      expect(remove?.url).toContain('/api/activity/exercises/0');
+      expect((remove?.init?.headers as Record<string, string>)['If-Match']).toBe('jeton-ex');
+    });
+  });
+
+  it('ouvre le catalogue depuis le journal quand un exercice manque', async () => {
+    // Le découvrir en pleine séance demandait de descendre l'écran, de le déclarer, de
+    // remonter et de le re-choisir.
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Déclarer un exercice' }));
+
+    expect(await screen.findByRole('list', { name: 'Exercices déclarés' })).toBeInTheDocument();
+  });
+
+  // ── Le jour vient du serveur ────────────────────────
+
+  it('date la saisie avec le jour du serveur, pas celui du téléphone', async () => {
+    stub();
+    renderActivity();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Nouvelle séance' }));
+
+    expect(await screen.findByLabelText('Date de séance')).toHaveValue('2026-07-26');
   });
 });

@@ -175,6 +175,17 @@ async def create_exercise(payload: ExercisePayload, store: StoreDep) -> Exercise
     return await ExerciseService(store).create(payload)
 
 
+@router.patch("/exercises/{row_id}", response_model=Exercise, summary="Corriger un exercice")
+async def update_exercise(
+    row_id: RowId, payload: ExercisePayload, store: StoreDep, if_match: IfMatch = None
+) -> Exercise:
+    """Corrige le nom ou le groupe, et répercute la correction sur les séries (`ACT-06`).
+
+    L'identifiant de l'exercice ne change pas : c'est lui qui porte tout l'historique.
+    """
+    return await ExerciseService(store).update(row_id, _token(if_match), payload)
+
+
 @router.delete(
     "/exercises/{row_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Retirer un exercice"
 )

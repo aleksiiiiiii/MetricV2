@@ -249,6 +249,36 @@ class CsvRepository[TModel: CsvModel]:
             await self._save(kept, sheet)
         return removed
 
+    async def update_where(
+        self, matches: Callable[[TModel], bool], apply: Callable[[TModel], TModel]
+    ) -> int:
+        """Réécrit toutes les lignes qui satisfont un critère, en une écriture.
+
+        Le pendant de `remove_where`, et pour les mêmes raisons. Nécessaire aux corrections
+        en cascade — répercuter le nom d'un exercice sur les séries qui en portent une
+        copie (`ACT-06`). Les faire une par une multiplierait les allers-retours et
+        laisserait le fichier dans un état intermédiaire en cas de coupure.
+
+        Sans garde par jeton, comme `remove_where` : les lignes visées ne sont pas
+        désignées par l'utilisateur mais déduites d'une correction qu'il vient de
+        confirmer, sur une ligne qui, elle, était gardée.
+        """
+        sheet = await self.load(fresh=True)
+
+        raws = [dict(row.raw) for row in sheet.rows]
+        touched = 0
+        for index, row in enumerate(sheet.rows):
+            if not matches(row.model):
+                continue
+            # Comme `replace_by_token` : les colonnes que l'application ne connaît pas
+            # restent sur la ligne, elles ne sont pas effacées par la correction.
+            raws[index] = {**raws[index], **apply(row.model).to_csv()}
+            touched += 1
+
+        if touched:
+            await self._save(raws, sheet)
+        return touched
+
     async def overwrite(self, items: Sequence[TModel], *, token: str | None = None) -> None:
         """Réécrit le fichier entier.
 

@@ -31,6 +31,7 @@ export const keys = {
     overview: () => ['activity', 'overview'] as const,
     progress: () => ['activity', 'progress'] as const,
     runs: () => ['activity', 'runs'] as const,
+    run: (id: number) => ['activity', 'runs', id] as const,
     workouts: () => ['activity', 'workouts'] as const,
     workout: (id: number) => ['activity', 'workouts', id] as const,
     exercises: () => ['activity', 'exercises'] as const,

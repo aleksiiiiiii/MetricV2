@@ -21,6 +21,7 @@ from tests.fake_webdav import FakeWebDav
 ACTIVITY = "/api/activity"
 RUNS_FILE = "Metric/activity/runs.csv"
 WORKOUTS_FILE = "Metric/activity/workouts.csv"
+EXERCISES_FILE = "Metric/activity/exercises.csv"
 LOG_FILE = "Metric/activity/exercise_log.csv"
 
 
@@ -257,6 +258,196 @@ def test_removing_an_exercise_keeps_the_history(
     assert app_client.get(f"{ACTIVITY}/exercises", headers=auth).json() == []
     assert "Rowing" in dav.content_of(LOG_FILE)
     assert "dos" in dav.content_of(LOG_FILE)
+
+
+# ── Correction d'un exercice (`ACT-06`) ───────────────
+
+
+def log_series(
+    client: TestClient, auth: dict[str, str], workout: Any, exercise: Any, **fields: Any
+) -> Any:
+    body = {"exercise_id": exercise["exercise_id"], "weight_kg": 80, "sets": 3, "reps": 8, **fields}
+    response = client.post(
+        f"{ACTIVITY}/workouts/{workout['id']}/exercises", json=body, headers=auth
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_correcting_an_exercise_keeps_its_identifier(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """La ligne la plus dangereuse du module : `exercise_id` porte tout l'historique."""
+    exercise = create_exercise(app_client, auth, "Développé couhé", "pectoraux")
+
+    corrected = app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Développé couché", "muscle_group": "pectoraux"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["name"] == "Développé couché"
+    assert corrected.json()["exercise_id"] == exercise["exercise_id"]
+
+
+def test_correcting_an_exercise_follows_through_to_the_log(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Sans cela, la progression garderait la faute pendant que le catalogue affiche la
+    forme corrigée — le même exercice, deux noms, le même écran."""
+    workout = create_workout(app_client, auth)
+    exercise = create_exercise(app_client, auth, "Développé couhé", "pectoraux")
+    log_series(app_client, auth, workout, exercise)
+
+    app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Développé couché", "muscle_group": "pectoraux"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    assert "Développé couché" in dav.content_of(LOG_FILE)
+    assert "Développé couhé" not in dav.content_of(LOG_FILE)
+
+
+def test_correcting_an_exercise_leaves_the_others_alone(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    workout = create_workout(app_client, auth)
+    corrected = create_exercise(app_client, auth, "Rowing", "dos")
+    untouched = create_exercise(app_client, auth, "Squat", "jambes")
+    log_series(app_client, auth, workout, corrected)
+    log_series(app_client, auth, workout, untouched, weight_kg=100)
+
+    app_client.patch(
+        f"{ACTIVITY}/exercises/{corrected['id']}",
+        json={"name": "Rowing barre", "muscle_group": "dos"},
+        headers={**auth, "If-Match": corrected["token"]},
+    )
+
+    log = dav.content_of(LOG_FILE)
+    assert "Rowing barre" in log
+    assert "Squat,jambes" in log
+
+
+def test_the_progression_names_the_exercise_as_corrected(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """`stats.progress` lit le nom sur le journal, pas sur le catalogue."""
+    workout = create_workout(app_client, auth)
+    exercise = create_exercise(app_client, auth, "Développé couhé", "pectoraux")
+    log_series(app_client, auth, workout, exercise)
+
+    app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Développé couché", "muscle_group": "pectoraux"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    assert app_client.get(f"{ACTIVITY}/progress", headers=auth).json()[0]["name"] == (
+        "Développé couché"
+    )
+
+
+def test_changing_a_muscle_group_moves_the_past_tonnage(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Sinon le même exercice compterait dans deux groupes, selon la date de la série."""
+    workout = create_workout(app_client, auth, date=today_local().isoformat())
+    exercise = create_exercise(app_client, auth, "Tirage vertical", "biceps")
+    log_series(app_client, auth, workout, exercise)
+
+    app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Tirage vertical", "muscle_group": "dos"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    muscles = app_client.get(ACTIVITY, headers=auth).json()["muscles"]
+    assert [item["muscle_group"] for item in muscles] == ["dos"]
+
+
+def test_correcting_an_exercise_without_a_token_is_refused(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Un `If-Match` absent est un conflit, jamais une permission (`STO-05`)."""
+    workout = create_workout(app_client, auth)
+    exercise = create_exercise(app_client, auth, "Rowing", "dos")
+    log_series(app_client, auth, workout, exercise)
+
+    refused = app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Rowing barre", "muscle_group": "dos"},
+        headers=auth,
+    )
+
+    assert refused.status_code == 409
+    assert "Rowing barre" not in dav.content_of(LOG_FILE)
+    assert app_client.get(f"{ACTIVITY}/exercises", headers=auth).json()[0]["name"] == "Rowing"
+
+
+def test_correcting_an_exercise_with_a_stale_token_is_refused(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    exercise = create_exercise(app_client, auth, "Rowing", "dos")
+    app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Rowing barre", "muscle_group": "dos"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    replayed = app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Rowing haltère", "muscle_group": "dos"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    assert replayed.status_code == 409
+    assert "Rowing haltère" not in dav.content_of(EXERCISES_FILE)
+
+
+def test_correcting_an_exercise_to_an_unknown_group_is_refused(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    exercise = create_exercise(app_client, auth, "Tirage", "dos")
+
+    refused = app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Tirage", "muscle_group": "avant-bras"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    assert refused.status_code == 422
+
+
+def test_correcting_an_exercise_never_logged_writes_only_the_catalogue(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    exercise = create_exercise(app_client, auth, "Fente", "jambes")
+
+    corrected = app_client.patch(
+        f"{ACTIVITY}/exercises/{exercise['id']}",
+        json={"name": "Fente bulgare", "muscle_group": "fessiers"},
+        headers={**auth, "If-Match": exercise["token"]},
+    )
+
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["muscle_group"] == "fessiers"
+
+
+def test_the_catalogue_counts_what_a_removal_would_leave_behind(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Le compte est fait par le serveur : l'écran dit ce que le geste coûte sans dériver."""
+    workout = create_workout(app_client, auth)
+    exercise = create_exercise(app_client, auth, "Squat", "jambes")
+    log_series(app_client, auth, workout, exercise, weight_kg=100)
+    log_series(app_client, auth, workout, exercise, weight_kg=110)
+    create_exercise(app_client, auth, "Fente", "jambes")
+
+    catalogue = app_client.get(f"{ACTIVITY}/exercises", headers=auth).json()
+
+    assert {item["name"]: item["entries"] for item in catalogue} == {"Squat": 2, "Fente": 0}
 
 
 def test_bodyweight_is_a_legitimate_load(app_client: TestClient, auth: dict[str, str]) -> None:
@@ -556,6 +747,29 @@ def test_a_first_performance_has_no_delta(
     )
 
     assert app_client.get(f"{ACTIVITY}/progress", headers=auth).json()[0]["delta_kg"] is None
+
+
+def test_a_workout_row_says_how_many_series_it_carries(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Supprimer une séance purge ses séries (`ACT-04`) : la ligne doit pouvoir dire ce
+    qu'elle emporte avant que le geste ne s'arme."""
+    workout = create_workout(app_client, auth)
+    exercise = create_exercise(app_client, auth, "Squat", "jambes")
+    log_series(app_client, auth, workout, exercise, weight_kg=100)
+    log_series(app_client, auth, workout, exercise, weight_kg=110)
+    create_run(app_client, auth)
+
+    history = app_client.get(ACTIVITY, headers=auth).json()["history"]
+
+    assert {item["kind"]: item["entries"] for item in history} == {"workout": 2, "run": 0}
+
+
+def test_the_overview_dates_itself_from_the_server(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Le jour vient du serveur, jamais de l'horloge du téléphone."""
+    assert app_client.get(ACTIVITY, headers=auth).json()["today"] == today_local().isoformat()
 
 
 def test_an_empty_domain_answers_without_failing(

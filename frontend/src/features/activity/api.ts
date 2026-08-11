@@ -59,6 +59,8 @@ export interface Exercise {
   exercise_id: string;
   name: string;
   muscle_group: string;
+  /** Séries déjà consignées : ce qu'un retrait conserve, ce qu'une correction répercute. */
+  entries: number;
   last_weight_kg: number | null;
   last_reps: number | null;
   last_sets: number | null;
@@ -75,6 +77,8 @@ export interface ActivityItem {
   distance_km: number | null;
   pace_min_km: number | null;
   rpe: number | null;
+  /** Séries rattachées à une séance : ce que sa suppression emporterait (`ACT-04`). */
+  entries: number;
   source: string;
 }
 
@@ -112,6 +116,8 @@ export interface NeglectedGroup {
 }
 
 export interface ActivityOverview {
+  /** Le jour, dans le fuseau du serveur. L'écran ne consulte pas l'horloge du téléphone. */
+  today: string;
   week: WeekTotals;
   days: DayVolume[];
   weeks: WeekVolume[];
@@ -173,12 +179,25 @@ export const activityApi = {
 
   createRun: (payload: RunPayload) =>
     request<Run>('/api/activity/runs', { method: 'POST', body: payload }),
+  readRun: (id: number) => request<Run>(`/api/activity/runs/${id}`),
+  updateRun: (id: number, token: string, payload: RunPayload) =>
+    request<Run>(`/api/activity/runs/${id}`, {
+      method: 'PATCH',
+      headers: guard(token),
+      body: payload,
+    }),
   deleteRun: (id: number, token: string) =>
     request<undefined>(`/api/activity/runs/${id}`, { method: 'DELETE', headers: guard(token) }),
 
   createWorkout: (payload: WorkoutPayload) =>
     request<Workout>('/api/activity/workouts', { method: 'POST', body: payload }),
   readWorkout: (id: number) => request<Workout>(`/api/activity/workouts/${id}`),
+  updateWorkout: (id: number, token: string, payload: WorkoutPayload) =>
+    request<Workout>(`/api/activity/workouts/${id}`, {
+      method: 'PATCH',
+      headers: guard(token),
+      body: payload,
+    }),
   deleteWorkout: (id: number, token: string) =>
     request<undefined>(`/api/activity/workouts/${id}`, {
       method: 'DELETE',
@@ -196,9 +215,34 @@ export const activityApi = {
       method: 'POST',
       body: { name, muscle_group },
     }),
+  /** Corrige nom et groupe. Le serveur répercute la correction sur les séries (`ACT-06`). */
+  updateExercise: (id: number, token: string, name: string, muscle_group: string) =>
+    request<Exercise>(`/api/activity/exercises/${id}`, {
+      method: 'PATCH',
+      headers: guard(token),
+      body: { name, muscle_group },
+    }),
+  deleteExercise: (id: number, token: string) =>
+    request<undefined>(`/api/activity/exercises/${id}`, {
+      method: 'DELETE',
+      headers: guard(token),
+    }),
+
   logExercise: (workoutId: number, payload: ExerciseEntryPayload) =>
     request<ExerciseEntry>(`/api/activity/workouts/${workoutId}/exercises`, {
       method: 'POST',
       body: payload,
+    }),
+  /** La séance et le jour d'une série ne changent pas : le serveur les préserve. */
+  updateEntry: (id: number, token: string, payload: ExerciseEntryPayload) =>
+    request<ExerciseEntry>(`/api/activity/exercise-log/${id}`, {
+      method: 'PATCH',
+      headers: guard(token),
+      body: payload,
+    }),
+  deleteEntry: (id: number, token: string) =>
+    request<undefined>(`/api/activity/exercise-log/${id}`, {
+      method: 'DELETE',
+      headers: guard(token),
     }),
 };

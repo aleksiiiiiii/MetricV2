@@ -29,6 +29,7 @@ function json(status: number, body: unknown): Response {
 }
 
 const OVERVIEW = {
+  today: '2026-07-27',
   week: {
     week_start: '2026-07-27',
     minutes: 0,
@@ -298,8 +299,8 @@ describe('import Apple', () => {
     expect(await screen.findByText(/Cette capture n’a pas pu être lue/)).toBeInTheDocument();
     // La capture reste choisie : relancer l'analyse est à un appui (`IMP-06`).
     expect(screen.getByRole('button', { name: 'Lire la capture' })).toBeInTheDocument();
-    // Et la saisie manuelle n'a jamais bougé.
-    expect(screen.getByRole('button', { name: 'Enregistrer la course' })).toBeInTheDocument();
+    // Et la saisie manuelle n'a jamais bougé : elle reste à un appui, dans le document.
+    expect(screen.getByRole('button', { name: 'Nouvelle course' })).toBeInTheDocument();
   });
 
   it('refuse d’importer tant que la date manque', async () => {

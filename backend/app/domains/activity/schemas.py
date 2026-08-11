@@ -195,6 +195,9 @@ class Exercise(BaseModel):
     exercise_id: str
     name: str
     muscle_group: str
+    #: Séries déjà consignées sur cet exercice. Dit ce qu'un retrait laisse intact
+    #: (`ACT-06`) et ce qu'une correction de nom ou de groupe répercute.
+    entries: int = 0
     #: Dernière performance, pour choisir sa charge sans consulter l'historique (`ACT-08`).
     last_weight_kg: float | None = None
     last_reps: int | None = None
@@ -217,6 +220,9 @@ class ActivityItem(BaseModel):
     distance_km: float | None = None
     pace_min_km: float | None = None
     rpe: int | None = None
+    #: Séries rattachées, pour une séance. Supprimer une séance les purge (`ACT-04`) : la
+    #: ligne doit pouvoir dire ce qu'elle emporte **avant** que le geste ne s'arme.
+    entries: int = 0
     source: str
 
 
@@ -311,6 +317,10 @@ class ExerciseProgress(BaseModel):
 class ActivityOverview(BaseModel):
     """Tout ce qu'affiche l'écran Activité, en une requête."""
 
+    #: Le jour, dans le fuseau local du serveur. L'écran date ses saisies avec lui et ne
+    #: consulte jamais l'horloge du téléphone : c'est l'invariant « le jour vient du
+    #: serveur », que `/nutrition` avait cassé au lot D pour l'avoir oublié.
+    today: date
     week: WeekTotals
     days: list[DayVolume]
     weeks: list[WeekVolume]

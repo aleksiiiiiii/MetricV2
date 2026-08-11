@@ -141,8 +141,14 @@ class ExerciseService:
         entries = await self._log.read_all()
 
         latest: dict[str, ExerciseLogRow] = {}
+        # Ce que le catalogue conserve derrière lui : le compte des séries qui portent une
+        # copie de cet exercice. Il dit ce qu'un retrait laisse intact et ce qu'une
+        # correction touche — deux phrases que l'écran ne peut pas écrire sans lui, et
+        # qu'il n'a pas le droit de calculer.
+        counts: dict[str, int] = {}
         for entry in sorted(entries, key=lambda item: (item.model.date, item.index)):
             latest[entry.model.exercise_id] = entry.model
+            counts[entry.model.exercise_id] = counts.get(entry.model.exercise_id, 0) + 1
 
         catalogue: list[Exercise] = []
         for row in rows:
@@ -156,6 +162,7 @@ class ExerciseService:
                     exercise_id=row.model.id,
                     name=row.model.name,
                     muscle_group=row.model.muscle_group,
+                    entries=counts.get(row.model.id, 0),
                     last_weight_kg=last.weight_kg if last else None,
                     last_reps=last.reps if last else None,
                     last_sets=last.sets if last else None,
@@ -168,6 +175,69 @@ class ExerciseService:
         row = await self._repo.append(
             ExerciseRow(id=new_id(), name=payload.name, muscle_group=payload.muscle_group)
         )
+        return Exercise(
+            id=row.index,
+            token=row.token,
+            exercise_id=row.model.id,
+            name=row.model.name,
+            muscle_group=row.model.muscle_group,
+        )
+
+    async def update(self, index: int, token: str, payload: ExercisePayload) -> Exercise:
+        """Corrige le nom ou le groupe d'un exercice, **et le répercute au journal**.
+
+        Deux décisions, et elles ont chacune une conséquence qui ne se voit pas tout de
+        suite.
+
+        **`id` survit à la correction.** C'est la clé stable à laquelle `exercise_log.csv`
+        rattache tout l'historique. En régénérer un orphelinerait des années de relevés
+        sans lever la moindre erreur — c'est la ligne la plus dangereuse de ce module.
+
+        **Les copies du journal suivent.** `exercise_log.csv` duplique `exercise_name` et
+        `muscle_group`, et trois lecteurs se servent de la copie plutôt que du catalogue :
+        la progression (`stats.progress`), le tonnage par groupe et les groupes négligés
+        (`stats._muscles`, `stats._neglected`), et le détail d'une journée d'assiduité.
+        Sans répercussion, corriger une faute de frappe laisserait la barre de progression
+        étiquetée avec la faute pendant que le sélecteur affiche la forme corrigée — et
+        changer un groupe ferait compter le même exercice dans deux groupes, selon la date
+        de chaque série.
+
+        La duplication existe pour qu'un exercice **supprimé** garde son historique
+        lisible (`ACT-06`, `STO-02`), pas pour figer un nom contre sa propre correction.
+        Le corollaire est assumé et l'écran l'annonce avant le geste : renommer est une
+        *correction*, pas un recyclage de ligne.
+
+        L'ordre compte, comme pour `WorkoutService.delete` : la ligne gardée part en
+        premier. Si la garde refuse, rien n'a bougé. Si la répercussion échoue après coup,
+        le journal garde ses anciennes copies et rejouer la même correction converge — le
+        projet n'a pas de transaction.
+        """
+        rows = await self._repo.read_all(fresh=True)
+        if not 0 <= index < len(rows):
+            raise StorageConflictError(detail=f"exercice {index} absent du catalogue")
+
+        existing = rows[index].model
+        row = await self._repo.replace_by_token(
+            index,
+            token,
+            ExerciseRow(
+                id=existing.id,
+                name=payload.name,
+                muscle_group=payload.muscle_group,
+            ),
+        )
+
+        if existing.id:
+            await self._log.update_where(
+                lambda entry: entry.exercise_id == existing.id,
+                lambda entry: entry.model_copy(
+                    update={
+                        "exercise_name": payload.name,
+                        "muscle_group": payload.muscle_group,
+                    }
+                ),
+            )
+
         return Exercise(
             id=row.index,
             token=row.token,
