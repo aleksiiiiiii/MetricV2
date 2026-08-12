@@ -57,8 +57,17 @@
   background: none;
   border: none;
   cursor: pointer;
-  /* La poignée est une cible à part entière, pas un trait décoratif de 4 px. */
-  min-height: 32px;
+  /*
+   * La poignée est une cible à part entière, pas un trait décoratif de 4 px — et une
+   * cible tient le plancher du projet, `--tap`. Elle était à 32 px, sous le plancher,
+   * sur **toutes** les feuilles de l'application. L'audit ne l'avait jamais vu parce
+   * qu'il ne mesure que les douze écrans et n'ouvre aucune feuille : une cible qui
+   * n'existe dans le DOM qu'après un appui n'est jamais dans son compte.
+   *
+   * Le trait ne bouge pas — le retrait haut est inchangé, la cible s'étend vers le bas,
+   * là où le pouce arrive de toute façon.
+   */
+  min-height: var(--tap);
   padding: 14px 0 6px;
   display: flex;
   justify-content: center;
