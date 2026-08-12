@@ -176,15 +176,31 @@ print(TokenIssuer(s).issue(s.auth_username).access_token)"
 
 **Puis regarder les captures.** C'est l'étape qui rapporte, pas celle qu'on saute.
 
-### Trois limites de l'audit, à connaître avant de conclure « 12/12 »
+### Les surfaces qui n'existent qu'après un appui
 
-1. **Il n'ouvre aucune feuille.** Une cible qui n'existe dans le DOM qu'après un appui
-   n'entre jamais dans son compte — c'est ainsi qu'une poignée de `Sheet` est restée à
-   32 px sur six surfaces pendant que les douze écrans étaient au vert. Mesurer un état
-   demande de l'ouvrir soi-même en CDP.
-2. **Il mesure une seule largeur** (402). Les feuilles de style visent 390, et un petit
-   Android fait 360.
-3. **Sa capture pleine page peut partir d'une position défilée.** Pour regarder le haut
+`audit-mobile.mjs` ne touche à rien — délibérément : un script qui clique au hasard sur des
+données réelles finit par en supprimer. Mais une cible qui n'entre dans le DOM qu'après un
+appui n'est donc jamais dans son compte. C'est ainsi qu'une poignée de `Sheet` est restée à
+32 px sur six surfaces pendant que les douze écrans affichaient `0 cible < 44 px`.
+
+```bash
+node scripts/audit-surfaces.mjs --base http://localhost:<port> --token "<jeton>"
+```
+
+Il ouvre huit feuilles — saisie rapide, « Plus », les trois de `/activite`, les deux de
+`/assistant` — à **402, 390 et 360 px**, et les mesure. Il ne redéfinit rien : la sonde, le
+pilotage et les planchers viennent de `audit-mobile.mjs`, qui les exporte. Chaque appui est
+déclaré nommément dans sa table `SURFACES` ; il ne remplit aucun champ et n'arme aucune
+destruction.
+
+**Quand une feuille est ajoutée à l'application, elle s'ajoute à cette table.** Sans quoi
+elle rejoint l'angle mort d'où celle-ci vient de sortir.
+
+### Deux limites qui restent
+
+1. **L'audit mesure une seule largeur** (402). Les feuilles de style visent 390, et un
+   petit Android fait 360 — `audit-surfaces.mjs` couvre les trois, l'autre non.
+2. **Sa capture pleine page peut partir d'une position défilée.** Pour regarder le haut
    d'un écran, capturer soi-même après `window.scrollTo(0, 0)`.
 
 ### Piloter le navigateur, sans rien installer

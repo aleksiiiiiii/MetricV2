@@ -55,10 +55,10 @@ import { argv } from 'node:process';
 const DEVICE = { width: 402, height: 874, deviceScaleFactor: 3, mobile: true };
 
 /** Le plancher de lisibilité décidé en phase A. Rien ne descend en dessous. */
-const MIN_TEXT = 12;
+export const MIN_TEXT = 12;
 
 /** Le plancher tactile (`--tap`). Un doigt ne vise pas au pixel. */
-const MIN_TAP = 44;
+export const MIN_TAP = 44;
 
 const PUBLIC_ROUTES = [
   ['/connexion', 'connexion'],
@@ -80,12 +80,12 @@ const PRIVATE_ROUTES = [
 
 // ── Pilotage CDP ─────────────────────────────────────
 
-function arg(name, fallback) {
+export function arg(name, fallback) {
   const index = argv.indexOf(`--${name}`);
   return index === -1 ? fallback : argv[index + 1];
 }
 
-class Cdp {
+export class Cdp {
   #socket;
   #next = 1;
   #pending = new Map();
@@ -138,8 +138,9 @@ class Cdp {
  * Écrit comme une chaîne parce qu'elle est évaluée dans le contexte de la page, pas ici.
  * Elle ne renvoie que des nombres et des chaînes : tout ce qui traverse CDP est du JSON.
  */
-const PROBE = `(() => {
-  const doc = document.documentElement;
+export function probe(racine = 'document.documentElement') {
+  return `(() => {
+  const doc = ${racine};
 
   // 1. cibles sous le plancher tactile — un élément invisible n'est pas une cible
   const visible = (node) => {
@@ -239,6 +240,7 @@ const PROBE = `(() => {
     hauteur: Math.round(doc.scrollHeight),
   };
 })()`;
+}
 
 // ── Le parcours ──────────────────────────────────────
 
@@ -289,7 +291,7 @@ async function main() {
 
     let mesure;
     try {
-      mesure = await cdp.eval(PROBE);
+      mesure = await cdp.eval(probe());
     } catch (error) {
       lignes.push({ route, erreur: String(error.message).slice(0, 80) });
       continue;
@@ -308,7 +310,7 @@ async function main() {
   rapport(lignes, theme);
 }
 
-async function goto(cdp, url) {
+export async function goto(cdp, url) {
   const arrive = new Promise((resolve) => {
     const onMessage = (event) => {
       if (JSON.parse(event.data).method === 'Page.loadEventFired') resolve();
@@ -397,4 +399,4 @@ function rapport(lignes, theme) {
   console.log('Et maintenant, regarder les captures — c\'est ce qui trouve le reste.\n');
 }
 
-await main();
+if (import.meta.main) await main();
