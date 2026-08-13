@@ -109,8 +109,9 @@ le gain plus faible qu'il n'y paraissait quand le plan a été écrit.
 
 ### Ce qui reste
 
-**La convention de conteneur de page.** Neuf écrans posent encore `className="wrap"` sur
-plusieurs blocs au lieu du `cx('wrap', styles.screen)` de `/planning`. C'est le seul point
+**La convention de conteneur de page.** **Huit** fichiers de `routes/` posent encore
+`className="wrap"` au lieu du `cx('wrap', styles.screen)` de `/planning` — compté le
+2026-08-13, le document en annonçait neuf. C'est le seul point
 du plan volontairement **laissé de côté** : c'est un remaniement de mise en page dont le
 défaut caractéristique — un contenu désaligné de l'en-tête — a été trouvé deux fois en
 regardant, jamais par un test. Le faire sans pouvoir regarder les écrans serait le faire à
@@ -183,9 +184,30 @@ sur `*`, et `SessionLoading` — exporté par [Shell.tsx](../frontend/src/app/Sh
 pendant la vérification du jeton au démarrage.
 
 Un sous-dossier : [routes/settings/](../frontend/src/routes/settings/) regroupe les
-sections de l'écran Réglages, qui en porte deux depuis le L11
-([Tracks.tsx](../frontend/src/routes/settings/Tracks.tsx), 856 lignes — le réglage des
-pistes d'assiduité).
+sections de l'écran Réglages, qui en porte **trois** depuis le L15 —
+[Tracks.tsx](../frontend/src/routes/settings/Tracks.tsx) (856 lignes, le réglage des pistes
+d'assiduité) et [Reminders.tsx](../frontend/src/routes/settings/Reminders.tsx) (les rappels
+push, `NOT-01` et `NOT-03`).
+
+### La PWA — trois fichiers hors des douze pages
+
+Le lot L15 ajoute une couche qui ne s'affiche nulle part et qu'il faut donc savoir trouver :
+
+| Fichier | Rôle |
+|---|---|
+| [sw/strategy.ts](../frontend/src/sw/strategy.ts) | **Pur** : l'URL → la stratégie de cache. C'est là qu'est la règle, et elle est testée |
+| [sw/index.ts](../frontend/src/sw/index.ts) | Le worker : cache, `push`, `notificationclick`. Aucune règle |
+| [lib/push.ts](../frontend/src/lib/push.ts) | L'abonnement côté navigateur — permission, `pushManager`, base64url |
+| [lib/pwa.ts](../frontend/src/lib/pwa.ts) | L'enregistrement du worker, **en production uniquement** |
+
+Le worker est bâti à part (`vite.sw.config.ts`) vers `dist/sw.js`, sans empreinte dans le
+nom. **Il ne s'enregistre pas en `make dev`** : il servirait des `/assets` périmés pendant
+qu'on code. Pour l'éprouver : `npm run build`, puis `vite preview`.
+
+> **La règle à ne pas casser** : tout ce qui commence par `/api` va au réseau, **sans
+> repli**. Un écran servi du cache avec les chiffres d'hier est une valeur inventée à
+> l'écran — et le pire cas, parce que la page a l'air normale. La décision vit dans une
+> seule fonction pure ; une exception écrite ailleurs échapperait à ses seize assertions.
 
 ### Ce qu'il faut savoir sur trois d'entre elles
 
@@ -305,6 +327,8 @@ Quatre tons partout, et ils ont un sens fixé par la charte : `signal` (mesure, 
 | La mise en page **d'un seul écran** | `routes/<Écran>.module.css` | cet écran |
 | Ce qu'un écran affiche | `routes/<Écran>.tsx` | cet écran |
 | Une adresse, une nouvelle page | `App.tsx` + `Shell.tsx` (`NAV`) | — |
+| Ce qui est mis en cache hors ligne | `src/sw/strategy.ts` — **et nulle part ailleurs** | toute l'application |
+| Ce qu'une notification affiche | **le backend** — `domains/notifications/reminders.py` | — |
 | Le texte d'une erreur | **le backend** — `app/core/exceptions.py` | — |
 | Un chiffre, une moyenne, un ratio | **le backend** — le service du domaine | — |
 

@@ -15,7 +15,174 @@ Un test vérifie ce qu'on a pensé à vérifier. Cette liste est ce qu'on n'a pa
 regardé.
 
 **Ordre de lecture** : les sections sont classées par ce qu'elles coûtent à ignorer, pas
-par difficulté. Les **quatre premières** bloquent chacune une clôture de lot.
+par difficulté. Les **cinq premières** bloquent chacune une clôture de lot.
+
+---
+
+## 0bis. Ce qui bloque la clôture du lot L15
+
+La DoD de `L15` tient en une phrase — « Metric s'installe depuis Safari iOS et délivre un
+rappel de suppléments application fermée » — et **rien de cette phrase ne se teste en CI**.
+Ni l'installation, ni la réception, ni « application fermée ».
+
+Ce que la batterie couvre déjà, et qu'il est inutile de refaire : sans clé VAPID rien n'est
+bloqué, un abonnement révoqué est retiré, un redémarrage ne renvoie pas ce qui est parti, la
+charge utile part **chiffrée**, et un rappel ne dit jamais ce qui n'a pas été fait. Soixante
+-quatorze tests, dont vingt-sept sur le seul texte des rappels.
+
+> **Préalable non négociable : HTTPS.** Un service worker et Web Push exigent un contexte
+> sécurisé. `localhost` en est un, `172.20.10.10` **non** — donc `make dev-lan` ne suffit
+> pas, et l'écran le dira lui-même (« Cette adresse n'est pas un contexte sécurisé »).
+> iOS ajoute une condition de plus : Web Push n'existe qu'une fois l'application **ajoutée
+> à l'écran d'accueil**.
+
+### Le montage, en cinq commandes
+
+Tout passe par `make console`, qui sait démarrer les quatre services, les surveiller et
+les arrêter. Rien à conteneuriser, rien à retenir.
+
+```
+make console
+
+metric ❯ vapid            # génère la paire — à coller dans .env, puis « restart api »
+metric ❯ start api        # l'ordonnanceur des rappels vit dedans
+metric ❯ build            # le service worker n'existe QUE dans le build
+metric ❯ start preview    # sert ce build sur :4173
+metric ❯ start tunnel     # l'expose en HTTPS, et affiche l'adresse à taper
+metric ❯ push             # les trois conditions, d'un coup d'œil
+```
+
+> **Le service worker ne s'enregistre pas en développement**, et c'est voulu : il
+> s'interposerait sur `/assets` et servirait des fichiers périmés pendant qu'on code
+> (`lib/pwa.ts`). D'où `build` puis `start preview` — `make dev` ne l'éprouve pas.
+> Après chaque `build`, **`restart preview`** : sinon il sert encore l'ancien, et la
+> console le rappelle.
+
+**`push` est la commande à connaître.** Trois choses doivent être vraies en même temps
+pour qu'un rappel parte, et chacune se règle ailleurs — une paire de clés dans `.env`, un
+appareil abonné depuis lui-même, un créneau réglé dans `/reglages`. Les regarder
+séparément est ce qui fait chercher longtemps.
+
+> **Le tunnel est un outil de vérification, pas un déploiement.** `cloudflared` n'est pas
+> installé par défaut : `brew install cloudflared`, et la console le dit si elle ne le
+> trouve pas. Il ouvre l'application sur l'Internet public le temps de l'essai et meurt
+> avec le processus — d'où le fait qu'il ne démarre jamais tout seul.
+>
+> **Le HTTPS durable, lui, viendra de Nginx Proxy Manager**, pas de ce tunnel et pas d'une
+> pile conteneurisée. `make console` → `proxy` dit ce que l'application demande en
+> échange : les deux hôtes à déclarer, `TRUST_PROXY_HEADERS`, `CORS_ORIGINS`, et le fait
+> que le proxy ne doit **jamais** mettre `/api` en cache — une réponse mémorisée par lui
+> serait exactement ce que le service worker s'interdit. `L17-01` reste entier.
+
+### 0bis.1 — Metric s'installe depuis Safari iOS
+
+**Le geste** : ouvrir l'URL du tunnel sur l'iPhone → Partager → « Sur l'écran d'accueil ».
+
+| Point | Ce qui doit se produire |
+|---|---|
+| Icône | la **règle graduée** sur fond sombre, pas une capture de la page ni un globe |
+| Nom | « Metric », sans suffixe d'URL |
+| Ouverture | plein écran, **sans la barre d'adresse** de Safari |
+| Écran de démarrage | fond `#0B0F16`, sans éclair blanc |
+| Zone sûre | la barre d'onglets basse ne passe pas sous l'indicateur d'accueil |
+| Zoom | le pincement fonctionne encore *(pas de `user-scalable=no`)* |
+
+**Ce qui compte comme échec** : une icône générique *(le manifeste ou
+`apple-touch-icon` n'est pas lu)*, une barre d'adresse persistante *(`display: standalone`
+ignoré)*, ou un éclair blanc au démarrage *(`background_color` désaccordé de `--bg`)*.
+
+### 0bis.2 — L'abonnement n'est proposé que là où il marche
+
+**Le geste** : ouvrir `/reglages`, section « Rappels », **d'abord dans l'onglet Safari**,
+puis depuis l'icône de l'écran d'accueil.
+
+**Ce qu'on attend** : dans l'onglet, pas de bouton mais la phrase « Sur iPhone, les rappels
+demandent que Metric soit ajoutée à l'écran d'accueil… ». Depuis l'icône, le bouton
+« Recevoir les rappels ici ».
+
+**Ce qui compte comme échec** : un bouton proposé dans l'onglet — il échouerait sans rien
+expliquer, et c'est exactement le cas que `pushSupport()` distingue.
+
+**Puis** : autoriser, et vérifier que l'appareil apparaît dans la liste sous « iPhone » avec
+les derniers caractères de son adresse. Ouvrir `notifications/subscriptions.csv` sur
+Nextcloud : une ligne, avec `endpoint`, `p256dh` et `auth` renseignés.
+
+### 0bis.3 — Un rappel arrive, application fermée
+
+**C'est la moitié de DoD qui manque, et rien de ce qui précède ne la remplace.**
+
+**Le geste**, dans cet ordre :
+
+1. `POST /api/notifications/test` depuis l'application — bouton « Envoyer un essai ».
+   Vérifie la chaîne entière **sans attendre un créneau** : clés, chiffrement, service
+   push, service worker.
+2. Régler « Suppléments » à trois minutes dans le futur, enregistrer.
+3. **Fermer complètement l'application** — la balayer hors du sélecteur d'apps, pas
+   seulement revenir à l'écran d'accueil. Verrouiller le téléphone.
+
+| Point | Ce qui doit se produire |
+|---|---|
+| Réception | la notification arrive, écran verrouillé, app fermée |
+| Titre | « Suppléments » |
+| Corps | « Pas encore noté : … » — **les noms de ce qui reste**, pas la liste entière |
+| Icône | la règle graduée, pas un point générique |
+| Appui | ouvre Metric ; si elle était déjà ouverte, la **reprend** au lieu d'en ouvrir une seconde |
+| Journal | une ligne dans `notifications/sent.csv`, avec le bon jour |
+
+**Ce qui compte comme échec** — et le second est le plus grave :
+
+- **Rien n'arrive.** Regarder les journaux de l'API : `PushGoneError` veut dire que
+  l'abonnement a été révoqué *(se réabonner)*, une autre erreur veut dire que l'envoi n'est
+  pas parti *(clés, `VAPID_SUBJECT`)*.
+- **Le texte affirme quelque chose.** « Tu n'as pas pris ta créatine » est une affirmation
+  **fausse** : l'application sait seulement que rien n'a été consigné. C'est l'invariant du
+  lot, et une notification est lue en trois mots, sans moyen de vérifier.
+- **Un supplément déjà coché est cité.** Le rappel doit lire `checklist(day)` et ne nommer
+  que ce qui reste.
+- **Deux notifications pour un créneau.** La mémoire est un fichier ; deux lignes veulent
+  dire que `sent.csv` n'est pas relu.
+
+### 0bis.4 — Le rappel ne revient pas deux fois, et ne réveille personne
+
+**Le geste** : laisser passer le créneau, puis redémarrer l'API (`make dev`) dans la même
+journée.
+
+**Ce qu'on attend** : **aucune** seconde notification. `notifications/sent.csv` porte une
+ligne pour ce jour et ce type, et l'ordonnanceur la relit au démarrage.
+
+**Puis**, le contrôle de la fenêtre de rattrapage : arrêter l'API, laisser passer un créneau
+de **plus d'une heure**, redémarrer. Rien ne doit partir — perdre un rappel coûte moins
+qu'en recevoir un au coucher.
+
+### 0bis.5 — Le service worker ne sert jamais un chiffre d'hier
+
+**C'est l'autre invariant du lot**, et il est invisible quand il est cassé : la page a l'air
+parfaitement normale, avec les chiffres de la veille.
+
+**Le geste** : ouvrir le tableau de bord en ligne, noter le poids affiché. Passer en **mode
+avion**. Recharger.
+
+**Ce qu'on attend** : la coquille s'ouvre — en-tête, navigation, titres — et chaque écran
+affiche son **état d'erreur**, parce que `/api` n'a pas répondu. Aucun chiffre.
+
+**Ce qui compte comme échec** : le moindre chiffre à l'écran. Une moyenne, un poids, un
+total : ce serait une valeur inventée au sens le plus littéral de l'invariant, et rien à
+l'écran ne permettrait de s'en apercevoir.
+
+**Puis**, en ligne : modifier une pesée depuis un autre appareil, recharger. La nouvelle
+valeur doit apparaître **immédiatement** — `/api` ne passe jamais par le cache.
+
+### 0bis.6 — L'heure affichée est bien la nôtre
+
+Le champ de créneau est un `<input type="time">` : **son format suit la langue du système**,
+pas celle du document. En Chrome headless anglophone il rend « 08:00 PM » là où le serveur
+a `20:00`.
+
+**Ce qu'on regarde** : sur l'iPhone en français, le champ affiche-t-il `20:00` ?
+
+**Ce qui compte comme échec** : un format sur douze heures, qui obligerait à convertir de
+tête pour régler un rappel du soir. Si le cas se présente, la piste est de remplacer le
+champ natif par deux sélecteurs — au prix du sélecteur de roue d'iOS, qui est excellent.
 
 ---
 
@@ -586,6 +753,23 @@ Gardé ici pour éviter de le refaire par doute.
 | Largeur réelle de la barre de navigation | 2026-08-05 | 806 px demandés pour 695 disponibles, entrée par entrée ; « Tableau de bord » en pèse 139 à lui seul |
 | Alignement du contenu sur l'en-tête | 2026-08-05 | `/planning` et `/objectif` n'avaient ni marge de page ni largeur de lecture — corrigé, les trois écrans mesurés s'alignent désormais à 151 px |
 | Passe tactile de `/assistant` en émulation | 2026-08-06 | aucune cible sous 44 px, aucun champ sous 16 px, aucun débordement, contenu aligné. **Trois défauts trouvés et corrigés**, dont un champ de question qui descendait de 289 px par échange |
+| Section « Rappels » en émulation, 402 et 360 px, deux thèmes | 2026-08-13 | aucune cible sous 44 px, aucun champ sous 16 px, aucun débordement. **Quatre défauts trouvés et corrigés, tous par la capture** — voir ci-dessous |
+| Icônes PWA aux tailles réelles (48 → 180 px) | 2026-08-13 | motif lisible partout ; **motif décentré de 34 px** trouvé et corrigé ; zéro pixel hors du cercle sûr de la maskable, mesuré |
+
+**Les quatre défauts de la section « Rappels » valent d'être nommés**, parce qu'aucun n'est
+sorti des 318 tests d'écran ni de l'audit, qui annonçait `0 défaut mesurable` :
+
+| Défaut | Ce qu'il enseigne |
+|---|---|
+| Le badge affichait **« 20:00 »**, l'heure que le champ montrait trente pixels plus bas | La redite du L14 — « 2,4 sur 3 séances · séances par semaine » — se reproduit dès qu'un badge porte une **valeur** au lieu d'un **état** |
+| Puis « actif » — qui était **faux sans clé VAPID** : un créneau réglé n'y déclenche rien | Un mot juste dans un état peut mentir dans l'autre. « réglé » est vrai dans les deux, et c'est déjà le vocabulaire de la section « Objectifs », vingt lignes plus haut |
+| Le `user-agent` brut, tronqué à `Mozilla/5.0 (iPhone; CPU iPhone O…` | Une chaîne technique tronquée ne nomme rien et se lit comme un affichage cassé. Le serveur en dérive « iPhone » — et « Appareil » quand il ne reconnaît pas, jamais une supposition |
+| Le message du serveur répétait la règle que l'écran énonce 400 px plus bas | Deux phrases correctes peuvent former une redite. Le serveur dit un **état de configuration**, l'écran dit la **règle**, au moment de choisir un horaire |
+
+Le troisième est le plus instructif : il n'est ni un bogue, ni une violation d'invariant.
+C'est une décision correcte — « le fichier doit se lire seul », donc on conserve le
+`user-agent` — appliquée à un endroit où elle ne valait pas. **Ce que le fichier garde et ce
+que l'écran montre ne sont pas la même question.**
 
 **Les trois dernières lignes sont l'argument de ce document.**
 

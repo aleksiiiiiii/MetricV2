@@ -128,7 +128,7 @@ papier.
 | L14 | `v0.15.0` | Objectifs IA & bilan hebdomadaire — **livré** | L12, L13 |
 | L14b | `v0.16.0` | Assistant conversationnel & mémoire de santé — **livré** | L14 |
 | **Jalon V — Production** | | | |
-| L15 | `v0.17.0` | PWA & notifications push | L11 |
+| L15 | `v0.17.0` | PWA & notifications push — **livré** | L11 |
 | L16 | `v0.18.0` | Export, hors-ligne, recherche, corrélations | L11 |
 | L17 | `v1.0.0` | Durcissement, déploiement, documentation | tous |
 
@@ -1034,15 +1034,107 @@ dit d'important sur sa santé est proposé, validé, et réutilisé au tour suiv
 
 ## L15 · `v0.17.0` — PWA & notifications push
 
-- [ ] `L15-01` Manifeste PWA, icônes, installable sur iOS et Android
-- [ ] `L15-02` Service worker : coquille applicative en cache, stratégies par type de ressource
-- [ ] `L15-03` Clés VAPID serveur + flux d'abonnement Web Push (`NOT-01`)
-- [ ] `L15-04` Ordonnanceur backend déclenchant les rappels app fermée (`NOT-02`)
-- [ ] `L15-05` Configuration des rappels par type et horaire, stockée comme les autres réglages (`NOT-03`)
-- [ ] `L15-06` Tests : rappel reçu app fermée, désabonnement, jeton expiré
+- [x] `L15-01` Manifeste PWA, icônes, installable sur iOS et Android
+- [x] `L15-02` Service worker : coquille applicative en cache, stratégies par type de ressource
+- [x] `L15-03` Clés VAPID serveur + flux d'abonnement Web Push (`NOT-01`)
+- [x] `L15-04` Ordonnanceur backend déclenchant les rappels app fermée (`NOT-02`)
+- [x] `L15-05` Configuration des rappels par type et horaire, stockée comme les autres réglages (`NOT-03`)
+- [x] `L15-06` Tests : rappel reçu app fermée, désabonnement, jeton expiré
 
 **DoD** — Metric s'installe depuis Safari iOS et délivre un rappel de suppléments
 application fermée. *(Dépend de HTTPS : à valider avec `L17-01`.)*
+
+> **DoD vérifiée à moitié — le lot n'est pas clos.** Ce que la simulation couvre l'est
+> entièrement : sans clé VAPID rien n'est bloqué, un abonnement révoqué est retiré, une
+> panne de transport ne désabonne personne, un redémarrage ne renvoie pas ce qui est parti,
+> la charge utile part **chiffrée**, et un rappel ne dit jamais ce qui n'a pas été fait —
+> **74 tests**, dont 27 sur le seul texte des rappels et 16 sur la règle de cache.
+>
+> Ce qui reste ne se teste pas en CI : **installer depuis Safari iOS et recevoir un rappel
+> application fermée**, derrière un vrai HTTPS. Le geste, et ce qui compte comme échec, sont
+> au §0bis de [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+
+**Le plan du lot est dans [`docs/pwa-notifications.md`](docs/pwa-notifications.md)**, écrit
+avant de coder : les deux décisions qui gouvernent le lot, ce qu'il n'est pas, et l'ordre
+d'exécution.
+
+> **Décision — le service worker met en cache la coquille, jamais les données.** Un écran
+> servi du cache avec les chiffres d'hier est une **valeur inventée à l'écran** au sens le
+> plus littéral, et le pire cas possible : il n'y a ni tiret, ni « chargement… », ni erreur
+> — il y a un poids, et il est faux. Tout ce qui commence par `/api` va au réseau **sans
+> repli**. La décision vit dans une **fonction pure de l'URL**, `sw/strategy.ts`, testable
+> sans monter de service worker — même parti pris que `heatmap/engine.py`. Le défaut est de
+> ne **pas** mettre en cache : une ressource oubliée dans la liste coûte une requête, jamais
+> un chiffre faux.
+
+> **Décision — un rappel dit ce qui n'est pas noté, pas ce qui n'a pas été fait.** « Tu n'as
+> pas bu aujourd'hui » est une **affirmation fausse** : l'application sait seulement que
+> rien n'a été consigné. C'est « aucune valeur inventée » appliqué à une notification, et
+> c'est le cas difficile — une notification est lue en trois mots, sur un écran verrouillé,
+> sans moyen de vérifier. Un chiffre **relevé** se cite tel quel (« 750 ml notés sur
+> 2000 ») ; c'est l'absence qu'on ne transforme pas en affirmation.
+>
+> Trois garde-fous en découlent, dans le code et non dans l'intention : **le défaut est le
+> silence** (aucun créneau à l'installation), **un rappel par créneau et par jour** (la
+> mémoire est un fichier, pas une variable), et **une fenêtre de rattrapage d'une heure** —
+> perdre un rappel coûte moins qu'en recevoir un au coucher.
+
+> **Décision — aucun rappel de séance sans séance prévue.** C'est la cadence `conditional`
+> de `HEAT-12` appliquée à une notification : attendu seulement si un déclencheur est vrai.
+> Rappeler une séance un jour de repos est exactement le rappel qu'on désinstalle — et un
+> rappel désinstallé ne revient jamais.
+
+> **Décision — les créneaux vivent dans `settings.csv`, une cellule par type.** `NOT-03` dit
+> « stockés comme les autres réglages », et `app_settings/service.py` les réservait déjà.
+> Une seule clé `reminders_<type>` portant `HH:MM`, **la cellule vide valant extinction** :
+> deux clés — une activation, un horaire — auraient doublé les lignes du fichier pour ne
+> gagner que de retenir une heure qu'on vient d'éteindre. Une cellule vide qui *veut dire
+> quelque chose* est déjà le cas de `plan.csv`. Un horaire illisible vaut **éteint**, seul
+> repli acceptable : une valeur par défaut réveillerait quelqu'un.
+
+> **Décision — `pywebpush` chiffre, `httpx2` envoie.** Le projet aime les dépendances rares
+> — CDP sans Playwright, WebSocket sans `ws`, client WebDAV maison — et cette économie ne
+> s'applique pas à `aes128gcm` ni à l'échange ECDH de la RFC 8291 : une erreur y produit non
+> pas un bogue visible mais un chiffrement plus faible qu'annoncé. En revanche le
+> **transport reste le nôtre** : `webpush()` enverrait avec `requests`, en synchrone, au
+> milieu d'une application asynchrone — on n'appelle que `WebPusher.encode`, qui ne fait
+> aucune I/O. Bénéfice secondaire, et il porte `L15-06` : le transport étant injectable, la
+> batterie scénarise un abonnement révoqué sans détourner un module tiers.
+
+> **Écart assumé — pas de `vite-plugin-pwa`, contrairement au §0.** Le plugin apporte
+> Workbox et sa propre grammaire de stratégies ; la règle qui protège les mesures serait
+> alors écrite dans une configuration, c'est-à-dire nulle part où un test la voie. Le coût
+> de l'écart est une trentaine de lignes de worker, bâties par une seconde configuration
+> Vite vers `dist/sw.js`. Le bénéfice est **seize assertions dans `make check`**.
+
+> **Écart assumé — le service worker ne s'enregistre qu'en production.** En développement il
+> s'interposerait sur `/assets` et servirait des fichiers périmés pendant qu'on code. La
+> contrepartie est réelle : il ne s'éprouve qu'après `npm run build`, et c'est écrit au
+> §0bis des vérifications manuelles.
+
+> **Défaut trouvé par un test, et il méritait de l'être.** L'ordonnanceur décidait du créneau
+> avec son horloge injectée et consultait sa mémoire avec `today_local()`. Les deux
+> s'accordent en production — mais une passe qui commence à 23 h 59 et écrit à 00 h 00
+> rangerait le rappel sous le mauvais jour, donc l'enverrait deux fois ou pas du tout. Le
+> jour est désormais **fourni** par l'appelant : une seule horloge par passe.
+
+> **Quatre défauts trouvés dans le navigateur, aucun par les tests.** L'audit annonçait
+> `0 défaut mesurable` sur `/reglages`. Le badge d'un créneau affichait son heure — la même
+> redite qu'au L14 —, puis « actif », qui **mentait sans clé VAPID** ; le `user-agent` brut
+> s'affichait tronqué à `Mozilla/5.0 (iPhone; CPU iPhone O…` ; et le message du serveur
+> répétait la règle que l'écran énonce quatre cents pixels plus bas. Le détail et ce que
+> chacun enseigne sont au §7 de
+> [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+
+> **Défaut relevé et laissé — un import circulaire entre `planning` et `goals`.**
+> `planning/service.py` importe `GoalService`, `goals/router.py` importe
+> `DEFAULT_ADHERENCE_WEEKS` de `planning.service` : le cycle ne se résout aujourd'hui que
+> parce que `app/domains/api.py` importe `goals` **avant** `planning`, par ordre
+> alphabétique. Charger `planning.service` en premier lève un `ImportError`. Le défaut est
+> **antérieur à ce lot** ; le corriger demande de déplacer une constante ou d'inverser une
+> dépendance entre deux domaines livrés, ce qui n'a pas sa place ici.
+> `notifications/scheduler.py` se contente de ne pas s'appuyer sur un ordre d'import, avec
+> un commentaire qui nomme la cause.
 
 ---
 
@@ -1063,7 +1155,7 @@ l'archive d'export s'ouvre sans l'app.
 ## L17 · `v1.0.0` — Durcissement, déploiement, documentation
 
 - [ ] `L17-01` Conteneurisation backend + frontend derrière reverse-proxy à certificat automatique (`OPS-01`)
-- [ ] `L17-02` Documentation d'exploitation : installation, mise à jour, sauvegarde, restauration (`OPS-02`)
+- [~] `L17-02` Documentation d'exploitation : installation, mise à jour, sauvegarde, restauration (`OPS-02`) · **écrite en [`docs/deploiement.md`](docs/deploiement.md)** — installation, unité systemd, réglages NPM, sauvegarde et table des symptômes. **Jamais exécutée de bout en bout** : elle est écrite depuis le code et vérifiée contre lui, pas depuis un serveur installé. Le script de mise à jour a son cahier des charges dans [`docs/prompt-mise-a-jour.md`](docs/prompt-mise-a-jour.md) et n'est pas écrit
 - [ ] `L17-03` Revue de sécurité : en-têtes, CSP, expiration JWT, limitation de débit, service des photos, secrets
 - [ ] `L17-04` Passe accessibilité : focus visible, contrastes, navigation clavier, `aria-pressed` des bascules, `prefers-reduced-motion`
 - [ ] `L17-05` Passe performance : budget de chargement, découpage de code, coût réel des grilles `HEAT`
@@ -1152,7 +1244,7 @@ changement de spec, pas comme une question ouverte.
 | II — Domaines | L04 → L08 | `v0.9.0` | ☑ **livré** — L04 `v0.5.0`, L05 `v0.6.0`, L06 `v0.7.0`, L07 `v0.8.0`, L08 `v0.9.0` |
 | III — Assiduité | L09 → L11 | `v0.12.0` | ✅ **clos** — L09 `v0.10.0`, L10 `v0.11.0`, L11 `v0.12.0` ; dette d'ergonomie soldée en `v0.12.1` |
 | IV — Intelligence | L12 → L14 | `v0.15.0` | ◐ ouvert — les trois lots livrés, **trois DoD vérifiées à moitié** |
-| V — Production | L15 → L17 | `v1.0.0` | ☐ à faire |
+| V — Production | L15 → L17 | `v1.0.0` | ◐ ouvert — L15 `v0.17.0` livré, **DoD vérifiée à moitié** ; L16 et L17 à faire |
 
 Mettre à jour ce tableau et les cases des lots à chaque clôture, en même temps que le
 tag et le `CHANGELOG.md`.

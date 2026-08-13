@@ -37,6 +37,11 @@ l'application disparaît.
 | `backlogV2.md` | Domaine métier complet, 13 sections, annexe CSV | Référence globale |
 | `GuidelinesUI.html` | Tokens, composants, motifs visuels | Référence UI exclusive |
 
+**Pour installer ou mettre à jour un serveur**, tout est dans
+[`docs/deploiement.md`](deploiement.md) : prérequis, structure de dossiers, unité systemd,
+réglages Nginx Proxy Manager, sauvegarde, retour arrière, et une table des symptômes — parce
+qu'en exploitation, un symptôme ne ressemble jamais à sa cause.
+
 Deux documents n'ont pas d'autorité mais se lisent avant de livrer :
 [`docs/verifications-manuelles.md`](verifications-manuelles.md) — **ce que `make check` ne
 peut pas vérifier**, accumulé lot après lot, avec ce qu'on lance et ce qui compte comme
@@ -230,6 +235,35 @@ l'endpoint avec un code du catalogue — l'appelant n'a rien à vérifier lui-m�
 C'est « un fichier de configuration ne fait jamais tomber un écran », appliqué à une
 dépendance externe.
 
+### Ce qui est mis en cache ne porte jamais un chiffre
+
+Le service worker du lot L15 met en cache **la coquille, les polices et les icônes** — et
+rien d'autre. Tout ce qui commence par `/api` va au réseau, **sans repli**.
+
+Un écran servi depuis le cache avec les chiffres d'hier est une valeur inventée à l'écran
+au sens le plus littéral, et c'est le pire cas de tout le §2 : il n'y a ni tiret, ni
+« chargement… », ni erreur — il y a un poids, et il est faux. Rien à l'écran ne permet de
+s'en apercevoir.
+
+La décision vit dans une **fonction pure de l'URL**, `frontend/src/sw/strategy.ts`,
+testable sans monter de service worker. Une exception écrite ailleurs — « juste pour le
+tableau de bord » — échapperait à sa batterie.
+
+### Un rappel dit ce qui n'est pas noté, pas ce qui n'a pas été fait
+
+« Tu n'as pas bu aujourd'hui » est une **affirmation fausse** : l'application sait seulement
+que rien n'a été consigné. C'est « aucune valeur inventée » appliqué à une notification, et
+c'est le cas difficile — une notification est lue en trois mots, sur un écran verrouillé,
+sans contexte et sans moyen de vérifier.
+
+Un chiffre **relevé** se cite tel quel : « 750 ml notés sur 2000 » est vrai et utile. C'est
+l'**absence** qu'on n'a pas le droit de transformer en affirmation.
+
+La règle vit dans `domains/notifications/reminders.py`, qui est pur — ni fichier, ni
+horloge. Trois garde-fous l'accompagnent, et ils sont dans le code : le défaut est le
+silence, un rappel par créneau et par jour, une fenêtre de rattrapage d'une heure.
+**Un rappel qui arrive au mauvais moment se désinstalle en un geste et ne revient jamais.**
+
 ### Les erreurs portent un code, pas un texte
 
 Le client décide sur `code` (`API-07`), jamais sur le message. Le message vient du serveur,
@@ -285,6 +319,7 @@ la forme du besoin qui l'a justifiée ici, pas la commodité.
 | L13 | `v0.14.0` | Planning sport, génération assistée, flux iCal abonnable |
 | L14 | `v0.15.0` | Objectifs IA, progression réelle, bilan hebdomadaire |
 | L14b | `v0.16.0` | Assistant conversationnel, mémoire de santé, garde-fou médical |
+| L15 | `v0.17.0` | PWA installable, service worker, Web Push, rappels ordonnancés — **ouvre le jalon V** |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
 [`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
@@ -386,11 +421,22 @@ de tests à écrire, et une liste de reprise.
 ## 5. Comment vérifier
 
 ```bash
-make console      # console interactive : start / stop / status / logs
+make console      # console de supervision — la porte d'entrée
 make dev          # API + frontend, en local uniquement
 make dev-lan      # idem, mais joignable depuis un téléphone du réseau
+make preview      # le build de production sur :4173 — le seul endroit où vit le service worker
 make check        # lint + types + tests, des deux côtés — ce que rejoue la CI
 ```
+
+**`make console` pilote quatre services**, pas deux, depuis le lot L15 : `api`, `web`,
+`preview` (le build de production) et `tunnel` (HTTPS éphémère). Les deux derniers ne
+démarrent **jamais tout seuls** — `preview` peut servir un build vieux d'une semaine, et
+`tunnel` ouvre l'application sur l'Internet public. Elle porte aussi `push`, qui dit d'un
+coup d'œil si un rappel partira, et `proxy`, qui dit ce qu'un reverse-proxy demande.
+
+> **Le projet ne se conteneurise pas pour se vérifier.** Le HTTPS d'une passe sur téléphone
+> vient d'un tunnel éphémère ; le HTTPS durable viendra de **Nginx Proxy Manager**, en
+> amont. Ni l'un ni l'autre n'est `docker compose`, et `L17-01` reste entier.
 
 ### Ouvrir l'application sur un téléphone
 
