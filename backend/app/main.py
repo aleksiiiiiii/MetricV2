@@ -32,6 +32,7 @@ from app.core.throttle import LoginThrottle
 from app.domains.ai.service import AiProvider
 from app.domains.api import protected_router, public_router
 from app.domains.heatmap.cache import GridCache
+from app.domains.notifications.provider import PushProvider
 from app.domains.planning import calendar_router
 from app.storage.provider import StorageProvider
 
@@ -70,8 +71,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ai = AiProvider(settings)
         await ai.start()
 
+        # Le push, et l'ordonnanceur des rappels qui vit avec lui (`NOT-01`, `NOT-02`).
+        # Même régime encore : sans paire de clés VAPID, rien ne démarre et rien n'est
+        # bloqué. L'ordonnanceur est une **tâche de fond** — c'est le seul du projet, et
+        # c'est pour cela qu'il tient au `lifespan` : une tâche créée ailleurs survivrait à
+        # l'arrêt de l'application ou mourrait avec la requête qui l'a lancée.
+        push = PushProvider(settings)
+        await push.start(provider)
+
         app.state.storage = provider
         app.state.ai = ai
+        app.state.push = push
         app.state.password_checker = PasswordChecker(settings)
         app.state.token_issuer = TokenIssuer(settings)
         app.state.login_throttle = LoginThrottle()
@@ -82,6 +92,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            # L'ordonnanceur en premier : il lit le stockage à chaque passe, et l'arrêter
+            # après lui le ferait échouer sur un client déjà refermé.
+            await push.stop()
             await ai.stop()
             await provider.stop()
 

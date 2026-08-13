@@ -21,6 +21,13 @@ dependencies = [
   # rangée** sur Nextcloud doit pouvoir être analysée elle aussi — un canvas ne la voit
   # jamais.
   "pillow>=11.0",
+  # Chiffrement Web Push (`NOT-01`) : `aes128gcm` et l'échange ECDH de la RFC 8291. Le
+  # projet évite les dépendances — CDP piloté sans Playwright, client WebDAV maison — et
+  # cette économie ne s'applique pas ici : une erreur d'implémentation cryptographique ne
+  # produit pas un bogue visible mais un chiffrement plus faible qu'annoncé.
+  # Seul `WebPusher.encode` est appelé, qui ne fait aucune I/O ; l'envoi passe par httpx2
+  # comme tout le reste, pour ne pas bloquer la boucle d'événements sur `requests`.
+  "pywebpush>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -80,6 +87,13 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# `pywebpush` et `py_vapid` ne publient pas de `py.typed`. Les deux ne sont appelés que
+# depuis `domains/notifications/push.py`, qui enveloppe leurs trois usages derrière une
+# interface typée — la surface non vérifiée tient en trois lignes.
+[[tool.mypy.overrides]]
+module = ["pywebpush.*", "py_vapid.*"]
+ignore_missing_imports = true
 
 # ── Pytest ──────────────────────────────────────────
 [tool.pytest.ini_options]

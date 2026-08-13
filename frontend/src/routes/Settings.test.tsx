@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Toaster } from '@/components/ui';
 import { ThemeProvider } from '@/app/ThemeProvider';
 import { createQueryClient } from '@/lib/query';
-import { SETTINGS, TRACKS } from '@/test/fixtures';
+import { NOTIFICATIONS, SETTINGS, TRACKS } from '@/test/fixtures';
 
 import { Settings } from './Settings';
 
@@ -30,11 +30,12 @@ function stub(custom?: (url: string, init?: RequestInit) => Response | undefined
     const override = custom?.(url, init);
     if (override) return Promise.resolve(override);
 
-    // L'écran porte deux sections depuis le lot L11 : les objectifs et les pistes
-    // d'assiduité. Un stub qui répondrait les réglages à tout ferait planter la
-    // seconde sur un `data.tracks` absent — et le test dirait « écran cassé » sans
-    // que l'écran le soit.
+    // L'écran porte trois sections servies par le réseau : les objectifs, les pistes
+    // d'assiduité (L11) et les rappels (L15). Un stub qui répondrait les réglages à tout
+    // ferait planter les deux autres sur un champ absent — et le test dirait « écran
+    // cassé » sans que l'écran le soit.
     if (url.includes('/api/heatmap/tracks')) return Promise.resolve(json(200, TRACKS));
+    if (url.includes('/api/notifications')) return Promise.resolve(json(200, NOTIFICATIONS));
     return Promise.resolve(json(200, SETTINGS));
   });
   vi.stubGlobal('fetch', fetchMock);

@@ -157,3 +157,26 @@ class AiUnreadableError(MetricError):
         "Cette capture n'a pas pu être lue. Réessaie avec une capture entière de l'écran "
         "de résumé, ou saisis les valeurs à la main."
     )
+
+
+# ── Notifications push (`NOT-01`) ─────────────────────
+
+
+class PushNotConfiguredError(MetricError):
+    """Aucune paire de clés VAPID en configuration (`NOT-01`).
+
+    Même régime que `IA-07`, et pour la même raison : **une clé absente est un état, pas
+    une panne**. `GET /api/notifications` répond `200` en disant ce qui manque, l'écran ne
+    propose simplement pas de s'abonner, et tout le reste de l'application fonctionne.
+
+    Cette erreur ne se lève donc que si l'on tente d'écrire un abonnement quand même —
+    c'est-à-dire jamais depuis l'écran, et par un appel direct à l'API. Le message dit ce
+    qu'il faut faire, comme celui de l'authentification non configurée.
+    """
+
+    code = "push_not_configured"
+    status_code = 503
+    message = (
+        "Les notifications ne sont pas configurées : génère une paire de clés avec "
+        "« make vapid-keys » et renseigne VAPID_PUBLIC_KEY et VAPID_PRIVATE_KEY."
+    )

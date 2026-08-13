@@ -16,6 +16,7 @@ import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useTheme, type ThemeMode } from '@/lib/theme';
 import { useToast } from '@/lib/toast';
 
+import { Reminders } from './settings/Reminders';
 import { Tracks } from './settings/Tracks';
 
 import styles from './Settings.module.css';
@@ -197,6 +198,12 @@ export function Settings() {
       void client.invalidateQueries({ queryKey: keys.hydration.all() });
       void client.invalidateQueries({ queryKey: keys.nutrition.all() });
       void client.invalidateQueries({ queryKey: keys.body.all() });
+      // Les rappels vivent dans le **même fichier** (`NOT-03`) : cette écriture change le
+      // jeton que la section « Rappels » détient. Sans cette ligne, son prochain
+      // enregistrement partirait en `409` sans que rien ne l'explique — les deux sections
+      // se marcheraient dessus sur un écran où l'on descend naturellement de l'une à
+      // l'autre.
+      void client.invalidateQueries({ queryKey: keys.notifications.all() });
 
       setDraft(null);
       setRefusal(null);
@@ -341,6 +348,8 @@ export function Settings() {
       </form>
 
       <Tracks />
+
+      <Reminders />
 
       <Appearance />
 

@@ -85,6 +85,16 @@ class Settings(BaseSettings):
     # consultable, modifiable et téléchargeable sous jeton.
     ical_secret: str = ""
 
+    # ── Notifications push (`NOT-01`) ─────────────────
+    # Sans paire de clés, aucun abonnement n'est proposé et l'ordonnanceur ne démarre
+    # pas. Le reste de l'application est intact : c'est `IA-07` appliqué au push.
+    # « make vapid-keys » produit la paire.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    #: Identité du serveur d'application, exigée par la RFC 8292 : `mailto:` ou `https:`.
+    #: Un service push la lit pour joindre l'exploitant quand un envoi se comporte mal.
+    vapid_subject: str = "mailto:metric@localhost"
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Origines autorisées, sous forme de liste exploitable."""
@@ -109,6 +119,17 @@ class Settings(BaseSettings):
         croirait avoir posé une protection. Mieux vaut ne rien publier et le dire.
         """
         return len(self.ical_secret.strip()) >= ICAL_SECRET_MIN_LENGTH
+
+    @property
+    def push_enabled(self) -> bool:
+        """Vrai si les notifications push peuvent être servies (`NOT-01`).
+
+        **Les deux clés, ou rien.** Une clé publique sans sa privée laisserait un
+        navigateur s'abonner pour de bon — le service push accepterait — et aucun envoi ne
+        pourrait jamais être signé. L'utilisateur verrait « abonné » et ne recevrait rien,
+        ce qui est le pire des deux états possibles.
+        """
+        return bool(self.vapid_public_key.strip() and self.vapid_private_key.strip())
 
     @property
     def storage_configured(self) -> bool:

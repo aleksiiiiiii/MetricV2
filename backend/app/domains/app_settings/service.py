@@ -13,6 +13,8 @@ plutôt que de propager une erreur — c'est un confort d'affichage, pas une don
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from app.domains.app_settings.models import SettingRow
 from app.domains.app_settings.schemas import SettingsPayload, SettingsValues, SettingsView
 from app.storage.csv_repo import CsvRepository
@@ -29,8 +31,9 @@ DEFAULTS: dict[str, str] = {
     "heatmap_metric": "activity",
 }
 
-#: Réglages typés par l'API. Le fichier peut en porter d'autres — les créneaux de rappel
-#: de `NOT-03`, par exemple — qui sont conservés à l'écriture sans être exposés ici.
+#: Réglages typés par l'API. Le fichier en porte d'autres — les créneaux `reminders_*` de
+#: `NOT-03`, écrits par le domaine Notifications — qui sont conservés à l'écriture sans
+#: être exposés ici. Voir `update_keys`, leur point d'entrée.
 TYPED_KEYS: tuple[str, ...] = tuple(DEFAULTS)
 
 
@@ -132,13 +135,31 @@ class SettingsService:
         Les clés que l'API ne connaît pas sont **conservées** : le fichier peut porter des
         réglages posés à la main ou par un lot ultérieur, et une modification du poids
         cible n'a aucune raison de les effacer.
+
+        Un champ à `None` est ici « non fourni », pas « à vider » : aucun réglage typé
+        n'admet l'absence comme valeur. Les créneaux de rappel, eux, si — d'où
+        `update_keys`, plus bas.
         """
         changes = {
             key: _render(value)
             for key, value in payload.model_dump(exclude_unset=True).items()
             if value is not None
         }
+        await self.update_keys(changes, token)
+        return await self.view()
 
+    async def update_keys(self, changes: Mapping[str, str], token: str) -> None:
+        """Écrit des clés **brutes**, sous la même garde que le reste du fichier.
+
+        Point d'entrée des réglages que l'API ne type pas — aujourd'hui les créneaux de
+        rappel de `NOT-03`, que le domaine Notifications possède et que celui-ci n'a
+        aucune raison de connaître.
+
+        Une différence avec `update`, et elle porte tout le sens : **une valeur vide est
+        écrite**, elle n'est pas ignorée. Pour un créneau, la cellule vide *est* la
+        donnée — elle veut dire « pas de rappel ». C'est le même parti pris que la colonne
+        `time` de `plan.csv`, vide par conception.
+        """
         # Lecture cachée, et c'est volontaire : la garde prouve que le fichier est encore
         # celui que le client a lu. S'il avait changé, `overwrite` refuserait — donc une
         # base de fusion périmée ne peut jamais être écrite.
@@ -150,7 +171,10 @@ class SettingsService:
             [SettingRow(key=key, value=value) for key, value in merged.items()],
             token=token,
         )
-        return await self.view()
+
+    async def token(self) -> str:
+        """Jeton du fichier, pour un domaine qui écrit ses propres clés (`STO-05`)."""
+        return (await self._repo.load()).token
 
 
 __all__ = ["DEFAULTS", "DEFAULT_VALUES", "TYPED_KEYS", "SettingRow", "SettingsService"]

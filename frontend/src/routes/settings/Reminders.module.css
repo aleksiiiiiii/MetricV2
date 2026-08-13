@@ -1,0 +1,88 @@
+/* Section « Rappels » de l'écran Réglages (`NOT-03`).
+   Les cinq premières classes reprennent celles de `Settings.module.css` : les deux
+   sections vivent sur le même écran et doivent se ressembler trait pour trait. Elles sont
+   redéclarées plutôt qu'importées parce qu'un module CSS ne s'hérite pas — et qu'un
+   `composes` vers un autre écran créerait une dépendance que rien ne rendrait visible. */
+
+.name {
+  color: var(--ink);
+  font-size: var(--t-sub);
+  font-weight: 500;
+}
+
+.row {
+  margin-top: var(--s3);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+.note {
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  line-height: 1.6;
+}
+
+.noteSpaced {
+  margin-top: var(--s3);
+}
+
+.error {
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--recover);
+  border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  line-height: 1.5;
+  margin-bottom: var(--s4);
+}
+
+/* La phrase qui annonce ce qu'un rappel dit. Elle se lit **avant** de choisir un horaire :
+   quelqu'un qui attend « tu n'as pas bu » et reçoit « rien de noté » trouve le rappel mou,
+   alors qu'il est simplement honnête. */
+.lede {
+  margin: var(--s5) 0 var(--s4);
+  max-width: 62ch;
+}
+
+/* ── Appareils abonnés ─────────────────────────────── */
+
+.devices {
+  list-style: none;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.device {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  border-top: 1px solid var(--line-soft);
+  padding-top: var(--s2);
+}
+
+.deviceName {
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  /* Un `user-agent` complet fait deux cents caractères : il tient sur une ligne ou il est
+     coupé, il ne repousse pas l'indice à droite hors de l'écran. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceHint {
+  color: var(--ink-low);
+  font-size: var(--t-meta);
+  flex: none;
+}

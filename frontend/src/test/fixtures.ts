@@ -9,6 +9,7 @@
 
 import type { DashboardView } from '@/features/aggregates/api';
 import type { DayInspection, GridsView, HeatDay, TracksView } from '@/features/heatmap/api';
+import type { NotificationsView } from '@/features/notifications/api';
 import type { SettingsView } from '@/features/settings/api';
 
 export const DASHBOARD: DashboardView = {
@@ -124,6 +125,42 @@ export const SETTINGS: SettingsView = {
   values: { ...DEFAULT_VALUES, target_weight_kg: 68 },
   defaults: DEFAULT_VALUES,
   stored: ['target_weight_kg'],
+  token: 'jeton-reglages',
+};
+
+// ── Notifications (`NOT-01`, `NOT-03`) ────────────────
+
+/**
+ * L'état par défaut d'une installation neuve : **aucun rappel, aucun appareil**.
+ *
+ * C'est délibérément l'état vide qui sert de référence. Un fixture qui poserait des
+ * créneaux d'office ferait passer pour normal ce que le lot interdit — le défaut est le
+ * silence, et chaque créneau doit être un choix explicite.
+ */
+export const NOTIFICATIONS: NotificationsView = {
+  push: {
+    configured: false,
+    public_key: null,
+    message:
+      'Aucune clé de notification n’est configurée : les rappels sont hors service. ' +
+      'Génère une paire avec « make vapid-keys ».',
+  },
+  devices: [],
+  reminders: { supplements: null, hydration: null, meals: null, workout: null },
+  token: 'jeton-reglages',
+};
+
+/** La même chose, mais côté serveur tout est prêt et un appareil est déjà abonné. */
+export const NOTIFICATIONS_READY: NotificationsView = {
+  push: {
+    configured: true,
+    public_key: 'BLP-9iZ4Z6daUOism3xCRQvnzpucJdfuG4dJRBwVajbC5CnwsBnYLxRK978jARjZa',
+    message:
+      'Les notifications sont configurées côté serveur. Chaque appareil doit ensuite ' +
+      'être autorisé une fois, depuis lui-même.',
+  },
+  devices: [{ id: 'app1', created: '2026-08-01', label: 'iPhone', hint: 'ppareil-1' }],
+  reminders: { supplements: '20:00', hydration: null, meals: null, workout: null },
   token: 'jeton-reglages',
 };
 

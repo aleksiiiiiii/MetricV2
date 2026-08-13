@@ -32,6 +32,15 @@ GOALS = "goals/goals.csv"
 WEEKLY_INSIGHTS = "insights/weekly.csv"
 MEMORY = "insights/memory.csv"
 
+# Notifications push (`NOT-01`, `NOT-02`).
+#
+# `sent.csv` est la **mémoire de l'ordonnanceur**, et c'est un fichier plutôt qu'une
+# variable pour une raison précise : un redémarrage ne doit pas renvoyer ce qui a déjà été
+# envoyé. Il se lit aussi très bien dans un tableur — « quand ai-je été rappelé, et de
+# quoi » est une question qu'on se pose le jour où un rappel arrive au mauvais moment.
+PUSH_SUBSCRIPTIONS = "notifications/subscriptions.csv"
+NOTIFICATIONS_SENT = "notifications/sent.csv"
+
 # Les fils de discussion de l'assistant.
 #
 # Le serveur ne stockait rien : l'écran rendait l'historique à chaque question et le

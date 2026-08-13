@@ -100,6 +100,11 @@ export const keys = {
     /** État de l'assistance (`IA-07`) — lu une fois, il ne change pas en cours de session. */
     status: () => ['ai', 'status'] as const,
   },
+  notifications: {
+    all: () => ['notifications'] as const,
+    /** État du push, appareils abonnés et créneaux, en une requête (`NOT-01`, `NOT-03`). */
+    view: () => ['notifications', 'view'] as const,
+  },
 } as const;
 
 /**
