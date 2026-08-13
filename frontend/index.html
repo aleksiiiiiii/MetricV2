@@ -52,6 +52,20 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Metric" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!--
+      Le manifeste (`L15-01`). Il ne porte qu'un `theme_color` là où l'application en a
+      deux : c'est celui du thème sombre, celui de `:root` dans `tokens.css`. La balise
+      `theme-color` ci-dessus en porte un par thème et **gagne** à l'exécution — le
+      manifeste ne décide donc que de l'écran de démarrage à l'installation.
+      `tokens.test.ts` vérifie que les deux ne dérivent pas des tokens.
+
+      iOS ignore le manifeste pour l'icône : il lui faut `apple-touch-icon`, en PNG, sans
+      transparence. Les quatre fichiers sont dessinés par `scripts/make-icons.py` depuis
+      la règle graduée, le motif signature de `GuidelinesUI.html`.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <meta
       name="description"
       content="Metric — le journal instrumenté d'une vie. Suivi sportif personnel."

@@ -309,3 +309,51 @@ describe('script de pré-peinture', () => {
     expect(INDEX.indexOf('dataset.theme')).toBeLessThan(INDEX.indexOf('src/main.tsx'));
   });
 });
+
+// ── 6. Le manifeste ne contredit pas le script ────────
+
+describe('manifeste PWA', () => {
+  /**
+   * Troisième endroit où une couleur de fond est écrite en littéral — après `tokens.css`
+   * et le script de pré-peinture —, et le seul qui n'a **qu'une** valeur là où
+   * l'application en a deux : un manifeste ne porte pas de thème.
+   *
+   * C'est le sombre, celui de `:root`, parce que c'est le thème de la charte. La balise
+   * `theme-color` du script gagne à l'exécution ; le manifeste ne décide que de l'écran
+   * de démarrage à l'installation. Les laisser diverger donnerait un démarrage qui
+   * clignote dans une couleur que l'application n'emploie nulle part.
+   */
+  const MANIFEST = JSON.parse(read('../../public/manifest.webmanifest')) as {
+    background_color: string;
+    theme_color: string;
+    display: string;
+    start_url: string;
+    icons: { src: string; sizes: string; purpose: string }[];
+  };
+
+  it('reprend le `--bg` du thème sombre pour ses deux couleurs', () => {
+    const sombre = valueOf('sombre', '--bg').toLowerCase();
+    expect(MANIFEST.background_color.toLowerCase()).toBe(sombre);
+    expect(MANIFEST.theme_color.toLowerCase()).toBe(sombre);
+  });
+
+  it('déclare une icône maskable — sans elle, Android rogne dans le motif', () => {
+    const maskable = MANIFEST.icons.filter((icon) => icon.purpose.includes('maskable'));
+    expect(maskable, 'aucune icône maskable').toHaveLength(1);
+    expect(maskable[0]?.sizes).toBe('512x512');
+  });
+
+  it("s'ouvre en autonome depuis la racine", () => {
+    // `standalone` est ce qui retire la barre d'adresse — et, sur iOS, la condition pour
+    // que Web Push soit seulement proposé.
+    expect(MANIFEST.display).toBe('standalone');
+    expect(MANIFEST.start_url).toBe('/');
+  });
+
+  it("est référencé par `index.html`, avec l'icône qu'iOS exige en plus", () => {
+    expect(INDEX).toContain('rel="manifest"');
+    // iOS ignore le manifeste pour l'icône : sans cette balise, l'écran d'accueil
+    // affiche une capture de la page.
+    expect(INDEX).toContain('apple-touch-icon');
+  });
+});

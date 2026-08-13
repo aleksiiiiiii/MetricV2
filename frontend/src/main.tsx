@@ -7,6 +7,7 @@ import { Toaster } from '@/components/ui';
 import { AuthProvider } from '@/app/AuthProvider';
 import { ThemeProvider } from '@/app/ThemeProvider';
 import { App } from '@/App';
+import { registerServiceWorker } from '@/lib/pwa';
 import { createQueryClient } from '@/lib/query';
 
 // Ordre volontaire : les polices d'abord, puis les tokens, puis le socle qui les
@@ -38,3 +39,9 @@ createRoot(root).render(
     </ThemeProvider>
   </StrictMode>,
 );
+
+// Après le rendu, et sans l'attendre : le worker n'apporte que l'ouverture hors ligne de
+// la coquille et la réception des rappels. Rien de ce que l'écran affiche n'en dépend, et
+// un enregistrement qui échoue ne doit pas retarder d'une milliseconde la première
+// peinture.
+void registerServiceWorker();
