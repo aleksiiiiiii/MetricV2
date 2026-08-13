@@ -5,8 +5,9 @@ PY := backend/.venv/bin/python
 UVICORN := backend/.venv/bin/uvicorn
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-api setup-web console dev dev-api dev-web check check-api check-web \
-        test test-api test-web fmt fmt-check build fonts check-storage hash-password clean
+.PHONY: help setup setup-api setup-web console dev dev-lan dev-api dev-web preview \
+        check check-api check-web test test-api test-web fmt fmt-check build fonts \
+        check-storage hash-password vapid-keys clean
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -25,7 +26,7 @@ setup-web:
 	cd frontend && npm run fonts
 
 # ── Développement ──────────────────────────────────
-console: ## Console interactive : start / stop / logs / status
+console: ## Console de supervision : start/stop/status/logs, build, tunnel HTTPS, push
 	@python3 scripts/metric.py $(filter-out $@,$(MAKECMDGOALS))
 
 dev: ## Lance API + frontend ensemble (au premier plan, Ctrl-C arrête tout)
@@ -39,6 +40,12 @@ dev-api: ## Lance l'API seule sur :8000
 
 dev-web: ## Lance le frontend seul sur :5173
 	cd frontend && npm run dev
+
+# Le service worker n'existe QUE dans le build (`lib/pwa.ts` ne l'enregistre qu'en
+# production). Éprouver la PWA, l'installation et les rappels passe donc par ici — et non
+# par « dev », où le worker servirait des fichiers périmés pendant qu'on code.
+preview: build ## Sert le build de production sur :4173 (le seul endroit où vit le service worker)
+	cd frontend && npm run preview -- --port 4173 --strictPort
 
 # ── Vérifications (ce que rejoue la CI) ────────────
 check: check-api check-web ## Lint + types + tests, des deux côtés
@@ -84,6 +91,9 @@ check-storage: ## Diagnostique la configuration Nextcloud (STO-11)
 
 hash-password: ## Génère le hash Argon2id à coller dans .env (AUTH-08)
 	cd backend && .venv/bin/python -m app.scripts.hash_password
+
+vapid-keys: ## Génère la paire de clés Web Push à coller dans .env (NOT-01)
+	cd backend && .venv/bin/python -m app.scripts.vapid_keys
 
 clean: ## Supprime les artefacts de build et les caches
 	rm -rf frontend/dist frontend/node_modules/.vite

@@ -18,12 +18,32 @@ Trois choix expliquent la structure :
   Vite suit via `METRIC_API_PORT`.
 * **L'état vit sur disque** (`.metric/state.json`). Fermer et rouvrir la console
   retrouve les serveurs lancés à la session précédente.
+
+── Quatre services, et pourquoi deux ne démarrent pas tout seuls ─────────────
+
+`api` et `web` sont ce qu'il faut pour coder, et « start » les lance tous les deux.
+
+`preview` et `tunnel` servent une autre question — **est-ce que ça marche sur un vrai
+téléphone** — et ils ne s'allument que si on le demande :
+
+* `preview` sert le **build de production**. C'est le seul endroit où le service worker
+  existe (`lib/pwa.ts` ne l'enregistre qu'en production), donc le seul où la PWA et les
+  rappels s'éprouvent. Il peut servir un build vieux d'une semaine : l'allumer sans le
+  vouloir induirait en erreur.
+* `tunnel` expose ce build **en HTTPS**, ce qu'un service worker et Web Push exigent —
+  `localhost` est un contexte sécurisé, `192.168.1.x` non. Il ouvre l'application sur
+  l'Internet public le temps d'une vérification : ça se demande.
+
+C'est ce couple qui remplace la pile conteneurisée pour ce lot. Il ne la remplace **pas**
+en production : le HTTPS durable viendra d'un reverse-proxy — Nginx Proxy Manager — et
+« proxy » dit ce que l'application lui demande en échange.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -84,17 +104,26 @@ class Service:
     key: str
     label: str
     cwd: Path
+    #: `{port}` est remplacé au lancement. Zéro pour un service sans port à lui.
     default_port: int
-    #: `{port}` est remplacé au lancement.
     command: tuple[str, ...]
-    #: Chemin interrogé pour savoir si le service répond vraiment.
+    #: Chemin interrogé pour savoir si le service répond vraiment. Vide quand il n'y a
+    #: rien à interroger — un tunnel n'expose pas de santé locale.
     health_path: str
     #: Vite n'écoute que sur ::1 ; l'API sur 127.0.0.1.
     host: str
+    #: Service qui doit tourner avant celui-ci, et dont il prend le port.
+    needs: str = ""
+    #: Motif qui repère l'adresse publique dans le journal du service (le tunnel).
+    url_pattern: str = ""
 
     @property
     def log_file(self) -> Path:
         return RUN_DIR / f"{self.key}.log"
+
+    @property
+    def own_port(self) -> bool:
+        return self.default_port > 0
 
     def build_command(self, port: int) -> list[str]:
         return [part.format(port=port) for part in self.command]
@@ -120,7 +149,52 @@ WEB = Service(
     host="localhost",
 )
 
-SERVICES = {API.key: API, WEB.key: WEB}
+#: Le build de production, servi tel qu'il partira.
+#:
+#: C'est le **seul endroit où le service worker existe** : `lib/pwa.ts` ne l'enregistre
+#: qu'en production, sinon il s'interposerait sur `/assets` et servirait des fichiers
+#: périmés pendant qu'on code. Éprouver la PWA, l'installation et les rappels demande donc
+#: de passer par ici, jamais par `web`.
+PREVIEW = Service(
+    key="preview",
+    label="Production",
+    cwd=ROOT / "frontend",
+    default_port=4173,
+    command=("npm", "run", "preview", "--silent", "--", "--port", "{port}", "--strictPort"),
+    health_path="/",
+    host="localhost",
+)
+
+#: Le tunnel HTTPS, et c'est la pièce qui remplace Docker dans ce flux.
+#:
+#: Un service worker et Web Push exigent un **contexte sécurisé** : `localhost` en est un,
+#: `192.168.1.x` non. Sur un vrai iPhone, il n'y a donc pas d'autre chemin que le HTTPS —
+#: et le monter à la main demanderait un certificat, un reverse-proxy et un nom, c'est-à-
+#: dire `L17-01` tout entier.
+#:
+#: Un tunnel éphémère rend le même service pour une vérification, sans rien déployer :
+#: aucun port ouvert sur le réseau, aucune configuration à défaire ensuite, et il meurt
+#: avec le processus. **Ce n'est pas un déploiement**, et il n'a pas à le devenir.
+TUNNEL = Service(
+    key="tunnel",
+    label="Tunnel HTTPS",
+    cwd=ROOT,
+    default_port=0,
+    command=("cloudflared", "tunnel", "--url", "http://localhost:{port}"),
+    health_path="",
+    host="localhost",
+    needs="preview",
+    url_pattern=r"https://[a-z0-9-]+\.trycloudflare\.com",
+)
+
+SERVICES = {s.key: s for s in (API, WEB, PREVIEW, TUNNEL)}
+
+#: Ce que « start » sans argument démarre : le nécessaire pour coder.
+#:
+#: `preview` et `tunnel` en sont **volontairement absents** : le premier sert un build qui
+#: peut dater de la semaine dernière, le second expose l'application sur l'Internet
+#: public. Ni l'un ni l'autre ne doit s'allumer parce qu'on a tapé « start ».
+DEFAULT_SERVICES = (API, WEB)
 
 
 # ── État persistant ───────────────────────────────────
@@ -188,13 +262,33 @@ def running(service: Service) -> tuple[int, int] | None:
 
 
 def url_of(service: Service, port: int) -> str:
+    if not service.own_port:
+        return public_url(service) or "(adresse en attente)"
     return f"http://{service.host}:{port}"
 
 
+def public_url(service: Service) -> str:
+    """Adresse publique annoncée par un service dans son propre journal.
+
+    Un tunnel éphémère choisit son nom de domaine au démarrage et n'a aucun moyen de nous
+    le dire autrement : il l'écrit sur sa sortie. Le lire ici évite d'avoir à ouvrir le
+    journal soi-même pour trouver l'URL à taper sur le téléphone.
+    """
+    if not service.url_pattern or not service.log_file.exists():
+        return ""
+    found = re.findall(service.url_pattern, service.log_file.read_text(errors="replace"))
+    return found[-1] if found else ""
+
+
 def responds(service: Service, port: int, timeout: float = 1.0) -> bool:
+    # Un service sans santé à interroger — le tunnel — est jugé sur le fait qu'il a
+    # annoncé son adresse. C'est la seule chose observable, et c'est la bonne : un tunnel
+    # qui n'a pas d'URL ne sert à rien même s'il tourne.
+    if not service.health_path:
+        return bool(public_url(service))
     try:
         with urllib.request.urlopen(  # noqa: S310 - hôte local, construit par nous
-            url_of(service, port) + service.health_path, timeout=timeout
+            f"http://{service.host}:{port}{service.health_path}", timeout=timeout
         ) as response:
             return 200 <= response.status < 400
     except (urllib.error.URLError, OSError, ValueError):
@@ -208,14 +302,20 @@ def prerequisites(service: Service) -> str | None:
     """Message d'erreur si le service ne peut pas démarrer, sinon `None`."""
     if service is API and not (ROOT / "backend/.venv/bin/uvicorn").exists():
         return "environnement backend absent — lance « make setup »"
-    if service is WEB and not (ROOT / "frontend/node_modules").is_dir():
+    if service in (WEB, PREVIEW) and not (ROOT / "frontend/node_modules").is_dir():
         return "dépendances frontend absentes — lance « make setup »"
-    if service is WEB and shutil.which("npm") is None:
+    if service in (WEB, PREVIEW) and shutil.which("npm") is None:
         return "npm introuvable dans le PATH"
+    if service is PREVIEW and not (ROOT / "frontend/dist/index.html").exists():
+        return "aucun build — lance « build » d'abord"
+    if service is TUNNEL and shutil.which("cloudflared") is None:
+        return "cloudflared introuvable — « brew install cloudflared »"
+    if service.needs and not running(SERVICES[service.needs]):
+        return f"« {service.needs} » doit tourner d'abord"
     return None
 
 
-def start(service: Service, *, quiet: bool = False) -> bool:
+def start(service: Service, *, quiet: bool = False, lan: bool = False) -> bool:
     existing = running(service)
     if existing:
         pid, port = existing
@@ -228,21 +328,34 @@ def start(service: Service, *, quiet: bool = False) -> bool:
         fail(f"{service.label} : {problem}")
         return False
 
-    port = free_port(service.default_port)
-    if port != service.default_port:
-        warn(f"{service.label} : port {service.default_port} occupé, bascule sur {port}")
+    if service.needs:
+        # Le tunnel n'a pas de port à lui : il relaie celui du service qu'il expose.
+        upstream = running(SERVICES[service.needs])
+        assert upstream is not None  # garanti par `prerequisites`
+        port = upstream[1]
+    else:
+        port = free_port(service.default_port)
+        if port != service.default_port:
+            warn(f"{service.label} : port {service.default_port} occupé, bascule sur {port}")
+
+    command = service.build_command(port)
+    if lan and service in (API, PREVIEW):
+        # Écoute sur toutes les interfaces, pour qu'un reverse-proxy hébergé ailleurs —
+        # Nginx Proxy Manager sur un NAS, par exemple — puisse joindre le service.
+        command += ["--host", "0.0.0.0"]
 
     RUN_DIR.mkdir(exist_ok=True)
     log = service.log_file.open("wb")
 
     environment = dict(os.environ)
-    if service is WEB:
-        # Le proxy de Vite doit suivre le port réellement pris par l'API.
+    if service in (WEB, PREVIEW):
+        # Le proxy de Vite doit suivre le port réellement pris par l'API — en
+        # développement comme en `preview`, qui relaie `/api` de la même façon.
         api = running(API)
         environment["METRIC_API_PORT"] = str(api[1] if api else API.default_port)
 
     process = subprocess.Popen(  # noqa: S603 - commande construite par nous
-        service.build_command(port),
+        command,
         cwd=service.cwd,
         stdout=log,
         stderr=subprocess.STDOUT,
@@ -252,11 +365,15 @@ def start(service: Service, *, quiet: bool = False) -> bool:
     )
 
     state = read_state()
-    state[service.key] = {"pid": process.pid, "port": port}
+    state[service.key] = {"pid": process.pid, "port": port, "lan": int(lan)}
     write_state(state)
 
-    say(f"  {dim('…')} {service.label} démarre sur le port {port}")
-    for _ in range(150):  # 30 s au plus
+    where = f"sur le port {port}" if service.own_port else f"vers le port {port}"
+    say(f"  {dim('…')} {service.label} démarre {where}")
+    # Un tunnel négocie son domaine auprès de Cloudflare : c'est plus lent qu'un serveur
+    # local, et l'attente est normale.
+    attempts = 300 if service is TUNNEL else 150
+    for _ in range(attempts):
         if process.poll() is not None:
             fail(f"{service.label} s'est arrêté immédiatement — « logs {service.key} »")
             state.pop(service.key, None)
@@ -264,6 +381,10 @@ def start(service: Service, *, quiet: bool = False) -> bool:
             return False
         if responds(service, port):
             ok(f"{service.label} · {paint(url_of(service, port), SIGNAL)}")
+            if service is TUNNEL:
+                say(f"    {dim('à ouvrir sur le téléphone, puis « Sur l’écran d’accueil »')}")
+            if lan:
+                warn("exposé sur le réseau — voir « proxy » pour ce que ça demande")
             return True
         time.sleep(0.2)
 
@@ -309,22 +430,24 @@ def stop(service: Service, *, quiet: bool = False) -> bool:
 
 def status() -> None:
     say()
+    state = read_state()
     for service in SERVICES.values():
         current = running(service)
         if not current:
-            occupant = "" if not port_busy(service.default_port) else dim(
-                f"  (port {service.default_port} occupé par un autre processus)"
-            )
-            say(f"  {paint('○', INK_LOW)} {service.label:<10} arrêté{occupant}")
+            occupant = ""
+            if service.own_port and port_busy(service.default_port):
+                occupant = dim(f"  (port {service.default_port} occupé par un autre processus)")
+            say(f"  {paint('○', INK_LOW)} {service.label:<12} arrêté{occupant}")
             continue
 
         pid, port = current
         healthy = responds(service, port, timeout=0.5)
         mark = paint("●", EFFORT) if healthy else paint("●", LOAD)
         state_text = "en ligne" if healthy else "démarre…"
+        exposed = dim(" · réseau") if state.get(service.key, {}).get("lan") else ""
         say(
-            f"  {mark} {service.label:<10} {state_text:<10} "
-            f"{paint(url_of(service, port), SIGNAL)}  {dim(f'PID {pid}')}"
+            f"  {mark} {service.label:<12} {state_text:<10} "
+            f"{paint(url_of(service, port), SIGNAL)}{exposed}  {dim(f'PID {pid}')}"
         )
 
     api = running(API)
@@ -398,15 +521,158 @@ def run_make(target: str) -> None:
     say()
 
 
-def show_env() -> None:
-    """Quelles clés sont renseignées — jamais leur valeur."""
-    env_file = ROOT / ".env"
+def issue_token() -> str | None:
+    """Un jeton de session, émis localement pour interroger l'API.
+
+    Le même geste que celui de `CLAUDE.md` : on ne se connecte pas, on **signe** un jeton
+    avec le secret que le serveur utilise déjà. C'est ce qui permet à la console de lire
+    l'état sans demander de mot de passe ni en garder un.
+    """
+    script = (
+        "from app.config import get_settings;"
+        "from app.core.security import TokenIssuer;"
+        "s = get_settings();"
+        "print(TokenIssuer(s).issue(s.auth_username).access_token)"
+    )
+    try:
+        result = subprocess.run(  # noqa: S603 - commande construite par nous
+            [str(ROOT / "backend/.venv/bin/python"), "-c", script],
+            cwd=ROOT / "backend",
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def show_push() -> None:
+    """État des rappels : clés, appareils abonnés, créneaux (`NOT-01` → `NOT-03`).
+
+    C'est la seule vue qui dise si les rappels **partiront vraiment** : trois choses
+    doivent être vraies en même temps, et chacune se règle ailleurs — une paire de clés
+    dans `.env`, au moins un appareil abonné depuis lui-même, et un créneau réglé dans
+    `/reglages`. Les regarder séparément est ce qui fait chercher longtemps.
+    """
     say()
-    if not env_file.exists():
-        fail(".env absent — copie .env.example et renseigne-le")
+    api = running(API)
+    if not api or not responds(API, api[1], timeout=1):
+        fail("l'API ne répond pas — « start api »")
         say()
         return
 
+    token = issue_token()
+    if not token:
+        fail("jeton impossible à émettre — AUTH_USERNAME et JWT_SECRET sont-ils réglés ?")
+        say()
+        return
+
+    request = urllib.request.Request(  # noqa: S310 - hôte local
+        f"{url_of(API, api[1])}/api/notifications",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
+            view = json.load(response)
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError) as error:
+        fail(f"lecture impossible : {error}")
+        say()
+        return
+
+    push = view.get("push", {})
+    configured = bool(push.get("configured"))
+    mark = paint("✓", EFFORT) if configured else paint("✗", LOAD)
+    say(f"  {mark} clés VAPID          {dim('configurées' if configured else 'absentes — « vapid »')}")
+
+    devices = view.get("devices", [])
+    mark = paint("✓", EFFORT) if devices else paint("✗", LOAD)
+    say(f"  {mark} appareils abonnés   {dim(str(len(devices)) + ' — abonnement depuis /reglages')}")
+    for device in devices:
+        since = device.get("created") or "date inconnue"
+        say(f"      {dim('·')} {device.get('label', 'Appareil')}  {dim('…' + device.get('hint', ''))}  {dim(since)}")
+
+    reminders = view.get("reminders", {})
+    labels = {
+        "supplements": "Suppléments",
+        "hydration": "Hydratation",
+        "meals": "Repas",
+        "workout": "Séance",
+    }
+    active = [k for k, v in reminders.items() if v]
+    mark = paint("✓", EFFORT) if active else paint("✗", LOAD)
+    say(f"  {mark} créneaux réglés     {dim(str(len(active)) + ' sur 4')}")
+    for key, label in labels.items():
+        slot = reminders.get(key)
+        value = paint(slot, SIGNAL) if slot else dim("éteint")
+        say(f"      {dim('·')} {label:<12} {value}")
+
+    say()
+    if not configured:
+        warn("aucun rappel ne partira : il manque la paire de clés")
+    elif not devices:
+        warn("aucun rappel ne partira : aucun appareil n'est abonné")
+    elif not active:
+        warn("aucun rappel ne partira : aucun créneau n'est réglé")
+    else:
+        ok("les trois conditions sont réunies")
+        say(dim("    l'ordonnanceur vit dans l'API : le redémarrer le relance"))
+    say()
+
+
+def show_proxy() -> None:
+    """Ce qu'un reverse-proxy — Nginx Proxy Manager — demande côté application.
+
+    Rien de ce qui suit n'est de la configuration de proxy : c'est ce que **l'application**
+    doit savoir une fois qu'elle est derrière lui. Les trois points ont chacun un symptôme
+    précis quand on les oublie, et aucun ne ressemble à sa cause.
+    """
+    values = read_env()
+    say()
+    say(f"  {paint('Derrière Nginx Proxy Manager', INK_LOW)}")
+    say()
+    say(f"  {dim('1.')} Deux hôtes à déclarer, tous deux vers cette machine :")
+    say(f"       {dim('/')}      → {paint('Production', SIGNAL)} (le build, port 4173)")
+    say(f"       {dim('/api')}   → {paint('API', SIGNAL)} (uvicorn, port 8000)")
+    say(dim("       « start --lan » fait écouter les deux sur toutes les interfaces ;"))
+    say(dim("       sans lui ils restent sur 127.0.0.1 et le proxy ne les voit pas."))
+    say()
+
+    trust = values.get("TRUST_PROXY_HEADERS", "").lower() in {"1", "true", "yes"}
+    mark = paint("✓", EFFORT) if trust else paint("!", LOAD)
+    say(f"  {dim('2.')} {mark} TRUST_PROXY_HEADERS")
+    say(
+        dim(
+            "       Sans lui, l'anti-brute-force voit l'adresse du proxy et non celle de"
+            "\n       l'appelant : cinq échecs bloquent alors tout le monde (`AUTH-04`)."
+            "\n       Avec lui et sans proxy devant, l'en-tête est forgeable — d'où le défaut à faux."
+        )
+    )
+    say()
+
+    origins = values.get("CORS_ORIGINS", "")
+    say(f"  {dim('3.')} CORS_ORIGINS  {dim(origins or '(vide)')}")
+    say(
+        dim(
+            "       Doit porter l'adresse HTTPS publique. Le symptôme d'un oubli est un"
+            "\n       écran qui charge indéfiniment, sans erreur visible."
+        )
+    )
+    say()
+    say(f"  {paint('Et ce que le proxy doit faire, lui', INK_LOW)}")
+    say(dim("    · terminer le TLS — c'est la condition du service worker et de Web Push ;"))
+    say(dim("    · transmettre X-Forwarded-For et X-Forwarded-Proto ;"))
+    say(dim("    · ne pas mettre /api en cache. Une réponse mémorisée par le proxy est"))
+    say(dim("      exactement ce que le service worker s'interdit : un chiffre d'hier."))
+    say()
+
+
+def read_env() -> dict[str, str]:
+    """Contenu de `.env`, sous forme de dictionnaire. Vide s'il n'existe pas."""
+    env_file = ROOT / ".env"
+    if not env_file.exists():
+        return {}
     values: dict[str, str] = {}
     for raw in env_file.read_text().splitlines():
         line = raw.strip()
@@ -414,10 +680,23 @@ def show_env() -> None:
             continue
         name, _, value = line.partition("=")
         values[name.strip()] = value.strip()
+    return values
+
+
+def show_env() -> None:
+    """Quelles clés sont renseignées — jamais leur valeur."""
+    say()
+    if not (ROOT / ".env").exists():
+        fail(".env absent — copie .env.example et renseigne-le")
+        say()
+        return
+
+    values = read_env()
 
     groups = {
         "Stockage": ["NEXTCLOUD_URL", "NEXTCLOUD_USERNAME", "NEXTCLOUD_PASSWORD"],
         "Session": ["AUTH_USERNAME", "AUTH_PASSWORD_HASH", "JWT_SECRET"],
+        "Rappels": ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"],
         "Optionnel": ["OPENROUTER_API_KEY", "ICAL_SECRET"],
     }
     for group, names in groups.items():
@@ -437,19 +716,28 @@ def show_env() -> None:
 
 HELP = f"""
   {paint('Serveurs', INK_LOW)}
-    start [api|web]      démarre (tout par défaut)
-    stop  [api|web]      arrête
-    restart [api|web]    redémarre
+    start [api|web|preview|tunnel] [--lan]
+                         démarre ; sans argument, api + web
+    stop  [·]            arrête
+    restart  ·  r        redémarre
     status  ·  s         état, URL et configuration
 
+  {paint('Sur un vrai téléphone', INK_LOW)}
+    build                build de production (le service worker n'existe QUE là)
+    start preview        sert ce build sur :4173
+    start tunnel         l'expose en HTTPS — la condition de la PWA et du push
+
   {paint('Journaux', INK_LOW)}
-    logs [api|web|all] [-f] [-n N]
+    logs [service|all] [-f] [-n N]
                          derniers messages ; -f suit en direct
 
   {paint('Outils', INK_LOW)}
     check                lint + types + tests des deux côtés
     test                 tests seuls
+    push                 rappels : clés, appareils abonnés, créneaux (NOT-01→03)
+    proxy                ce que Nginx Proxy Manager demande à l'application
     hash                 génère le hash de mot de passe (AUTH-08)
+    vapid                génère la paire de clés Web Push (NOT-01)
     storage              diagnostique Nextcloud (STO-11)
     env                  quelles clés de .env sont renseignées
 
@@ -466,33 +754,40 @@ def dispatch(line: str) -> bool:
         return True
 
     command, args = parts[0].lower(), parts[1:]
+    lan = "--lan" in args
+    named = [a for a in args if not a.startswith("-")]
 
-    def targets() -> list[Service]:
-        if not args or args[0] == "all":
+    def targets(*, default_all: bool) -> list[Service]:
+        """Services visés. `start` sans argument ne démarre que le nécessaire ;
+        `stop` sans argument arrête **tout**, y compris le tunnel."""
+        if not named:
+            return list(SERVICES.values()) if default_all else list(DEFAULT_SERVICES)
+        if named[0] == "all":
             return list(SERVICES.values())
-        if args[0] in SERVICES:
-            return [SERVICES[args[0]]]
-        fail(f"service inconnu : {args[0]} (api, web ou all)")
+        if named[0] in SERVICES:
+            return [SERVICES[named[0]]]
+        fail(f"service inconnu : {named[0]} ({', '.join(SERVICES)} ou all)")
         return []
 
     match command:
         case "start":
             say()
-            for service in targets():
-                start(service)
+            for service in targets(default_all=False):
+                start(service, lan=lan)
             say()
         case "stop":
             say()
-            for service in reversed(targets()):
+            # Ordre inverse des dépendances : le tunnel avant ce qu'il expose.
+            for service in reversed(targets(default_all=True)):
                 stop(service)
             say()
         case "restart" | "r":
             say()
-            chosen = targets()
+            chosen = targets(default_all=False)
             for service in reversed(chosen):
                 stop(service, quiet=True)
             for service in chosen:
-                start(service)
+                start(service, lan=lan)
             say()
         case "status" | "s" | "st":
             status()
@@ -509,8 +804,22 @@ def dispatch(line: str) -> bool:
             run_make("check")
         case "test":
             run_make("test")
+        case "build":
+            run_make("build")
+            # Le service `preview` sert le contenu de `dist/` : s'il tournait, il sert
+            # encore l'ancien. Le dire vaut mieux que de laisser chercher pourquoi la
+            # correction ne se voit pas.
+            if running(PREVIEW):
+                warn("« Production » sert encore le build précédent — « restart preview »")
+                say()
+        case "push":
+            show_push()
+        case "proxy":
+            show_proxy()
         case "hash":
             run_make("hash-password")
+        case "vapid":
+            run_make("vapid-keys")
         case "storage":
             run_make("check-storage")
         case "env":
@@ -526,8 +835,8 @@ def dispatch(line: str) -> bool:
 
 
 COMMANDS = [
-    "start", "stop", "restart", "status", "logs", "check", "test",
-    "hash", "storage", "env", "help", "quit",
+    "start", "stop", "restart", "status", "logs", "build", "check", "test",
+    "push", "proxy", "hash", "vapid", "storage", "env", "help", "quit",
 ]
 
 
@@ -550,7 +859,7 @@ def setup_readline() -> None:
 
     def complete(text: str, index: int) -> str | None:
         buffer = readline.get_line_buffer().lstrip()
-        pool = COMMANDS if " " not in buffer else ["api", "web", "all", "-f", "-n"]
+        pool = COMMANDS if " " not in buffer else [*SERVICES, "all", "--lan", "-f", "-n"]
         matches = [word for word in pool if word.startswith(text)]
         return matches[index] if index < len(matches) else None
 
