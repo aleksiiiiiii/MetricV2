@@ -62,16 +62,49 @@ const SURFACES = [
   // toujours. Partir de `/` ferait dépendre la mesure de la santé du tableau de bord.
   ['/activite', 'Noter', 'saisie rapide'],
   ['/activite', 'Plus', 'navigation « Plus »'],
-  ['/activite', 'Nouvelle séance', 'feuille séance'],
-  ['/activite', 'Nouvelle course', 'feuille course'],
-  ['/activite', 'Gérer le catalogue', 'feuille catalogue'],
-  ['/activite', 'Déclarer un exercice', 'catalogue depuis le journal'],
+  // Les deux boutons « Nouvelle séance » et « Nouvelle course » ont laissé la place à un
+  // assistant qui demande la nature à sa première étape (`C06`). C'est cette première
+  // étape qu'on mesure ici ; les suivantes demandent de remplir des champs, ce que ce
+  // script s'interdit — il ouvre et il mesure, il ne saisit rien.
+  ['/activite', 'Enregistrer une activité', 'assistant d’activité'],
+  // Le catalogue avait deux lignes ici. Il n'est plus une feuille mais une page
+  // (`/activite/catalogue`), donc il est mesuré par `audit-mobile.mjs` comme les autres :
+  // le laisser ici rendait « bouton introuvable » sur trois largeurs, ce qui est un
+  // constat exact et une ligne de rapport inutile.
   ['/assistant', 'Mémoire', 'carnet de l’assistant'],
   ['/assistant', 'Discussions', 'fil de l’assistant'],
+  // La feuille d'ajout d'un repas et ses quatre modes (C05). Elle s'ajoute ici le jour
+  // où elle est écrite, pas le jour où un défaut s'y découvre.
+  ['/nutrition', 'Ajouter un repas', 'modes de saisie d’un repas'],
 ];
 
 /** Le panneau d'une feuille. C'est lui qu'on mesure, pas l'écran resté derrière. */
 const PANNEAU = 'document.querySelector(\'[role="dialog"]\')';
+
+/**
+ * **Qui peint le bas de l'écran ?** — la mesure qui manquait.
+ *
+ * Les feuilles déclaraient `z-index: 60` contre 30 pour la barre d'onglets, et se
+ * faisaient pourtant recouvrir sur leurs 56 derniers pixels : rendues dans `<main>`,
+ * dont le fondu d'entrée crée un contexte d'empilement, leur 60 y était enfermé. Trois
+ * feuilles sur quatre étaient dans ce cas, et aucune mesure de taille de cible ne le
+ * voyait — la cible existait, faisait ses 44 px, et n'était pas atteignable.
+ *
+ * `elementFromPoint` répond ce que le **doigt** touche, ce qu'aucune lecture de
+ * `z-index` ne dit. Trois points, parce qu'une barre haute de 56 px se rate en n'en
+ * sondant qu'un.
+ */
+const RECOUVREMENT = `(() => {
+  const panneau = ${'document.querySelector(\'[role="dialog"]\')'};
+  if (!panneau) return { recouvert: null };
+  const h = window.innerHeight;
+  const x = window.innerWidth / 2;
+  const dehors = [4, 28, 56].filter((marge) => {
+    const el = document.elementFromPoint(x, h - marge);
+    return el !== null && !panneau.contains(el);
+  });
+  return { recouvert: dehors.length };
+})()`;
 
 // ── Le parcours ──────────────────────────────────────
 
@@ -155,7 +188,13 @@ async function main() {
         continue;
       }
 
-      lignes.push({ appareil, nom, largeur, ...(await cdp.eval(probe(PANNEAU))) });
+      lignes.push({
+        appareil,
+        nom,
+        largeur,
+        ...(await cdp.eval(probe(PANNEAU))),
+        ...(await cdp.eval(RECOUVREMENT)),
+      });
     }
   }
 
@@ -173,8 +212,8 @@ function rapport(lignes, tailles, theme) {
 
   for (const [, , appareil] of tailles) {
     console.log(`\n━━ ${appareil} ━━`);
-    console.log('surface                       cibles<44  zoom  min-px  déborde');
-    console.log('─'.repeat(66));
+    console.log('surface                       cibles<44  zoom  min-px  déborde  recouvert');
+    console.log('─'.repeat(77));
 
     for (const l of lignes.filter((x) => x.appareil === appareil)) {
       if (l.absent !== undefined) {
@@ -189,7 +228,10 @@ function rapport(lignes, tailles, theme) {
       }
 
       const petit = l.minTexte !== null && l.minTexte < MIN_TEXT;
-      const mauvais = l.tapsTotal > 0 || l.zoome.length > 0 || petit || l.deborde;
+      // Un panneau dont un point bas rend autre chose que lui est recouvert : le doigt
+      // n'atteint pas ce qui s'y trouve, quelle que soit la taille de la cible.
+      const couvert = (l.recouvert ?? 0) > 0;
+      const mauvais = l.tapsTotal > 0 || l.zoome.length > 0 || petit || l.deborde || couvert;
       if (mauvais) defauts++;
 
       console.log(
@@ -197,7 +239,8 @@ function rapport(lignes, tailles, theme) {
           String(l.tapsTotal).padStart(9) +
           String(l.zoome.length).padStart(6) +
           String(l.minTexte ?? '—').padStart(8) +
-          (l.deborde ? '  OUI' : '   ok'),
+          (l.deborde ? '  OUI' : '   ok') +
+          (couvert ? '        OUI' : '         ok'),
       );
 
       for (const t of l.taps) console.log(`   ↳ cible ${t.l}×${t.h} — « ${t.texte} »`);
@@ -205,6 +248,12 @@ function rapport(lignes, tailles, theme) {
         console.log(`   ↳ … et ${l.tapsTotal - l.taps.length} autres cibles`);
       }
       for (const z of l.zoome) console.log(`   ↳ champ < 16 px, iOS zoomera : ${z}`);
+      if (couvert) {
+        console.log(
+          `   ↳ ${l.recouvert} des 3 points bas rendent autre chose que la feuille — ` +
+            'elle est recouverte, très probablement par la barre d’onglets',
+        );
+      }
       if (petit) console.log(`   ↳ texte à ${l.minTexte} px sur « ${l.minTexteOu} »`);
     }
   }

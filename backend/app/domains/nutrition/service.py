@@ -9,9 +9,9 @@ from app.core.dates import local_day_of, now_local
 from app.domains.ai.images import prepare_data_url
 from app.domains.ai.service import AiService
 from app.domains.app_settings.service import SettingsService
-from app.domains.nutrition.analysis import INSTRUCTION, PROMPT, read_estimate
+from app.domains.nutrition.analysis import INSTRUCTION, photo_prompt, read_estimate, text_prompt
 from app.domains.nutrition.models import TYPE_BY_HOUR, FavoriteRow, MealRow, MealType
-from app.domains.nutrition.photos import build_path, content_type, storage_path
+from app.domains.nutrition.photos import PhotoError, build_path, content_type, storage_path
 from app.domains.nutrition.schemas import (
     DayTotals,
     Favorite,
@@ -214,18 +214,45 @@ class NutritionService:
     # ── Estimation assistée (`NUT-04`) ────────────────
 
     @staticmethod
-    async def estimate(ai: AiService, photo: bytes) -> MealEstimate:
-        """Propose des macros pour une assiette. **N'écrit rien** (`NUT-04`).
+    async def estimate(
+        ai: AiService,
+        photo: bytes | None = None,
+        description: str | None = None,
+    ) -> MealEstimate:
+        """Propose des macros pour un repas. **N'écrit rien** (`NUT-04`).
+
+        Trois entrées, une seule sortie : une photo, une description, ou les deux. C'est
+        ce qui rend les trois premiers modes de saisie possibles sans trois chemins de
+        code — le mode choisi à l'écran ne se lit nulle part ici, seule compte la matière
+        qui arrive.
+
+        **Sans photo, la demande ne va pas aux modèles vision.** La cascade choisit ses
+        candidats sur la présence d'une image (`IA-04`) : une description seule ouvre donc
+        tout le catalogue gratuit au lieu de sa moitié, ce qui la rend plus robuste au
+        quota, pas moins.
 
         Volontairement statique : cette opération ne touche pas au stockage, et le dire
         dans la signature vaut mieux que le promettre en commentaire.
         """
+        said = (description or "").strip()
+
+        if photo:
+            payload = await ai.ask_json(
+                instruction=INSTRUCTION,
+                prompt=photo_prompt(said),
+                image_url=prepare_data_url(photo),
+                # Une estimation tient en cinq nombres : au-delà, on paie le monologue d'un
+                # modèle à raisonnement visible, que l'extraction jettera de toute façon.
+                max_tokens=500,
+            )
+            return read_estimate(payload)
+
+        if not said:
+            raise PhotoError("Une estimation a besoin d'une photo ou d'une description.")
+
         payload = await ai.ask_json(
             instruction=INSTRUCTION,
-            prompt=PROMPT,
-            image_url=prepare_data_url(photo),
-            # Une estimation tient en cinq nombres : au-delà, on paie le monologue d'un
-            # modèle à raisonnement visible, que l'extraction jettera de toute façon.
+            prompt=text_prompt(said),
             max_tokens=500,
         )
         return read_estimate(payload)

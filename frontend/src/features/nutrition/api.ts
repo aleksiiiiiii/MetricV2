@@ -106,10 +106,18 @@ export const nutritionApi = {
   create: (values: MealFormValues) =>
     request<Meal>('/api/nutrition', { method: 'POST', form: multipart(values) }),
 
-  /** Propose des macros depuis une photo. **N'écrit rien** (`NUT-04`). */
-  analyze: (photo: File) => {
+  /**
+   * Propose des macros depuis une photo, une description, ou les deux. **N'écrit rien**
+   * (`NUT-04`).
+   *
+   * Les deux paramètres sont facultatifs séparément, jamais ensemble : c'est le serveur
+   * qui refuse une demande vide, et non ce client — une seconde règle ici divergerait de
+   * la sienne au premier cas limite.
+   */
+  analyze: (photo: File | null, comment: string | null) => {
     const form = new FormData();
-    form.set('photo', photo);
+    if (photo) form.set('photo', photo);
+    if (comment?.trim()) form.set('comment', comment.trim());
     return request<MealEstimate>('/api/nutrition/analyze', { method: 'POST', form });
   },
 

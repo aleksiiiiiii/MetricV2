@@ -56,19 +56,6 @@
 
 /* `IA-12` — permanent, jamais repliable. Discret pour ne pas manger le fil, mais toujours
    lisible : c'est une mention de sécurité, pas une décoration. */
-.caution {
-  flex: none;
-  font-size: var(--t-meta);
-  line-height: 1.45;
-  color: var(--ink-mid);
-  border-left: 2px solid rgb(var(--recover-rgb) / 0.5);
-  padding: var(--s2) var(--s3);
-  margin-bottom: var(--s3);
-  background: rgb(var(--recover-rgb) / 0.05);
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  text-wrap: pretty;
-}
-
 /* ── Le fil ───────────────────────────────────────── */
 
 .stream {
@@ -181,22 +168,10 @@
 
 /* ── L'écran vide ─────────────────────────────────── */
 
-.welcome {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s4);
-}
-
 .welcomeText {
   color: var(--ink-mid);
   font-size: var(--t-sub);
   text-wrap: pretty;
-}
-
-.examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
 }
 
 /* ── La saisie, collée en bas ─────────────────────── */
@@ -215,6 +190,15 @@
   flex: 1;
   min-width: 0;
   resize: none;
+  /*
+   * Le champ grandit avec ce qu'on y écrit — la hauteur est posée en JavaScript — et
+   * s'arrête ici. Cinq lignes environ : au-delà, il défile de lui-même.
+   *
+   * Sans ce plafond, coller quinze lignes de notes de séance pousserait la conversation
+   * entière hors de l'écran, et il n'y aurait plus rien à quoi rattacher ce qu'on écrit.
+   */
+  max-height: 7.5em;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r);
@@ -392,17 +376,37 @@
   padding-block: var(--s3);
 }
 
-/* Supprimer une discussion n'est pas la choisir : deux cibles distinctes, et la
-   destructive est la plus petite. */
+/*
+ * Une discussion, et ce qu'on peut en faire.
+ *
+ * Les deux cibles étaient sur une **ligne** : la ligne d'ouverture prenait ce que le
+ * bouton « Supprimer » lui laissait, soit ~194 px utiles à 360 px de large une fois
+ * retirés la gouttière de la feuille, le retrait de `SheetRow` et les ~100 px du bouton.
+ * Un titre de fil y était tronqué à deux mots. Elles sont maintenant l'une **sous**
+ * l'autre : l'ouverture garde toute la largeur, et la destructive — la plus rare — se
+ * range à droite, où le pouce ne la rencontre pas en visant l'autre.
+ */
 .threadRow {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--s2);
 }
 
-.threadRow > *:first-child {
-  flex: 1;
-  min-width: 0;
+.threadRow + .threadRow {
+  margin-top: var(--s3);
+}
+
+.threadActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* L'état armé d'une destruction, dans le ton que la charte lui réserve. Même apparence
+   que la touche de `SwipeRow` et que le retrait d'un exercice : c'est le même acte. */
+.armed {
+  border-color: rgb(var(--recover-rgb) / 0.6);
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  color: var(--recover);
 }
 
 .list {
@@ -461,4 +465,55 @@
   height: var(--tap);
   min-height: var(--tap);
   padding: 0;
+}
+
+/* ── Ce qui accompagne une réponse (C04) ──────────── */
+
+/* Les gestes d'une bulle : copier, et rien d'autre pour l'instant. Alignés sur la bulle
+   elle-même — à gauche, comme la réponse à laquelle ils appartiennent. */
+.replyActions {
+  display: flex;
+  align-self: flex-start;
+  gap: var(--s2);
+  margin-top: calc(-1 * var(--s2));
+}
+
+/*
+ * Un tour qui a échoué, avec de quoi le rejouer.
+ *
+ * Il reste **dans le fil**, à sa place : la question revenait dans le champ de saisie, ce
+ * qui obligeait à la renvoyer à la main et la perdait si l'on avait commencé à taper
+ * autre chose entre-temps.
+ */
+.failure {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  max-width: 85%;
+  padding: var(--s3) var(--s4);
+  border: 1px solid rgb(var(--recover-rgb) / var(--badge-border-a));
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  border-radius: var(--r);
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  line-height: 1.5;
+}
+
+/* Le formulaire de renommage, à la place de la ligne qu'il corrige. */
+.renameForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+/* L'étape en cours, dite par le serveur. En chasse fixe et en encre secondaire : c'est
+   un compte rendu de machine, pas une phrase de l'assistant — et la confusion des deux
+   ferait passer « je relis tes chiffres » pour une réponse. */
+.step {
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--ink-mid);
+  letter-spacing: 0.02em;
 }

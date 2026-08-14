@@ -136,43 +136,39 @@
    touche comme un bouton. Le plancher de `--tap` vaut pour lui comme pour le reste : c'est
    exactement le défaut qu'une mesure du DOM avait trouvé au L13, sur le lien de
    téléchargement du planning, à 17 px de haut. */
-.assistant {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--tap);
-  padding: 0 var(--s5);
-  border: 1px solid var(--line);
-  border-radius: var(--r-btn);
-  color: var(--ink);
-  font-size: var(--t-sub);
-  text-decoration: none;
+/*
+ * `.assistant` et `.emptyAction` vivaient ici, **identiques**, dix lignes chacune : un
+ * lien nu fait 19 px de haut, et il fallait lui rendre le plancher tactile à la main.
+ * C'est devenu la primitive `LinkButton`, et les deux copies ont disparu avec elle.
+ */
+
+/* Trois actions, un seul rang principal : ouvrir prend toute la largeur, les deux portes
+   secondaires se rangent dessous. Les mettre au même niveau aurait fait de la carte un
+   menu, où plus rien n'a de poids. */
+.assistantActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-top: var(--s4);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .assistant:hover {
-    border-color: var(--signal);
+.assistantOpen {
+  width: 100%;
+  /* L'action qui **ouvre** une conversation : la grande taille, celle qu'on touche sans
+     regarder. C'était un bouton de 44 px noyé sous six lignes de texte. */
+  min-height: var(--tap-lg);
+  font-size: var(--t-body);
+}
+
+@media (min-width: 600px) {
+  .assistantActions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
   }
-}
 
-/* Un geste d'état vide. Il reste un lien — c'est une navigation, pas une action — mais il
-   se touche comme un bouton : le plancher de `--tap` vaut pour lui comme pour le reste.
-   Même règle que `.assistant` ci-dessus, et même défaut à l'origine. */
-.emptyAction {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--tap);
-  padding: 0 var(--s5);
-  border: 1px solid var(--line);
-  border-radius: var(--r-btn);
-  color: var(--ink);
-  font-size: var(--t-sub);
-  text-decoration: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .emptyAction:hover {
-    border-color: var(--signal);
+  .assistantOpen {
+    width: auto;
+    min-width: 260px;
   }
 }

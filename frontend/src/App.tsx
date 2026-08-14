@@ -3,6 +3,8 @@ import { Route, Routes } from 'react-router';
 import { RequireAuth } from '@/app/RequireAuth';
 import { Shell } from '@/app/Shell';
 import { Activity } from '@/routes/Activity';
+import { Catalogue } from '@/routes/activity/Catalogue';
+import { Stats } from '@/routes/activity/Stats';
 import { Assiduity } from '@/routes/Assiduity';
 import { Assistant } from '@/routes/Assistant';
 import { Body } from '@/routes/Body';
@@ -42,6 +44,13 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/corps" element={<Body />} />
         <Route path="/activite" element={<Activity />} />
+        {/* Deux sous-pages d'Activité, et non deux replis sans adresse. Elles n'entrent
+            ni dans `NAV` ni dans `MORE` : on y arrive par un bouton de leur page mère,
+            comme on ouvre un dossier depuis celui qui le contient. Ce qu'elles gagnent à
+            être des routes est le bouton système « précédent », qui ramène au journal
+            avec la séance ouverte au lieu de quitter l'application. */}
+        <Route path="/activite/catalogue" element={<Catalogue />} />
+        <Route path="/activite/statistiques" element={<Stats />} />
         <Route path="/planning" element={<Planning />} />
         <Route path="/objectif" element={<Goals />} />
         {/* Sans entrée de navigation : la barre demandait déjà 806 px pour 695

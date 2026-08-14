@@ -69,6 +69,11 @@ const PRIVATE_ROUTES = [
   ['/', 'accueil'],
   ['/corps', 'corps'],
   ['/activite', 'activite'],
+  // Les deux sous-pages d'Activité. Même règle que la table `SURFACES` de
+  // `audit-surfaces.mjs` : une page qui s'ajoute à l'application s'ajoute ici, sans quoi
+  // elle rejoint l'angle mort dont le lot vient de la sortir.
+  ['/activite/catalogue', 'activite-catalogue'],
+  ['/activite/statistiques', 'activite-statistiques'],
   ['/planning', 'planning'],
   ['/objectif', 'objectif'],
   ['/assistant', 'assistant'],

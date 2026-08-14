@@ -7,7 +7,31 @@
  * s'écrivait, ce qui n'est plus le cas.
  */
 
-import { request } from '@/lib/api';
+import { ApiError, request, tokenStore } from '@/lib/api';
+
+/** Ce qu'on dit quand le flux s'arrête sans avoir rien conclu. */
+const INTERRUPTED = 'La réponse a été interrompue. Réessaie.';
+
+/** Une valeur du flux, quand — et seulement quand — c'est bien une chaîne. */
+function asText(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value !== '' ? value : fallback;
+}
+
+/** Un bloc `text/event-stream` décodé, ou `null` s'il n'en est pas un. */
+function readEvent(block: string): { event: string; data: Record<string, unknown> } | null {
+  let event = '';
+  let raw = '';
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event: ')) event = line.slice(7).trim();
+    if (line.startsWith('data: ')) raw = line.slice(6);
+  }
+  if (event === '' || raw === '') return null;
+  try {
+    return { event, data: JSON.parse(raw) as Record<string, unknown> };
+  } catch {
+    return null;
+  }
+}
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -27,6 +51,13 @@ export interface ThreadMessage {
   role: 'user' | 'assistant';
   content: string;
   created: string | null;
+  /**
+   * Le condensé qui a produit **ce** message (`IA-09`).
+   *
+   * Vide sur une question, et vide sur les réponses écrites avant que la colonne existe :
+   * un fil ancien ne ment pas, il dit qu'il ne sait pas.
+   */
+  context: string[];
 }
 
 export interface ThreadDetail {
@@ -102,9 +133,100 @@ export const assistantApi = {
       body: threadId === null ? { question } : { question, thread_id: threadId },
     }),
 
+  /**
+   * La même question, en suivant ce que le serveur fait pendant qu'il le fait.
+   *
+   * **Le flux ne transporte pas les jetons du modèle**, et ce n'est pas un raccourci : la
+   * conversation rend un objet JSON dont l'ordre des champs n'est pas garanti, et une
+   * seconde passe remplace entièrement la première. Un texte affiché au fil de l'eau
+   * devrait donc parfois être effacé sous les yeux. Ce sont des **étapes** qui arrivent,
+   * émises au moment où elles commencent.
+   *
+   * Écrit à la main plutôt qu'avec `request` : celui-ci lit le corps en entier avant de
+   * rendre, ce qui est exactement ce qu'un flux ne doit pas faire. Et `EventSource` ne
+   * sait pas poster ni porter un en-tête d'autorisation.
+   *
+   * **Un repli existe.** Si le flux échoue avant d'avoir rendu quoi que ce soit — un
+   * proxy qui ne le laisse pas passer, un navigateur sans `ReadableStream` —, l'appel
+   * ordinaire prend le relais : on perd l'avancement, jamais la réponse (`IA-07` dans son
+   * esprit — l'agrément tombe, la fonction reste).
+   */
+  askStreaming: async (
+    question: string,
+    threadId: string | null,
+    onStep: (step: string) => void,
+  ): Promise<ChatReply> => {
+    const token = tokenStore.read();
+    let response: Response;
+    try {
+      response = await fetch('/api/assistant/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(threadId === null ? { question } : { question, thread_id: threadId }),
+      });
+    } catch {
+      return assistantApi.ask(question, threadId);
+    }
+
+    // `!response.body` et non `=== null` : un navigateur sans flux de lecture rend
+    // `undefined`, et c'est précisément le cas où le repli doit prendre la main.
+    if (!response.ok || !response.body) {
+      return assistantApi.ask(question, threadId);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let reply: ChatReply | null = null;
+    let failure: ApiError | null = null;
+
+    // Un événement se termine par une ligne vide ; le tampon garde ce qui n'est pas
+    // encore complet, parce qu'un paquet réseau coupe où il veut.
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (value !== undefined) buffer += decoder.decode(value, { stream: true });
+
+      let cut = buffer.indexOf('\n\n');
+      while (cut !== -1) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const parsed = readEvent(block);
+        if (parsed?.event === 'step') onStep(asText(parsed.data.step, ''));
+        if (parsed?.event === 'reply') reply = parsed.data as unknown as ChatReply;
+        if (parsed?.event === 'error') {
+          failure = new ApiError(
+            {
+              code: asText(parsed.data.code, 'ai_unavailable'),
+              message: asText(parsed.data.message, 'Question impossible.'),
+            },
+            503,
+          );
+        }
+        cut = buffer.indexOf('\n\n');
+      }
+
+      if (done) break;
+    }
+
+    if (failure !== null) throw failure;
+    // Un flux qui se termine sans réponse ni erreur — coupure en cours de route.
+    if (reply === null) throw new ApiError({ code: 'ai_unavailable', message: INTERRUPTED }, 503);
+    return reply;
+  },
+
   threads: () => request<{ threads: ThreadSummary[] }>('/api/assistant/threads'),
 
   thread: (threadId: string) => request<ThreadDetail>(`/api/assistant/threads/${threadId}`),
+
+  /** Change le titre d'un fil, et rien d'autre — sa place dans la liste ne bouge pas. */
+  renameThread: (threadId: string, title: string) =>
+    request<ThreadSummary>(`/api/assistant/threads/${threadId}`, {
+      method: 'PATCH',
+      body: { title },
+    }),
 
   forgetThread: (threadId: string) =>
     request<undefined>(`/api/assistant/threads/${threadId}`, { method: 'DELETE' }),

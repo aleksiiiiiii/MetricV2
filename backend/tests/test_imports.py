@@ -13,7 +13,7 @@ import httpx2
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.domains.imports.analysis import read_draft
+from app.domains.imports.analysis import is_unreadable, read_draft
 from tests.fake_openrouter import FakeOpenRouter, Reply
 from tests.fake_webdav import FakeWebDav
 
@@ -119,7 +119,9 @@ def test_a_missing_value_stays_empty_and_is_named() -> None:
     assert draft.avg_hr is None
     assert draft.elevation_m is None
     assert draft.calories is None
-    assert draft.missing == ["avg_hr", "elevation_m", "calories"]
+    # L'allure et la cadence rejoignent la liste : une capture Apple Fitness les affiche,
+    # et ne pas les nommer laisserait croire qu'on ne les a pas cherchées.
+    assert draft.missing == ["pace_min_km", "cadence_spm", "avg_hr", "elevation_m", "calories"]
 
 
 def test_the_ways_a_model_writes_nothing_are_all_nothing() -> None:
@@ -462,3 +464,57 @@ def test_a_future_date_is_refused_like_any_other_entry(
     )
 
     assert response.status_code == 422
+
+
+# ── Allure et cadence (C06) ───────────────────────────
+
+
+def test_the_pace_is_read_from_the_screenshot_not_deduced() -> None:
+    """Ce que l'écran montre en pointillé doit venir de l'image.
+
+    Déduire l'allure de la distance et de la durée en ferait un calcul de notre propre
+    code présenté comme une lecture — soit exactement ce que la marque « proposée » sert
+    à distinguer.
+    """
+    draft = read_draft(
+        {"kind": "run", "distance": "8,40 KM", "duration": "44:12", "pace": "5:16"}, today=TODAY
+    )
+
+    assert draft.pace_min_km == 5.267
+    assert "pace_min_km" not in draft.missing
+
+
+def test_a_pace_written_with_an_apostrophe_is_still_a_pace() -> None:
+    """Apple écrit parfois `5'16"` plutôt que `5:16`."""
+    draft = read_draft({"kind": "run", "duration": "44:12", "pace": "5’16"}, today=TODAY)
+
+    assert draft.pace_min_km == 5.267
+
+
+def test_an_absurd_pace_is_dropped() -> None:
+    draft = read_draft({"kind": "run", "duration": "44:12", "pace": "0:12"}, today=TODAY)
+
+    assert draft.pace_min_km is None
+
+
+def test_the_cadence_is_read_and_bounded() -> None:
+    assert read_draft({"kind": "run", "cadence_spm": "172"}, today=TODAY).cadence_spm == 172
+    # 1720 pas par minute : le modèle a lu autre chose que la cadence.
+    assert read_draft({"kind": "run", "cadence_spm": "1720"}, today=TODAY).cadence_spm is None
+
+
+def test_a_run_with_only_a_pace_stays_a_run() -> None:
+    """Le serveur calcule la distance depuis l'allure : la capture n'a plus à la porter.
+
+    Avant, une capture sans distance était rétrogradée en séance — donc écrite dans le
+    mauvais fichier, sans allure ni distance.
+    """
+    draft = read_draft({"kind": "run", "duration": "45", "pace": "5:00"}, today=TODAY)
+
+    assert draft.kind == "run"
+
+
+def test_a_screenshot_with_only_a_pace_is_not_unreadable() -> None:
+    payload = {"kind": "run", "pace": "5:00", "duration": "45"}
+
+    assert is_unreadable(payload, read_draft(payload, today=TODAY)) is False

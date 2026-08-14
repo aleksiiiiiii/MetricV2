@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.parsing import ParseError, parse_decimal, parse_distance_km, parse_duration_minutes
 from app.core.validation import (
+    CadenceSpm,
     Calories,
     DistanceKm,
     DurationMin,
@@ -19,6 +20,7 @@ from app.core.validation import (
     HeartRate,
     Label,
     Note,
+    PaceMinKm,
     PastDate,
 )
 
@@ -55,6 +57,11 @@ class AppleDraft(BaseModel):
     workout_type: str | None = None
     distance_km: float | None = None
     duration_min: float | None = None
+    #: Allure lue sur la capture, en minutes par kilomètre. Elle n'est pas **déduite** de
+    #: la distance et de la durée : ce que l'écran montre en pointillé doit venir de
+    #: l'image, sinon la marque « proposée » désignerait un calcul de notre propre code.
+    pace_min_km: float | None = None
+    cadence_spm: int | None = None
     avg_hr: int | None = None
     elevation_m: int | None = None
     calories: int | None = None
@@ -78,6 +85,10 @@ class AppleImportPayload(BaseModel):
     duration_min: DurationMin
     type: Label = "Course"
     distance_km: DistanceKm | None = None
+    #: L'une des deux suffit : le serveur calcule celle qui manque. Quand les deux sont
+    #: là, **l'allure gagne** — c'est la règle de `RunPayload`, et elle est unique.
+    pace_min_km: PaceMinKm | None = None
+    cadence_spm: CadenceSpm | None = None
     avg_hr: HeartRate | None = None
     elevation_m: ElevationM | None = None
     calories: Calories | None = None
@@ -105,7 +116,19 @@ class AppleImportPayload(BaseModel):
         except ParseError as exc:
             raise ValueError(str(exc)) from exc
 
-    @field_validator("avg_hr", "elevation_m", "calories", mode="before")
+    @field_validator("pace_min_km", mode="before")
+    @classmethod
+    def read_pace(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        if not value.strip():
+            return None
+        try:
+            return parse_duration_minutes(value)
+        except ParseError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("avg_hr", "elevation_m", "calories", "cadence_spm", mode="before")
     @classmethod
     def read_optional_number(cls, value: object) -> object:
         if isinstance(value, str):
@@ -113,15 +136,18 @@ class AppleImportPayload(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def a_run_needs_a_distance(self) -> AppleImportPayload:
-        """Une course sans distance n'est pas une course.
+    def a_run_needs_a_distance_or_a_pace(self) -> AppleImportPayload:
+        """Une course sans distance **ni allure** n'est pas une course.
 
-        `runs.csv` porte l'allure, qui n'existe pas sans distance (`ACT-02`). Plutôt que
-        d'écrire une course dégradée, on demande de basculer en séance — ce que l'écran
-        permet en un appui.
+        Les deux sont liées par la durée et le serveur calcule celle qui manque (`ACT-02`).
+        Il en faut donc une, pas les deux — une capture qui n'affiche que l'allure suffit
+        désormais, ce qui n'était pas le cas. Sans aucune des deux, on demande de basculer
+        en séance, ce que l'écran permet en un appui.
         """
-        if self.kind == "run" and self.distance_km is None:
-            raise ValueError("une course a besoin d'une distance ; sinon, importe une séance")
+        if self.kind == "run" and self.distance_km is None and self.pace_min_km is None:
+            raise ValueError(
+                "une course a besoin de sa distance ou de son allure ; sinon, importe une séance"
+            )
         return self
 
 

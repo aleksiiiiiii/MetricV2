@@ -31,6 +31,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 
 import {
   Badge,
@@ -39,6 +40,7 @@ import {
   ChipStrip,
   Empty,
   Field,
+  Markdown,
   Sheet,
   SheetGroup,
   SheetRow,
@@ -59,20 +61,23 @@ import { useToast } from '@/lib/toast';
 
 import styles from './Assistant.module.css';
 
-/** Questions offertes en un appui, pour que l'écran vide ne soit pas un champ nu. */
-const EXAMPLES = [
-  'Où j’en suis cette semaine ?',
-  'Pourquoi je stagne ?',
-  'Qu’est-ce que je néglige ?',
-  'Note ma séance de ce matin',
-];
-
 /** Une question, sa réponse, et ce que l'assistant a fait à ce tour-là. */
 interface Exchange {
   question: string;
   reply: string;
   actions: ActionReport[];
   remembered: MemoryEntry[];
+  /**
+   * Le condensé envoyé au modèle **pour ce tour-là**.
+   *
+   * Il vivait dans un état d'écran, unique, remplacé à chaque question : le `<details>`
+   * n'existait donc que sur le dernier échange et disparaissait dès le suivant. On ne
+   * pouvait plus vérifier sur quoi s'appuyait une réponse d'il y a trois tours, ce qui
+   * vide `IA-09` de ce qui le rendait vérifiable.
+   */
+  context: string[];
+  /** Le message du serveur quand le tour a échoué. La question reste rejouable. */
+  failure?: string;
 }
 
 function useInvalidateMemory() {
@@ -251,6 +256,11 @@ function ThreadSheet({
 }) {
   const client = useQueryClient();
   const { notify } = useToast();
+  // Deux appuis pour détruire. Cette feuille était la seule surface destructrice du
+  // projet à partir d'un appui unique : supprimer une discussion effaçait un fil entier,
+  // sans annulation, à côté d'un bouton qui sert à l'ouvrir. Le carnet juste en dessous
+  // et le catalogue d'exercices arment déjà de cette façon.
+  const [armed, setArmed] = useState<string | null>(null);
 
   const { data } = useQuery({
     queryKey: keys.assistant.threads(),
@@ -258,14 +268,33 @@ function ThreadSheet({
     enabled: open,
   });
 
+  /** Le fil dont on corrige le titre, et le titre en cours de frappe. */
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+
+  const rename = useMutation({
+    mutationFn: ({ id, next }: { id: string; next: string }) => assistantApi.renameThread(id, next),
+    onSuccess: () => {
+      setRenaming(null);
+      setTitle('');
+      void client.invalidateQueries({ queryKey: keys.assistant.all() });
+      notify('Discussion renommée.', 'signal');
+    },
+    onError: (caught: unknown) => {
+      notify(caught instanceof ApiError ? caught.message : 'Renommage impossible.', 'recover');
+    },
+  });
+
   const forget = useMutation({
     mutationFn: (id: string) => assistantApi.forgetThread(id),
     onSuccess: (_result, id) => {
+      setArmed(null);
       void client.invalidateQueries({ queryKey: keys.assistant.threads() });
       if (id === current) onOpenThread(null);
       notify('Discussion supprimée.', 'signal');
     },
     onError: (caught: unknown) => {
+      setArmed(null);
       notify(caught instanceof ApiError ? caught.message : 'Suppression impossible.', 'recover');
     },
   });
@@ -294,24 +323,91 @@ function ThreadSheet({
         <SheetGroup title="Précédentes">
           {threads.map((thread) => (
             <div key={thread.thread_id} className={styles.threadRow}>
-              <SheetRow
-                label={thread.title}
-                hint={`${String(thread.messages)} message${thread.messages > 1 ? 's' : ''}`}
-                onClick={() => {
-                  onOpenThread(thread.thread_id);
-                  onClose();
-                }}
-              />
-              <Button
-                variant="quiet"
-                aria-label={`Supprimer « ${thread.title} »`}
-                busy={forget.isPending}
-                onClick={() => {
-                  forget.mutate(thread.thread_id);
-                }}
-              >
-                Supprimer
-              </Button>
+              {/* Ouvrir prend toute la largeur : c'est ce qu'on vient faire neuf fois sur
+                  dix. « Supprimer » tenait à côté sur la même ligne et lui prenait une
+                  centaine de pixels — à 360 px, un titre de discussion s'y réduisait à
+                  deux mots suivis de points de suspension. */}
+              {renaming === thread.thread_id ? (
+                <form
+                  className={styles.renameForm}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    rename.mutate({ id: thread.thread_id, next: title });
+                  }}
+                >
+                  <Field
+                    label="Titre de la discussion"
+                    value={title}
+                    autoFocus
+                    onChange={(event) => {
+                      setTitle(event.target.value);
+                    }}
+                  />
+                  <div className="row">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      busy={rename.isPending}
+                      disabled={title.trim() === ''}
+                    >
+                      Enregistrer
+                    </Button>
+                    <Button
+                      variant="quiet"
+                      onClick={() => {
+                        setRenaming(null);
+                        setTitle('');
+                      }}
+                    >
+                      Annuler
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <SheetRow
+                  label={thread.title}
+                  hint={`${String(thread.messages)} message${thread.messages > 1 ? 's' : ''}`}
+                  onClick={() => {
+                    onOpenThread(thread.thread_id);
+                    onClose();
+                  }}
+                />
+              )}
+              {renaming !== thread.thread_id && (
+                <div className={styles.threadActions}>
+                  {/* Le modèle nomme le fil à son ouverture, et il se trompe : « Où j'en
+                    suis » pour une discussion qui a fini par porter sur une blessure.
+                    Sans ce geste, la seule issue était de supprimer le fil — donc la
+                    conversation avec son mauvais titre. */}
+                  <Chip
+                    aria-label={`Renommer « ${thread.title} »`}
+                    onClick={() => {
+                      setRenaming(thread.thread_id);
+                      setTitle(thread.title);
+                    }}
+                  >
+                    Renommer
+                  </Chip>
+                  <Chip
+                    className={cx(armed === thread.thread_id && styles.armed)}
+                    disabled={forget.isPending}
+                    aria-label={
+                      armed === thread.thread_id
+                        ? `Supprimer « ${thread.title} » — confirmer`
+                        : `Supprimer « ${thread.title} »`
+                    }
+                    onClick={() => {
+                      if (armed !== thread.thread_id) {
+                        setArmed(thread.thread_id);
+                        return;
+                      }
+                      forget.mutate(thread.thread_id);
+                    }}
+                  >
+                    {armed === thread.thread_id ? 'Confirmer ?' : 'Supprimer'}
+                  </Chip>
+                </div>
+              )}
             </div>
           ))}
         </SheetGroup>
@@ -523,12 +619,42 @@ export function Assistant() {
   const [inFlight, setInFlight] = useState<string | null>(null);
   /** Les tours de **cette session**. Le passé du fil est dérivé, pas recopié. */
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
-  const [context, setContext] = useState<string[]>([]);
+  /** La réponse qu'on vient de copier, pour le dire sur son propre bouton. */
+  const [copied, setCopied] = useState<string | null>(null);
+  /**
+   * Ce que le serveur est en train de faire, dit par lui.
+   *
+   * **Il n'est pas deviné ici.** Une suite d'étapes affichée sur une minuterie serait une
+   * valeur inventée à l'écran, exactement comme un chiffre : elle décrirait un travail
+   * dont le client ne sait rien. Chaque étape arrive du flux au moment où elle commence.
+   */
+  const [step, setStep] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [threadsOpen, setThreadsOpen] = useState(false);
-  const [memoryOpen, setMemoryOpen] = useState(false);
+  /**
+   * Les deux feuilles s'ouvrent aussi **par l'adresse** — `?ouvre=memoire`.
+   *
+   * Le tableau de bord y mène directement, et une feuille qu'on atteint depuis un autre
+   * écran a besoin d'être adressable : sans cela, le lien ouvrirait la conversation et
+   * l'utilisateur aurait un appui de plus à faire, sans savoir lequel.
+   *
+   * Le paramètre est **retiré à la fermeture** : sans quoi le bouton système « précédent »
+   * rouvrirait la feuille qu'on vient de refermer, ce qui est le piège classique d'un
+   * état d'interface porté par l'URL.
+   */
+  const [params, setParams] = useSearchParams();
+  const asked = params.get('ouvre');
+  const [threadsOpen, setThreadsOpen] = useState(asked === 'discussions');
+  const [memoryOpen, setMemoryOpen] = useState(asked === 'memoire');
+
+  function forget(): void {
+    if (!params.has('ouvre')) return;
+    const next = new URLSearchParams(params);
+    next.delete('ouvre');
+    setParams(next, { replace: true });
+  }
 
   const stream = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   /**
    * Le fil suit-il le bas ?
    *
@@ -559,6 +685,7 @@ export function Assistant() {
         // rien proposer.
         actions: [],
         remembered: [],
+        context: answer?.role === 'assistant' ? (answer.context ?? []) : [],
       });
     }
     return rebuilt;
@@ -568,30 +695,63 @@ export function Assistant() {
   const shown = [...past, ...exchanges];
 
   const ask = useMutation({
-    mutationFn: (asked: string) => assistantApi.ask(asked, threadId),
+    mutationFn: (asked: string) => assistantApi.askStreaming(asked, threadId, setStep),
     onSuccess: (result, asked) => {
       setThreadId(result.thread_id);
       setExchanges((current) => [
-        ...current,
+        ...current.filter((turn) => turn.question !== asked || turn.failure === undefined),
         {
           question: asked,
           reply: result.reply,
           actions: result.actions,
           remembered: result.remember,
+          context: result.context,
         },
       ]);
-      setContext(result.context);
       following.current = true;
     },
-    onError: (caught: unknown) => {
-      notify(caught instanceof ApiError ? caught.message : 'Question impossible.', 'recover');
-      // La question revient dans le champ : elle n'est pas perdue avec l'échec.
-      setQuestion((current) => (current === '' ? (inFlight ?? '') : current));
+    onError: (caught: unknown, asked) => {
+      const why = caught instanceof ApiError ? caught.message : 'Question impossible.';
+      notify(why, 'recover');
+      /*
+       * **L'échec reste dans le fil, avec sa question.**
+       *
+       * Elle revenait dans le champ de saisie : il fallait la renvoyer à la main, et si
+       * l'on avait commencé à taper autre chose entre-temps, elle était simplement
+       * perdue. Ici elle garde sa place dans la conversation, à l'endroit où elle a
+       * échoué, et un bouton la rejoue.
+       */
+      setExchanges((current) => [
+        ...current.filter((turn) => turn.question !== asked || turn.failure === undefined),
+        { question: asked, reply: '', actions: [], remembered: [], context: [], failure: why },
+      ]);
+      following.current = true;
     },
     onSettled: () => {
       setInFlight(null);
+      setStep(null);
     },
   });
+
+  /**
+   * La saisie grandit avec ce qu'on y écrit, jusqu'à un plafond.
+   *
+   * Elle était figée à `rows={1}` : coller ses notes de séance — six exercices — revenait
+   * à les taper dans une fente d'une ligne, sans jamais voir plus d'une phrase de ce
+   * qu'on venait d'écrire. C'est le champ que C07 remplira le plus.
+   *
+   * Le plafond est en CSS (`max-height`) et non ici : au-delà, le champ défile de
+   * lui-même. Sans lui, une note de quinze lignes mangerait la conversation entière.
+   *
+   * Remettre `height` à `auto` avant de lire `scrollHeight` n'est pas une précaution :
+   * sans cela, la hauteur ne redescend jamais quand on efface.
+   */
+  useEffect(() => {
+    const node = composer.current;
+    if (node === null) return;
+    node.style.height = 'auto';
+    node.style.height = `${String(node.scrollHeight)}px`;
+  }, [question]);
 
   /**
    * Le fil se pose en bas à l'arrivée d'un message — **sauf si on est remonté**.
@@ -613,6 +773,36 @@ export function Assistant() {
     setQuestion('');
     following.current = true;
     ask.mutate(cleaned);
+  }
+
+  /** Rejoue une question échouée, en retirant le tour raté de la conversation. */
+  function retry(asked: string, position: number): void {
+    if (inFlight !== null) return;
+    setExchanges((current) => current.filter((_turn, index) => index + past.length !== position));
+    setInFlight(asked);
+    following.current = true;
+    ask.mutate(asked);
+  }
+
+  /**
+   * Copie une réponse, et le dit.
+   *
+   * Un retour d'état plutôt qu'un toast : le geste est local à une bulle, et un bandeau
+   * en bas de l'écran pour dire « copié » demande de regarder ailleurs que là où l'on
+   * vient d'appuyer.
+   */
+  function copy(text: string): void {
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(text);
+        window.setTimeout(() => {
+          setCopied((current) => (current === text ? null : current));
+        }, 2000);
+      })
+      .catch(() => {
+        notify('Copie impossible sur cet appareil.', 'recover');
+      });
   }
 
   return (
@@ -652,13 +842,6 @@ export function Assistant() {
         </div>
       </header>
 
-      {/* `IA-12` — permanent, jamais repliable : une mention qu'on ferme est une mention
-          qu'on ne lit plus. Elle tient sur deux lignes pour ne pas manger le fil. */}
-      <p className={styles.caution}>
-        L’assistant n’est pas médecin : aucun diagnostic, aucune interprétation de symptôme. Devant
-        une douleur, consulte un professionnel de santé.
-      </p>
-
       <div
         className={styles.stream}
         ref={stream}
@@ -677,32 +860,63 @@ export function Assistant() {
           </Empty>
         )}
 
-        {usable && shown.length === 0 && (
-          <div className={styles.welcome}>
-            <p className={styles.welcomeText}>
-              L’assistant lit tes chiffres — poids, séances, protéines, hydratation, objectif,
-              planning — et ton carnet. Il ne voit aucun de tes fichiers, et il peut noter pour toi.
-            </p>
-            <div className={styles.examples}>
-              {EXAMPLES.map((example) => (
-                <Chip
-                  key={example}
-                  onClick={() => {
-                    setQuestion(example);
-                  }}
-                >
-                  {example}
-                </Chip>
-              ))}
-            </div>
-          </div>
+        {/* L'état vide reste **un** état sur quatre : il ne peut pas disparaître, sinon
+            un fil neuf serait un écran blanc sans rien qui dise quoi faire. Mais il tient
+            en une ligne — le paragraphe qui décrivait ce que l'assistant lit et les quatre
+            questions toutes faites sont partis avec le reste. */}
+        {/* `inFlight` compte comme un tour : sans lui, « le fil commence ici » restait
+            affiché **au-dessus de la question qu'on vient d'envoyer**. L'état vide
+            décrivait alors un écran que l'utilisateur n'avait plus sous les yeux. */}
+        {usable && shown.length === 0 && inFlight === null && (
+          <p className={styles.welcomeText}>Pose ta question : le fil commence ici.</p>
         )}
 
         {shown.map((turn, index) => (
           <div className={styles.turn} key={`${String(index)}-${turn.question.slice(0, 24)}`}>
             <p className={cx(styles.bubble, styles.mine)}>{turn.question}</p>
 
-            {turn.reply !== '' && <p className={cx(styles.bubble, styles.theirs)}>{turn.reply}</p>}
+            {turn.reply !== '' && (
+              <div className={cx(styles.bubble, styles.theirs)}>
+                {/* Le modèle écrit du markdown ; il s'affichait en clair, ses `-` et ses
+                    `**` compris. Rendu en nœuds React, jamais en HTML injecté. */}
+                <Markdown>{turn.reply}</Markdown>
+              </div>
+            )}
+
+            {turn.reply !== '' && (
+              <div className={styles.replyActions}>
+                {/* Une pastille et non un bouton discret : sans bordure, « Copier » se
+                    lisait comme une légende posée sous la bulle, et rien ne disait qu'on
+                    pouvait appuyer dessus. C'est le vocabulaire des actions de ligne du
+                    reste de l'application, et il a déjà été choisi pour cette raison. */}
+                <Chip
+                  aria-label="Copier la réponse"
+                  onClick={() => {
+                    copy(turn.reply);
+                  }}
+                >
+                  {copied === turn.reply ? 'Copié' : 'Copier'}
+                </Chip>
+              </div>
+            )}
+
+            {/* Un tour qui a échoué garde sa question et propose de la rejouer. Elle
+                revenait dans le champ, ce qui obligeait à la renvoyer à la main — et à
+                la retrouver si l'on avait déjà tapé autre chose. */}
+            {turn.failure !== undefined && (
+              <div className={styles.failure} role="alert">
+                <span>{turn.failure}</span>
+                <Button
+                  variant="ghost"
+                  disabled={inFlight !== null}
+                  onClick={() => {
+                    retry(turn.question, index);
+                  }}
+                >
+                  Réessayer
+                </Button>
+              </div>
+            )}
 
             {turn.actions.map((report, position) => (
               <ActionCard key={`${report.name}-${String(position)}`} report={report} />
@@ -712,15 +926,16 @@ export function Assistant() {
               <RememberedNote key={note.memory_id} note={note} />
             ))}
 
-            {/* Le condensé accompagne **la** réponse qu'il a produite, et lui seule : il
-                est recalculé à chaque question, et l'afficher une fois pour tout le fil
-                laisserait croire qu'il valait aussi pour les précédentes. `IA-09` rendu
-                vérifiable plutôt que déclaratif. */}
-            {index === shown.length - 1 && context.length > 0 && (
+            {/* Le condensé accompagne **la** réponse qu'il a produite, et lui seule. Il
+                est porté par le tour désormais, et non par l'écran : il restait sinon
+                collé au dernier échange et disparaissait au suivant, alors que c'est
+                justement en relisant une vieille réponse qu'on veut savoir sur quoi elle
+                s'appuyait. `IA-09` rendu vérifiable plutôt que déclaratif. */}
+            {turn.context.length > 0 && (
               <details className={styles.facts}>
-                <summary>Ce qui a été envoyé ({context.length} lignes, aucun fichier)</summary>
+                <summary>Ce qui a été envoyé ({turn.context.length} lignes, aucun fichier)</summary>
                 <ul>
-                  {context.map((line) => (
+                  {turn.context.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
@@ -732,14 +947,23 @@ export function Assistant() {
         {inFlight !== null && (
           <div className={styles.turn}>
             <p className={cx(styles.bubble, styles.mine)}>{inFlight}</p>
+            {/* Cinq à quinze secondes d'attente, et la durée varie du simple au triple
+                selon qu'une seconde passe est nécessaire. Les trois points ne disaient
+                rien de tout cela ; l'étape en cours, si — et elle vient du serveur. */}
             <p
-              className={cx(styles.bubble, styles.theirs, styles.thinking)}
+              className={cx(styles.bubble, styles.theirs, step === null && styles.thinking)}
               aria-label="L’assistant réfléchit"
               aria-live="polite"
             >
-              <span />
-              <span />
-              <span />
+              {step === null ? (
+                <>
+                  <span />
+                  <span />
+                  <span />
+                </>
+              ) : (
+                <span className={styles.step}>{step}…</span>
+              )}
             </p>
           </div>
         )}
@@ -758,6 +982,7 @@ export function Assistant() {
         <textarea
           id="question"
           className={styles.input}
+          ref={composer}
           rows={1}
           value={question}
           placeholder={usable ? 'Écris ta question…' : 'Assistance indisponible'}
@@ -792,11 +1017,11 @@ export function Assistant() {
         current={threadId}
         onClose={() => {
           setThreadsOpen(false);
+          forget();
         }}
         onOpenThread={(id) => {
           setThreadId(id);
           setExchanges([]);
-          setContext([]);
           following.current = true;
         }}
       />
@@ -805,6 +1030,7 @@ export function Assistant() {
         open={memoryOpen}
         onClose={() => {
           setMemoryOpen(false);
+          forget();
         }}
       />
     </div>

@@ -115,14 +115,18 @@ class AppleImportService:
         celles du formulaire.
         """
         if payload.kind == "run":
-            assert payload.distance_km is not None  # garanti par le schéma
+            # Distance **ou** allure, garanti par le schéma. Les deux passent telles
+            # quelles : c'est `RunPayload` qui tranche laquelle fait foi, en un seul
+            # endroit — la dupliquer ici la ferait diverger au premier cas limite.
             run = await self._runs.create(
                 RunPayload(
                     date=payload.date,
                     distance_km=payload.distance_km,
+                    pace_min_km=payload.pace_min_km,
                     duration_min=payload.duration_min,
                     avg_hr=payload.avg_hr,
                     elevation_m=payload.elevation_m,
+                    cadence_spm=payload.cadence_spm,
                     note=payload.note,
                 ),
                 source="apple",

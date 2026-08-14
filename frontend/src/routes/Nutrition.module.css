@@ -1,3 +1,16 @@
+/* Le conteneur de page, convention de `/planning` : `wrap` plafonne la largeur de
+   lecture et pose les marges, `screen` gère l'empilement. En oublier un désaligne le
+   contenu de l'en-tête — le défaut a été trouvé deux fois, jamais par un test.
+
+   Cet écran posait `className="wrap"` seul, comme sept autres. Il passe à la convention
+   au passage : le formulaire qui justifiait son empilement à la main vient de partir
+   dans une feuille. */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
 .split {
   display: grid;
   grid-template-columns: 1fr;
@@ -202,8 +215,15 @@
   padding: 4px 8px;
   transition: var(--t);
   /* Le plancher du doigt (`L17-07`) : ces boutons portent la suppression et
-     l'estimation, deux gestes qu'on ne veut pas rater d'un pouce. */
+     l'estimation, deux gestes qu'on ne veut pas rater d'un pouce.
+     **Et il vaut dans les deux dimensions.** Seule la hauteur était tenue : le « ✕ » des
+     repas récurrents mesurait 25 × 44 px — un carré de 8 px de retrait autour d'un glyphe
+     de 9. L'audit le comptait comme défaut sur `/nutrition` depuis la refonte mobile. */
   min-height: var(--tap);
+  min-width: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   touch-action: manipulation;
 }
 
@@ -250,4 +270,54 @@
   font-family: var(--mono);
   font-size: var(--t-meta);
   color: var(--ink-low);
+}
+
+/* ── Les quatre modes de saisie (C05) ─────────────── */
+
+/* Une colonne, toujours : ce sont quatre phrases de longueur inégale, et deux de front
+   couperaient « Photo et description » à la première largeur venue. On les lit une fois,
+   on choisit, la feuille passe à la suite. */
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+/* L'action qui termine le geste : pleine largeur et plus haute que le reste, comme sur
+   les feuilles d'Activité. Même vocabulaire, même fichier de style que le composant. */
+.commit {
+  width: 100%;
+  min-height: var(--tap-lg);
+}
+
+/* La validation et son dégagement. « Changer de mode » ne doit jamais tomber sous le
+   pouce à la place de l'action qui enregistre : d'où l'ordre, et la ligne à part. */
+.sheetCommit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  align-items: stretch;
+}
+
+@media (min-width: 600px) {
+  .sheetCommit {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--s3);
+  }
+
+  .commit {
+    width: auto;
+    min-width: 200px;
+  }
+}
+
+/* L'état armé d'une destruction, dans le ton que la charte lui réserve. Même apparence
+   que la touche de `SwipeRow` et que le retrait d'un exercice : c'est le même acte,
+   révélé par une autre porte. */
+.armed {
+  border-color: rgb(var(--recover-rgb) / 0.6);
+  background: rgb(var(--recover-rgb) / var(--badge-bg-a));
+  color: var(--recover);
 }

@@ -97,12 +97,20 @@ async def create(
 # ── Estimation assistée (`NUT-04`) ────────────────────
 
 
-@router.post("/analyze", response_model=MealEstimate, summary="Estimer une assiette")
+@router.post("/analyze", response_model=MealEstimate, summary="Estimer un repas")
 async def analyze(
     ai: AiServiceDep,
-    photo: Annotated[UploadFile, File()],
+    photo: Annotated[UploadFile | None, File()] = None,
+    comment: Annotated[str | None, Form(max_length=500)] = None,
 ) -> MealEstimate:
-    """Propose protéines, sucres ajoutés et calories depuis une photo (`NUT-04`).
+    """Propose protéines, sucres ajoutés et calories (`NUT-04`).
+
+    **Photo, description, ou les deux** — c'est ce qui porte les trois premiers modes de
+    saisie de l'écran. Le mode choisi ne remonte pas jusqu'ici : seule compte la matière
+    envoyée, et un endpoint par mode aurait fait trois chemins pour une même relecture.
+
+    Les deux paramètres sont facultatifs **séparément**, jamais ensemble : sans l'un ni
+    l'autre il n'y a rien à estimer, et le service refuse.
 
     **Rien n'est écrit** : ni ligne, ni fichier photo. La photo n'est même pas rangée sur
     Nextcloud — elle est réduite, envoyée, et oubliée. C'est l'enregistrement du repas,
@@ -111,9 +119,10 @@ async def analyze(
     `200` seulement si l'on a une proposition. Sans clé, cet endpoint ne s'exécute pas et
     rend `ai_unavailable` : l'écran continue de proposer la saisie manuelle (`IA-07`).
     """
-    data = await photo.read()
-    await photo.close()
-    return await NutritionService.estimate(ai, data)
+    data = await photo.read() if photo is not None else None
+    if photo is not None:
+        await photo.close()
+    return await NutritionService.estimate(ai, data, comment)
 
 
 @router.post(

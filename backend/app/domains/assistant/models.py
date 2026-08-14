@@ -131,3 +131,11 @@ class MessageRow(CsvModel):
     #: l'utilisateur. C'est ce qui permet, en rouvrant un fil, de réafficher « j'ai
     #: ajouté … » et de proposer encore l'annulation.
     actions: str = ""
+    #: Le condensé factuel envoyé au modèle pour produire **ce** message (`IA-09`), une
+    #: ligne par élément, séparées par `\n`.
+    #:
+    #: Rangé avec la réponse et non recalculé à la lecture : le condensé dépend des
+    #: chiffres du jour où la question a été posée. Le refabriquer trois semaines plus
+    #: tard rendrait un contexte plausible, différent de celui qui a réellement servi —
+    #: soit exactement ce que `IA-09` existe pour empêcher.
+    context: str = ""

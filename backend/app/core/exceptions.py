@@ -117,6 +117,30 @@ class NotFoundError(MetricError):
     message = "Cette ressource n'existe pas."
 
 
+class PayloadTooLargeError(MetricError):
+    """Corps de requête au-delà de ce que l'API accepte de lire.
+
+    **Un `413` nu est illisible.** Le symptôme relevé en usage : envoyer une photo de repas
+    depuis un iPhone renvoyait « Payload Too Large » sans code ni phrase française, et
+    l'écran affichait donc un message vide — le client décide sur `error.code`, et un refus
+    du reverse-proxy n'en porte aucun.
+
+    Cette erreur redonne au refus la forme de toutes les autres. Elle est levée **avant**
+    de lire le corps : passé cette taille, le lire coûterait la mémoire du processus pour
+    un contenu qu'on refuse de toute façon.
+
+    Le message dit quoi faire, parce qu'il y a quelque chose à faire : le client réduit
+    déjà l'image avant l'envoi, et une photo qui dépasse encore vient d'ailleurs.
+    """
+
+    code = "payload_too_large"
+    status_code = 413
+    message = (
+        "Ce fichier est trop lourd pour être envoyé. Reprends la photo, "
+        "ou saisis les valeurs à la main."
+    )
+
+
 # ── Couche IA (`IA-03`, `IA-07`) ──────────────────────
 # Déclarés ici pour que le catalogue soit complet et lisible d'un seul endroit ;
 # la couche IA qui les lève est construite au lot L12.

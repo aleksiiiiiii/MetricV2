@@ -6,8 +6,14 @@
  * elle s'ajoute ici — jamais en style inline dans l'écran.
  */
 
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import type {
+  AnchorHTMLAttributes,
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+} from 'react';
 import { useId, useState } from 'react';
+import { Link } from 'react-router';
 
 import { cx } from '@/lib/cx';
 import { useHorizontalSwipe } from '@/lib/swipe';
@@ -97,6 +103,36 @@ export function Button({
 }
 
 /**
+ * Une **navigation** qui se touche comme un bouton.
+ *
+ * Ce n'est pas un `Button` avec un `onClick` qui navigue : un lien s'ouvre dans un
+ * nouvel onglet, se copie, s'annonce « lien » à la synthèse vocale, et le navigateur
+ * sait le précharger. Un bouton ne fait rien de tout cela. C'est la même distinction que
+ * `SheetRow` fait déjà entre son `href` et son `onClick`.
+ *
+ * Ce que le composant apporte, c'est le **plancher tactile** : trois écrans écrivaient
+ * chacun leur propre `.assistant` / `.emptyAction` / `.back` — la même déclaration de
+ * dix lignes, recopiée, parce qu'un `<a>` nu fait 19 px de haut. Un lien de navigation
+ * est une cible comme une autre, et une cible tient `--tap`.
+ */
+export function LinkButton({
+  to,
+  variant = 'ghost',
+  className,
+  children,
+  ...rest
+}: { to: string; variant?: ButtonVariant | undefined } & Omit<
+  AnchorHTMLAttributes<HTMLAnchorElement>,
+  'href'
+>) {
+  return (
+    <Link className={cx(styles.btn, styles[variant], styles.btnLink, className)} to={to} {...rest}>
+      {children}
+    </Link>
+  );
+}
+
+/**
  * Bouton de saisie rapide : libellé à gauche, dernière valeur connue à droite.
  *
  * C'est la cible du projet — un relevé en un geste. Le rappel de la dernière valeur
@@ -110,7 +146,7 @@ export function LogButton({
 }: { label: ReactNode; hint?: ReactNode | undefined } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button type="button" className={cx(styles.btn, styles.log, className)} {...rest}>
-      <span>{label}</span>
+      <span className={styles.logLabel}>{label}</span>
       {hint !== undefined && <em className={styles.logHint}>{hint}</em>}
     </button>
   );

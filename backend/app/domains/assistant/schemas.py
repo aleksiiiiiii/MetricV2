@@ -235,6 +235,12 @@ class ThreadSummary(BaseModel):
     messages: int = 0
 
 
+class RenamePayload(BaseModel):
+    """Le nouveau titre d'un fil (`C04-3`)."""
+
+    title: str = Field(min_length=1, max_length=MAX_TITLE)
+
+
 class ThreadMessage(BaseModel):
     """Un tour de conversation, tel qu'il a été écrit."""
 
@@ -242,6 +248,10 @@ class ThreadMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(max_length=MAX_CONTENT)
     created: dt.datetime | None = None
+    #: Le condensé qui a produit **ce** message (`IA-09`). Vide sur une question, et vide
+    #: sur les réponses écrites avant que la colonne existe — un fil ancien ne ment pas,
+    #: il dit qu'il ne sait pas.
+    context: list[str] = Field(default_factory=list)
 
 
 class ThreadDetail(BaseModel):

@@ -145,10 +145,20 @@
   color: var(--ink-low);
 }
 
-/* Sélection rapide : deux colonnes au pouce, plus dès qu'il y a la place. */
-.pickGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/*
+ * Les résultats de recherche d'exercice — **une colonne**, et c'est un changement.
+ *
+ * C'était une grille de deux colonnes portant tout le catalogue. Deux effets : à vingt
+ * exercices elle prenait plus d'une hauteur d'écran au-dessus des champs qu'on vient
+ * remplir, et à 390 px chaque `LogButton` disposait de ~163 px — « Développé couché
+ * incliné » y tombait sur trois lignes, ce qui donnait des rangées de hauteurs inégales.
+ *
+ * La recherche ramène la liste à six ou huit lignes : une colonne tient largement, et
+ * chaque nom retrouve toute la largeur de la carte.
+ */
+.pickList {
+  display: flex;
+  flex-direction: column;
   gap: var(--s2);
 }
 
@@ -377,8 +387,11 @@
     grid-template-columns: repeat(7, 1fr);
   }
 
-  .pickGrid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Dès qu'il y a la place, les résultats tiennent deux de front sans que le nom ait
+     à se couper : c'est la largeur qui décide, pas le nombre de résultats. */
+  .pickList {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .logGrid {
@@ -449,8 +462,8 @@
 }
 
 @media (min-width: 960px) {
-  .pickGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .pickList {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -523,4 +536,122 @@
 
 .emptyInset {
   margin-top: var(--s4);
+}
+
+/* ── L'assistant par étapes (C06) et la lecture de notes (C07) ────────────────── */
+
+/* Le choix de nature, en tête de l'assistant. Une colonne, comme les modes de saisie
+   d'un repas : deux libellés de longueur inégale ne tiennent pas de front à 360 px. */
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+/* Un exercice déjà ajouté à la séance en cours de construction. */
+.draftRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: var(--s3);
+  font-size: var(--t-sub);
+}
+
+/*
+ * La saisie d'une charge, **dépliée à la place de la ligne choisie**.
+ *
+ * Le ticket décrivait une seconde popup. Deux surfaces modales empilées à 360 px sont une
+ * impasse : on ne sait plus laquelle se ferme, et la seconde recouvre la première. Le
+ * cadre teinté dit que ce bloc appartient à la ligne au-dessus, sans être un second
+ * niveau.
+ */
+.draftForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  border: 1px solid rgb(var(--signal-rgb) / 0.35);
+  background: rgb(var(--signal-rgb) / 0.06);
+  border-radius: var(--r-sm);
+  padding: var(--s4);
+}
+
+/* La zone de notes libres. Elle grandit avec ce qu'on y colle — la hauteur est posée en
+   JavaScript — et s'arrête ici : au-delà, elle défile d'elle-même plutôt que de pousser
+   le bouton de validation hors de l'écran. */
+.notes {
+  resize: none;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 12px 13px;
+  color: var(--ink);
+  font-family: var(--display);
+  /* 16 px : en deçà, iOS zoome à la mise au point et décale la page. */
+  font-size: var(--t-body);
+  line-height: 1.5;
+  width: 100%;
+  min-height: var(--tap-lg);
+  max-height: 12em;
+  overflow-y: auto;
+}
+
+.notes:focus {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px rgb(var(--signal-rgb) / 0.13);
+}
+
+/* Une ligne du tableau de lecture. */
+.noteRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: var(--s3);
+}
+
+/*
+ * Une ligne qui **écrirait** au catalogue si on l'acceptait.
+ *
+ * Elle se distingue à l'œil parce qu'elle ne coûte pas la même chose que les autres :
+ * créer une entrée ou rapprocher deux noms est difficile à défaire, et le ticket exige
+ * que ces lignes-là soient validées une par une. Le ton `load` — « seuil approché » — est
+ * celui que la charte réserve à ce qui demande une attention avant de passer.
+ */
+.noteRowPending {
+  border-color: rgb(var(--load-rgb) / var(--badge-border-a));
+  background: rgb(var(--load-rgb) / 0.05);
+}
+
+.noteBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.noteName {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  font-size: var(--t-sub);
+}
+
+@media (min-width: 600px) {
+  .noteRow {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s3);
+  }
+
+  .noteBody {
+    flex: 1;
+  }
 }

@@ -67,7 +67,7 @@ const VIEW = {
       favorite_id: 'f1',
       name: 'Skyr + flocons',
       protein_g: 32,
-      added_sugar_g: null,
+      added_sugar_g: 12,
       calories: 380,
     },
   ],
@@ -83,6 +83,12 @@ function stub(custom?: (url: string, init?: RequestInit) => Response | undefined
     const override = custom?.(url, init);
     if (override) return Promise.resolve(override);
 
+    // L'assistance décide **quels modes de saisie** la feuille propose : sans cette
+    // réponse, les trois modes assistés n'existent pas et les tests mesureraient un écran
+    // que personne n'a. `Nutrition.ai.test.tsx` scénarise l'autre cas.
+    if (url.includes('/api/ai/status')) {
+      return Promise.resolve(json(200, { enabled: true, message: 'disponible' }));
+    }
     if (url.includes('/nutrition/photos/')) {
       return Promise.resolve({
         ok: true,
@@ -107,6 +113,17 @@ function renderNutrition() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+/**
+ * Ouvre la feuille d'ajout sur un mode donné.
+ *
+ * Le formulaire n'est plus déplié dans la page : la feuille demande d'abord **comment** on
+ * veut noter le repas. Deux appuis, donc, avant d'atteindre les champs.
+ */
+async function openSheet(mode: string) {
+  await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un repas' }));
+  await userEvent.click(await screen.findByRole('button', { name: mode }));
 }
 
 beforeEach(() => {
@@ -189,15 +206,46 @@ describe('écran Nutrition', () => {
     // `NUT-03` : le client ne redéfinit pas la règle horaire.
     stub();
     renderNutrition();
+    await openSheet('Description');
 
-    expect(await screen.findByLabelText('Type')).toHaveValue('déjeuner');
+    expect(screen.getByLabelText('Type')).toHaveValue('déjeuner');
+  });
+
+  it('demande le mode avant de demander quoi que ce soit d’autre', async () => {
+    // Le formulaire était déplié en permanence : on traversait la photo et la description
+    // pour taper trois nombres. La feuille demande d'abord **comment** on veut noter.
+    stub();
+    renderNutrition();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un repas' }));
+
+    for (const mode of ['Photo', 'Photo et description', 'Description', 'Valeurs à la main']) {
+      expect(screen.getByRole('button', { name: mode })).toBeInTheDocument();
+    }
+    // Rien n'est demandé tant que le mode n'est pas choisi.
+    expect(screen.queryByRole('button', { name: 'Enregistrer le repas' })).toBeNull();
+  });
+
+  it('revient au choix du mode sans rien écrire', async () => {
+    // « Annuler à n'importe quelle étape » : le retour en arrière vide ce qui a été tapé
+    // et ne laisse aucune trace côté serveur.
+    stub();
+    renderNutrition();
+    await openSheet('Description');
+
+    await userEvent.type(screen.getByLabelText('Description'), 'salade');
+    await userEvent.click(screen.getByRole('button', { name: 'Changer de mode' }));
+
+    expect(screen.getByRole('button', { name: 'Photo' })).toBeInTheDocument();
+    expect(calls.filter((call) => call.init?.method === 'POST')).toHaveLength(0);
   });
 
   it('envoie un formulaire multipart avec la description', async () => {
     stub();
     renderNutrition();
 
-    await userEvent.type(await screen.findByLabelText('Description'), 'salade');
+    await openSheet('Description');
+    await userEvent.type(screen.getByLabelText('Description'), 'salade');
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer le repas' }));
 
     await waitFor(() => {
@@ -216,7 +264,8 @@ describe('écran Nutrition', () => {
     stub();
     renderNutrition();
 
-    await userEvent.type(await screen.findByLabelText('Description'), 'salade');
+    await openSheet('Description');
+    await userEvent.type(screen.getByLabelText('Description'), 'salade');
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer le repas' }));
 
     await waitFor(() => {
@@ -231,8 +280,61 @@ describe('écran Nutrition', () => {
     // `NUT-01` : au moins une photo ou une description.
     stub();
     renderNutrition();
+    await openSheet('Description');
 
-    expect(await screen.findByRole('button', { name: 'Enregistrer le repas' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Enregistrer le repas' })).toBeDisabled();
+  });
+
+  it('enregistre les sucres d’un repas récurrent', async () => {
+    // Le fichier porte la colonne depuis toujours, la carte ne la demandait pas : un
+    // repas rejoué arrivait donc au journal avec un sucre à vide, et le plafond
+    // quotidien comptait faux sur tout ce qui revient chaque jour.
+    stub();
+    renderNutrition();
+
+    await userEvent.type(await screen.findByLabelText('Nom'), 'Skyr');
+    await userEvent.type(screen.getByLabelText('Protéines'), '32');
+    await userEvent.type(screen.getByLabelText('Sucres'), '12');
+    await userEvent.type(screen.getByLabelText('Calories'), '480');
+    await userEvent.click(screen.getByRole('button', { name: 'Enregistrer comme récurrent' }));
+
+    await waitFor(() => {
+      const post = calls.find(
+        (call) => call.url.includes('/favorites') && call.init?.method === 'POST',
+      );
+      expect(JSON.parse(post?.init?.body as string)).toMatchObject({
+        name: 'Skyr',
+        protein_g: 32,
+        added_sugar_g: 12,
+        calories: 480,
+      });
+    });
+  });
+
+  it('affiche les sucres d’un repas récurrent qui en porte', async () => {
+    stub();
+    renderNutrition();
+
+    expect(await screen.findByText(/12 g sucres/)).toBeInTheDocument();
+  });
+
+  it('demande deux appuis pour retirer un repas récurrent', async () => {
+    // Le projet n'a pas d'annulation, et le « ✕ » d'origine partait au premier appui —
+    // sur une cible de 25 px de large.
+    stub();
+    renderNutrition();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retirer Skyr + flocons' }));
+
+    expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(false);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Retirer Skyr + flocons — confirmer' }),
+    );
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(true);
+    });
   });
 
   it('rejoue un repas récurrent en une action', async () => {
@@ -274,7 +376,8 @@ describe('écran Nutrition', () => {
     );
     renderNutrition();
 
-    await userEvent.type(await screen.findByLabelText('Description'), 'x');
+    await openSheet('Description');
+    await userEvent.type(screen.getByLabelText('Description'), 'x');
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer le repas' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent("n'est pas une image reconnue");

@@ -278,3 +278,91 @@ def test_estimating_a_meal_without_a_photo_says_so(
 
     assert response.status_code == 404
     assert "photo" in response.json()["message"]
+
+
+# ── Estimer sans photo, ou avec les deux (C05) ────────
+
+# Quatre modes de saisie à l'écran — photo, photo + description, description, manuel — et
+# un seul endpoint pour les trois premiers. Ce qui suit vérifie que le mode ne remonte
+# nulle part : seule compte la matière envoyée.
+
+
+def test_a_description_alone_is_enough_to_estimate(
+    ai_app_client: TestClient, openrouter: FakeOpenRouter, auth: dict[str, str]
+) -> None:
+    openrouter.say('{"comment": "pâtes au thon", "protein_g": 28, "calories": 620}')
+
+    response = ai_app_client.post(
+        "/api/nutrition/analyze",
+        data={"comment": "une assiette de pâtes au thon"},
+        headers=auth,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["protein_g"] == 28
+
+
+def test_a_description_alone_does_not_ask_a_vision_model(
+    ai_app_client: TestClient, openrouter: FakeOpenRouter, auth: dict[str, str]
+) -> None:
+    """`IA-04` pris à l'endroit : sans image, la cascade n'a pas à se restreindre.
+
+    C'est le bénéfice caché du mode « description seule » — tout le catalogue gratuit est
+    candidat, et non sa seule moitié qui lit les images.
+    """
+    openrouter.say('{"protein_g": 28}')
+
+    ai_app_client.post("/api/nutrition/analyze", data={"comment": "pâtes au thon"}, headers=auth)
+
+    assert openrouter.calls
+    assert all(not call.with_image for call in openrouter.calls)
+
+
+def test_a_description_reaches_the_model_as_written(
+    ai_app_client: TestClient, openrouter: FakeOpenRouter, auth: dict[str, str]
+) -> None:
+    openrouter.say('{"protein_g": 28}')
+
+    ai_app_client.post(
+        "/api/nutrition/analyze",
+        data={"comment": "deux œufs et une tranche de pain complet"},
+        headers=auth,
+    )
+
+    assert "deux œufs et une tranche de pain complet" in openrouter.calls[0].prompt
+
+
+def test_a_photo_and_a_description_travel_together(
+    ai_app_client: TestClient, openrouter: FakeOpenRouter, auth: dict[str, str]
+) -> None:
+    """La photo montre la quantité, le texte nomme ce que l'image ne dit pas."""
+    openrouter.say('{"protein_g": 40, "calories": 700}')
+
+    response = ai_app_client.post(
+        "/api/nutrition/analyze",
+        data={"comment": "cuisson à l'huile d'olive"},
+        files={"photo": ("assiette.png", png(), "image/png")},
+        headers=auth,
+    )
+
+    assert response.status_code == 200
+    assert openrouter.calls[0].with_image is True
+    assert "huile d'olive" in openrouter.calls[0].prompt
+
+
+def test_estimating_nothing_at_all_is_refused(
+    ai_app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Les deux entrées sont facultatives séparément, jamais ensemble."""
+    response = ai_app_client.post("/api/nutrition/analyze", headers=auth)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+
+
+def test_a_blank_description_is_not_a_description(
+    ai_app_client: TestClient, auth: dict[str, str]
+) -> None:
+    response = ai_app_client.post("/api/nutrition/analyze", data={"comment": "   "}, headers=auth)
+
+    assert response.status_code == 422

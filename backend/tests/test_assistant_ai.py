@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from app.core.dates import today_local, week_start
 from app.domains.assistant import context
 from app.domains.assistant.conversation import INSTRUCTION, build_prompt, read_reply
-from tests.fake_openrouter import FakeOpenRouter
+from tests.fake_openrouter import FakeOpenRouter, Reply
 from tests.fake_webdav import FakeWebDav
 
 ASSISTANT = "/api/assistant"
@@ -506,3 +506,108 @@ def test_a_note_that_adds_detail_is_kept(
 
     assert len(body["remember"]) == 1
     assert "face interne" in dav.content_of(MEMORY_FILE)
+
+
+# ── L'avancement, pendant l'attente (`C04-1`) ─────────
+
+# Une réponse demande cinq à quinze secondes, et l'écran n'affichait que trois points.
+# Le flux ne transporte **pas** les jetons du modèle : la conversation rend un objet JSON
+# dont l'ordre des champs n'est pas garanti, et une seconde passe remplace entièrement la
+# première — un texte affiché au fil de l'eau devrait parfois être effacé sous les yeux.
+# Il transporte des étapes, émises au moment où elles commencent.
+
+
+def sse(raw: str) -> list[tuple[str, dict[str, Any]]]:
+    """Découpe un corps `text/event-stream` en couples (événement, données)."""
+    out: list[tuple[str, dict[str, Any]]] = []
+    for block in raw.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+        if "event" in lines and "data" in lines:
+            out.append((lines["event"], json.loads(lines["data"])))
+    return out
+
+
+def test_the_stream_reports_its_steps_then_the_reply(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    openrouter.say(answer())
+
+    response = ai_app_client.post(
+        f"{ASSISTANT}/chat/stream",
+        json={"question": "Où j'en suis cette semaine ?"},
+        headers=auth,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    events = sse(response.text)
+    assert [name for name, _ in events] == ["step", "step", "reply"]
+    assert events[0][1]["step"] == "je relis tes chiffres"
+    assert events[1][1]["step"] == "je demande au modèle"
+    assert events[-1][1]["reply"] == "Tu tournes à 1,8 séance par semaine."
+
+
+def test_the_stream_names_the_second_pass(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """La seconde passe est **la** raison pour laquelle une réponse peut tripler de durée.
+
+    Une attente inexpliquée devient une attente qu'on comprend — et ce que l'écran affiche
+    est arrivé, ce qui est la seule différence qui compte avec une animation.
+    """
+    openrouter.say(answer(need=["repas_du_jour"]), answer())
+
+    events = sse(
+        ai_app_client.post(
+            f"{ASSISTANT}/chat/stream",
+            json={"question": "Où j'en suis cette semaine ?"},
+            headers=auth,
+        ).text
+    )
+
+    steps = [data["step"] for name, data in events if name == "step"]
+    assert any("il me manque" in step for step in steps)
+
+
+def test_a_model_failure_travels_inside_the_stream(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Les en-têtes sont partis depuis longtemps quand un modèle renonce.
+
+    L'erreur ne peut donc plus être un statut HTTP : elle voyage dans le flux, avec le
+    même `{code, message}` que partout ailleurs (`API-07`).
+    """
+    openrouter.replies = [Reply.quota(), Reply.quota(), Reply.quota(), Reply.quota()]
+
+    response = ai_app_client.post(
+        f"{ASSISTANT}/chat/stream",
+        json={"question": "Où j'en suis cette semaine ?"},
+        headers=auth,
+    )
+
+    assert response.status_code == 200
+    name, data = sse(response.text)[-1]
+    assert name == "error"
+    assert data["code"] == "ai_quota"
+    assert data["message"]
+
+
+def test_the_stream_is_not_buffered_by_a_proxy(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Sans cet en-tête, Nginx livre les étapes **toutes ensemble à la fin**.
+
+    L'endpoint serait alors exactement aussi muet qu'avant, et rien ne le signalerait en
+    développement — où il n'y a pas de proxy devant.
+    """
+    openrouter.say(answer())
+
+    response = ai_app_client.post(
+        f"{ASSISTANT}/chat/stream",
+        json={"question": "Où j'en suis cette semaine ?"},
+        headers=auth,
+    )
+
+    assert response.headers["x-accel-buffering"] == "no"
+    assert response.headers["cache-control"] == "no-store"

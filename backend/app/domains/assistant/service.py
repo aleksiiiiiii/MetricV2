@@ -37,11 +37,12 @@ ne s'écrivait ; ça n'en est plus une dès lors qu'une réponse peut agir sur l
 from __future__ import annotations
 
 import secrets as secrets_module
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
 from app.core.dates import local_moment, now_local, today_local
-from app.core.exceptions import AiUnreadableError, MetricError
+from app.core.exceptions import AiUnreadableError, MetricError, ValidationFailedError
 from app.domains.ai.service import AiService
 from app.domains.assistant import actions as catalogue
 from app.domains.assistant import context, conversation
@@ -85,6 +86,19 @@ if TYPE_CHECKING:  # pragma: no cover - import de typage seulement
 #: tronquée en plein raisonnement ne rend aucun JSON, donc rien du tout. La marge est là
 #: pour ce cas ; une réponse utile en occupe toujours moins de 400.
 MAX_TOKENS = 1600
+
+
+#: Ce qu'un appelant fournit pour être tenu au courant : une coroutine par étape.
+#:
+#: Un alias plutôt qu'un `Protocol` : il n'y a qu'une forme, elle tient sur une ligne, et
+#: la nommer suffit à ce que la signature de `ask` se lise.
+StepReporter = Callable[[str], Awaitable[None]]
+
+
+async def _step(reporter: StepReporter | None, message: str) -> None:
+    """Annonce une étape, si quelqu'un écoute."""
+    if reporter is not None:
+        await reporter(message)
 
 
 def _sortable(summary: ThreadSummary) -> tuple[bool, datetime]:
@@ -255,6 +269,10 @@ class AssistantService:
                 role="assistant" if message.model.role == "assistant" else "user",
                 content=message.model.content,
                 created=message.model.created,
+                # `splitlines()` sur une chaîne vide rend `[]`, ce qui est exactement ce
+                # qu'un message d'avant la colonne doit dire : rien, et non un contexte
+                # reconstitué qui n'aurait jamais servi.
+                context=message.model.context.splitlines(),
             )
             for message in await self._messages.read_all()
             if message.model.thread_id == thread_id
@@ -293,11 +311,16 @@ class AssistantService:
     async def _append_messages(
         self,
         thread_id: str,
-        entries: list[tuple[str, str]],
+        entries: list[tuple[str, str, list[str]]],
         *,
         moment: datetime,
     ) -> None:
-        """Ajoute des tours à un fil et repousse sa date d'activité."""
+        """Ajoute des tours à un fil et repousse sa date d'activité.
+
+        Chaque entrée est un triplet `(rôle, contenu, condensé)`. Le condensé n'accompagne
+        que la réponse — une question n'en a pas — et il est **rangé**, pas recalculé : il
+        dépend des chiffres du jour où elle a été posée.
+        """
         existing = [
             row.model.seq
             for row in await self._messages.read_all()
@@ -313,8 +336,9 @@ class AssistantService:
                     role=role,
                     content=content[:MAX_CONTENT],
                     created=moment,
+                    context="\n".join(lines),
                 )
-                for offset, (role, content) in enumerate(entries)
+                for offset, (role, content, lines) in enumerate(entries)
             ]
         )
 
@@ -330,6 +354,43 @@ class AssistantService:
         await self._threads.replace_by_token(
             index, token, existing.model_copy(update={"updated": moment})
         )
+
+    async def rename_thread(self, thread_id: str, title: str) -> ThreadSummary:
+        """Renomme un fil (`C04-3`).
+
+        Les titres sont écrits par le modèle à l'ouverture, et il se trompe : « Où j'en
+        suis » pour une discussion qui a fini par porter sur une blessure. On ne pouvait
+        que supprimer le fil, ce qui emportait la conversation avec le mauvais titre.
+
+        **Le titre seul change.** Ni `updated` ni les messages : renommer n'est pas
+        parler, et faire remonter le fil en tête de liste parce qu'on a corrigé son
+        libellé rangerait l'historique dans un ordre qui ne veut plus rien dire.
+        """
+        cleaned = title.strip()[:MAX_TITLE]
+        if not cleaned:
+            raise ValidationFailedError("Une discussion a besoin d'un titre.")
+
+        rows = await self._threads.read_all(fresh=True)
+        for index, row in enumerate(rows):
+            if row.model.id != thread_id:
+                continue
+            saved = await self._threads.replace_by_token(
+                index, row.token, row.model.model_copy(update={"title": cleaned})
+            )
+            return ThreadSummary(
+                thread_id=saved.model.id,
+                title=saved.model.title,
+                created=saved.model.created,
+                updated=saved.model.updated,
+                messages=len(
+                    [
+                        message
+                        for message in await self._messages.read_all()
+                        if message.model.thread_id == thread_id
+                    ]
+                ),
+            )
+        raise StorageNotFoundError("Cette discussion n'existe pas.")
 
     async def _open_thread(self, title: str, *, moment: datetime) -> str:
         """Ouvre un fil et rend son identifiant."""
@@ -465,8 +526,21 @@ class AssistantService:
         *,
         adherence: AdherenceView,
         today: date | None = None,
+        on_step: StepReporter | None = None,
     ) -> ChatReply:
         """Répond à une question, dans un fil.
+
+        ## `on_step` : dire ce qu'on fait pendant qu'on le fait
+
+        Une réponse demande cinq à quinze secondes, et l'écran n'affichait que trois points
+        pendant tout ce temps. Le rappel n'est pas un ornement : la durée varie du simple au
+        triple selon qu'une seconde passe est nécessaire, et rien ne le disait.
+
+        Le rapporteur est appelé **au moment où chaque étape commence**, jamais après ni
+        d'avance. C'est ce qui distingue un compte rendu d'une animation : ce que l'écran
+        affiche est arrivé. `None` — le cas de la route non diffusée — ne coûte rien.
+
+        ## Ce qui n'a pas changé
 
         **L'historique vient du fil, pas du client.** C'était l'inverse : l'écran renvoyait
         le passé à chaque question. Sans conséquence tant que rien ne s'écrivait — mais un
@@ -479,6 +553,8 @@ class AssistantService:
         """
         current = today or today_local()
         moment = now_local()
+
+        await _step(on_step, "je relis tes chiffres")
 
         thread_id = request.thread_id
         opening = thread_id is None
@@ -507,6 +583,7 @@ class AssistantService:
                 naming=opening,
             )
 
+        await _step(on_step, "je demande au modèle")
         payload = await ai.ask_json(
             instruction=conversation.INSTRUCTION,
             prompt=prompt_for([]),
@@ -525,13 +602,23 @@ class AssistantService:
         # récursion à surveiller.
         need = conversation.read_need(payload, available=available)
         if need:
+            # La seconde passe est **la** raison pour laquelle une réponse peut durer trois
+            # fois plus longtemps qu'une autre. La nommer, avec ce qui manquait, remplace
+            # une attente inexpliquée par une attente qu'on comprend.
+            await _step(on_step, f"il me manque {', '.join(need)} — je relis")
             payload = await ai.ask_json(
                 instruction=conversation.INSTRUCTION,
                 prompt=prompt_for(await context.slices(self._store, need, today=current)),
                 max_tokens=MAX_TOKENS,
             )
 
-        reports = await self._run_actions(conversation.read_actions(payload))
+        wanted = conversation.read_actions(payload)
+        if wanted:
+            # Ce n'est pas la même attente : ici le modèle a fini, et c'est le stockage
+            # qu'on sollicite. Le dire distingue « le modèle réfléchit » de « on écrit »,
+            # et la seconde n'a pas le même remède quand elle traîne.
+            await _step(on_step, "j’écris ce qu’il a décidé")
+        reports = await self._run_actions(wanted)
 
         reply, proposed, _ = conversation.read_reply(
             payload,
@@ -570,7 +657,7 @@ class AssistantService:
             raise StorageNotFoundError("Cette discussion n'existe pas.")
         await self._append_messages(
             thread_id,
-            [("user", request.question), ("assistant", reply)],
+            [("user", request.question, []), ("assistant", reply, facts)],
             moment=moment,
         )
 

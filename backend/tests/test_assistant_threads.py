@@ -24,7 +24,7 @@ THREADS_FILE = "Metric/assistant/threads.csv"
 MESSAGES_FILE = "Metric/assistant/messages.csv"
 
 THREADS_HEADER = "id,created,updated,title"
-MESSAGES_HEADER = "thread_id,seq,role,content,created,actions"
+MESSAGES_HEADER = "thread_id,seq,role,content,created,actions,context"
 
 
 def seed(dav: FakeWebDav, threads: str = "", messages: str = "") -> None:
@@ -246,3 +246,82 @@ def test_clearing_every_thread_leaves_the_notebook_untouched(
     assert threads(store_client, auth) == []
     memories = store_client.get(f"{ASSISTANT}/memory", headers=auth).json()["memories"]
     assert [item["note"] for item in memories] == ["Genou droit sensible"]
+
+
+# ── 4. Renommer (`C04-3`) ─────────────────────────────
+
+# Les titres sont écrits par le modèle à l'ouverture, et il se trompe. On ne pouvait que
+# supprimer le fil — ce qui emportait la conversation avec son mauvais titre.
+
+
+def test_a_thread_can_be_renamed(
+    store_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    seed(dav, threads="f1,2026-08-01T09:00:00+02:00,2026-08-01T09:30:00+02:00,Où j’en suis")
+
+    response = store_client.patch(
+        f"{ASSISTANT}/threads/f1", json={"title": "Reprise après le genou"}, headers=auth
+    )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Reprise après le genou"
+    assert threads(store_client, auth)[0]["title"] == "Reprise après le genou"
+
+
+def test_renaming_does_not_move_the_thread_up_the_list(
+    store_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Renommer n'est pas parler.
+
+    Faire remonter un fil parce qu'on a corrigé son libellé rangerait l'historique dans un
+    ordre qui ne veut plus rien dire — la liste est triée sur la dernière activité.
+    """
+    seed(
+        dav,
+        threads=(
+            "vieux,2026-07-01T09:00:00+02:00,2026-07-01T09:00:00+02:00,Ancien\n"
+            "recent,2026-08-01T09:00:00+02:00,2026-08-01T09:00:00+02:00,Récent"
+        ),
+    )
+
+    store_client.patch(f"{ASSISTANT}/threads/vieux", json={"title": "Corrigé"}, headers=auth)
+
+    assert [thread["thread_id"] for thread in threads(store_client, auth)] == ["recent", "vieux"]
+
+
+def test_an_empty_title_is_refused(
+    store_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    seed(dav, threads="f1,2026-08-01T09:00:00+02:00,2026-08-01T09:30:00+02:00,Où j’en suis")
+
+    response = store_client.patch(f"{ASSISTANT}/threads/f1", json={"title": "   "}, headers=auth)
+
+    assert response.status_code == 422
+
+
+def test_renaming_an_unknown_thread_is_a_not_found(
+    store_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    seed(dav)
+
+    response = store_client.patch(f"{ASSISTANT}/threads/absent", json={"title": "X"}, headers=auth)
+
+    assert response.status_code == 404
+
+
+def test_renaming_needs_no_api_key(
+    store_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """`IA-07` : corriger un libellé n'a pas à attendre qu'un modèle réponde.
+
+    `store_client` monte l'application **sans** clé OpenRouter : si la route en dépendait,
+    ce test rendrait `503`.
+    """
+    seed(dav, threads="f1,2026-08-01T09:00:00+02:00,2026-08-01T09:30:00+02:00,Titre")
+
+    assert (
+        store_client.patch(
+            f"{ASSISTANT}/threads/f1", json={"title": "Autre"}, headers=auth
+        ).status_code
+        == 200
+    )

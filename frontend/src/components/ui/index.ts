@@ -15,6 +15,8 @@ export { Toaster } from './Toaster';
 
 export { Sheet, SheetGroup, SheetRow } from './Sheet';
 
+export { Markdown } from './Markdown';
+
 export {
   AiBlock,
   Badge,
@@ -26,6 +28,7 @@ export {
   Empty,
   Eyebrow,
   Field,
+  LinkButton,
   LogButton,
   PageHead,
   Rule,

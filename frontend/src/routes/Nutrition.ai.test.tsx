@@ -109,12 +109,25 @@ function renderNutrition() {
   );
 }
 
-/** Choisit une photo dans le formulaire d'ajout, une fois l'écran peint. */
+/**
+ * Ouvre la feuille d'ajout sur un mode donné.
+ *
+ * Le formulaire n'est plus déplié dans la page : la feuille demande d'abord **comment** on
+ * veut noter le repas. Deux appuis, donc, avant d'atteindre les champs.
+ */
+async function openSheet(mode: string) {
+  await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un repas' }));
+  await userEvent.click(await screen.findByRole('button', { name: mode }));
+}
+
+/** Ouvre la feuille en mode photo et y dépose une image. */
 async function choosePhoto() {
-  await screen.findByText('Ajouter un repas');
-  await screen.findByRole('button', { name: 'Enregistrer le repas' });
+  await openSheet('Photo');
   const input = document.querySelector('#meal-photo') as HTMLInputElement;
   await userEvent.upload(input, new File(['photo'], 'assiette.jpg', { type: 'image/jpeg' }));
+  // La réduction passe par `createImageBitmap`, absent de jsdom : le fichier d'origine
+  // repart tel quel, ce qui est exactement le repli voulu. On attend qu'il soit posé.
+  await screen.findByAltText('Aperçu du repas');
 }
 
 /**
@@ -148,32 +161,104 @@ afterEach(() => {
 });
 
 describe('estimation d’une assiette', () => {
-  it('ne propose rien sans clé configurée', async () => {
-    // `IA-07` : le formulaire reste entier, il ne mentionne simplement pas l'assistance.
+  it('n’offre que la saisie manuelle sans clé configurée', async () => {
+    // `IA-07` : ce qui n'est pas configuré est **annoncé** indisponible, jamais deviné.
+    // Trois des quatre modes n'ont rien à proposer sans clé : ils ne sont pas grisés,
+    // ils ne sont pas là, et l'écran dit pourquoi.
     stub((url) =>
       url.includes('/api/ai/status')
-        ? json(200, { enabled: false, message: 'pas de clé' })
+        ? json(200, { enabled: false, message: 'Aucune clé OpenRouter n’est configurée.' })
+        : undefined,
+    );
+    renderNutrition();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Ajouter un repas' }));
+
+    expect(screen.queryByRole('button', { name: 'Photo' })).not.toBeInTheDocument();
+    expect(await screen.findByText(/Aucune clé OpenRouter/)).toBeInTheDocument();
+
+    // Et la saisie reste entière : c'est la promesse de `IA-07`.
+    await userEvent.click(screen.getByRole('button', { name: 'Valeurs à la main' }));
+    expect(within(mealForm()).getByLabelText('Protéines (g)')).toBeInTheDocument();
+  });
+
+  it('ne propose pas d’estimer tant qu’il n’y a ni photo ni description', async () => {
+    stub();
+    renderNutrition();
+
+    await openSheet('Photo');
+
+    expect(screen.getByRole('button', { name: 'Estimer les macros' })).toBeDisabled();
+  });
+
+  it('n’offre aucune estimation en saisie manuelle', async () => {
+    // C'est tout le sens du quatrième mode : trois nombres lus sur un emballage n'ont
+    // rien à faire estimer.
+    stub();
+    renderNutrition();
+
+    await openSheet('Valeurs à la main');
+
+    expect(screen.queryByRole('button', { name: 'Estimer les macros' })).not.toBeInTheDocument();
+    expect(within(mealForm()).getByLabelText('Protéines (g)')).toBeInTheDocument();
+  });
+
+  it('estime depuis une description seule, sans photo', async () => {
+    stub();
+    renderNutrition();
+
+    await openSheet('Description');
+    await userEvent.type(
+      within(mealForm()).getByLabelText('Description'),
+      'une assiette de pâtes au thon',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
+
+    expect(await screen.findByText(/38 g de protéines/)).toBeInTheDocument();
+
+    const sent = writes().find((call) => call.url.includes('/analyze'));
+    const form = sent?.init?.body as FormData;
+    expect(form.get('comment')).toBe('une assiette de pâtes au thon');
+    expect(form.get('photo')).toBeNull();
+  });
+
+  it('envoie la photo et la description ensemble', async () => {
+    stub();
+    renderNutrition();
+
+    await openSheet('Photo et description');
+    const input = document.querySelector('#meal-photo') as HTMLInputElement;
+    await userEvent.upload(input, new File(['photo'], 'assiette.jpg', { type: 'image/jpeg' }));
+    await screen.findByAltText('Aperçu du repas');
+    await userEvent.type(
+      within(mealForm()).getByLabelText('Description'),
+      'cuisson à l’huile d’olive',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
+
+    await screen.findByText(/38 g de protéines/);
+    const form = writes().find((call) => call.url.includes('/analyze'))?.init?.body as FormData;
+    expect(form.get('photo')).not.toBeNull();
+    expect(form.get('comment')).toBe('cuisson à l’huile d’olive');
+  });
+
+  it('affiche le refus de taille du serveur, code et phrase', async () => {
+    // Le défaut d'origine : un `413` nu, donc un écran d'échec sans message. Le refus
+    // porte maintenant un code et une phrase française, et elle s'affiche telle quelle.
+    stub((url) =>
+      url.includes('/api/nutrition/analyze')
+        ? json(413, {
+            code: 'payload_too_large',
+            message: 'Ce fichier est trop lourd pour être envoyé.',
+          })
         : undefined,
     );
     renderNutrition();
 
     await choosePhoto();
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
 
-    expect(
-      screen.queryByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    ).not.toBeInTheDocument();
-    expect(within(mealForm()).getByLabelText('Protéines (g)')).toBeInTheDocument();
-  });
-
-  it('ne propose rien tant qu’il n’y a pas de photo', async () => {
-    stub();
-    renderNutrition();
-
-    await screen.findByText('Ajouter un repas');
-
-    expect(
-      screen.queryByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    ).not.toBeInTheDocument();
+    expect(await screen.findByText(/trop lourd pour être envoyé/)).toBeInTheDocument();
   });
 
   it('affiche la proposition sans rien remplir ni écrire', async () => {
@@ -182,9 +267,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
 
     expect(await screen.findByText(/38 g de protéines/)).toBeInTheDocument();
     // Les champs restent vides : la proposition est affichée, pas appliquée.
@@ -197,9 +280,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Utiliser ces valeurs' }));
 
     const protein = within(mealForm()).getByLabelText('Protéines (g)');
@@ -215,9 +296,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Utiliser ces valeurs' }));
 
     await userEvent.click(screen.getByRole('button', { name: 'Protéines (g) : augmenter' }));
@@ -232,9 +311,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Utiliser ces valeurs' }));
     await userEvent.click(screen.getByRole('button', { name: /Pas d’accord|Pas d'accord/ }));
 
@@ -248,9 +325,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Utiliser ces valeurs' }));
     await userEvent.click(screen.getByRole('button', { name: 'Calories : augmenter' }));
     await userEvent.click(screen.getByRole('button', { name: /Pas d’accord|Pas d'accord/ }));
@@ -269,9 +344,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Utiliser ces valeurs' }));
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer le repas' }));
 
@@ -294,9 +367,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Utiliser ces valeurs' }));
     await userEvent.click(screen.getByRole('button', { name: /Pas d’accord|Pas d'accord/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer le repas' }));
@@ -325,9 +396,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
 
     expect(await screen.findByText(/rien su estimer/)).toBeInTheDocument();
     expect(within(mealForm()).getByLabelText('Protéines (g)')).toHaveValue('');
@@ -343,9 +412,7 @@ describe('estimation d’une assiette', () => {
     renderNutrition();
 
     await choosePhoto();
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Estimer les macros depuis la photo' }),
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Estimer les macros' }));
 
     expect(await screen.findByText(/Quota des modèles gratuits épuisé/)).toBeInTheDocument();
     // L'écran reste utilisable : c'est la promesse de `IA-07`.

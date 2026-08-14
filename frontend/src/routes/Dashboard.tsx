@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router';
 
 import {
   Badge,
@@ -10,6 +9,7 @@ import {
   Chip,
   ChipStrip,
   Empty,
+  LinkButton,
   PageHead,
   Progress,
   Rule,
@@ -349,12 +349,8 @@ export function Dashboard() {
           title="Aucun relevé aujourd’hui"
           action={
             <div className="row">
-              <Link className={styles.emptyAction} to="/corps">
-                Noter une pesée
-              </Link>
-              <Link className={styles.emptyAction} to="/routine">
-                Boire un verre
-              </Link>
+              <LinkButton to="/corps">Noter une pesée</LinkButton>
+              <LinkButton to="/routine">Boire un verre</LinkButton>
             </div>
           }
         >
@@ -364,25 +360,34 @@ export function Dashboard() {
 
       <Numbers data={data} />
 
-      {/* La porte de l'assistant. Il n'a **pas** d'entrée de navigation — la barre
-          demandait déjà 806 px pour 695 disponibles — et cette carte est donc son accès
-          principal : elle vient tout de suite après les chiffres du jour, avant la
-          tendance, parce qu'une question se pose en regardant ce qu'on vient de lire. */}
-      <Rule>Demander</Rule>
+      {/* La porte de l'assistant, et les deux qui l'accompagnent.
+          Elle vient tout de suite après les chiffres du jour, avant la tendance, parce
+          qu'une question se pose en regardant ce qu'on vient de lire.
+
+          **Le paragraphe est parti.** Il énumérait ce que l'assistant lit — poids,
+          séances, macros, objectif, planning, carnet — soit six lignes de texte au-dessus
+          d'un bouton de 44 px. Ce qu'il décrivait, l'assistant le montre lui-même, et
+          mieux : le condensé réellement envoyé s'affiche sous chaque réponse (`IA-09`).
+
+          **Trois actions, un seul rang principal.** Ouvrir prend le poids visuel ; les
+          deux autres sont des portes qu'on emprunte plus rarement — et les mettre au même
+          niveau aurait rendu la carte illisible en la faisant passer pour un menu. */}
+      <Rule>Assistant</Rule>
       <Card>
-        <div className="spread">
-          <div>
-            <h3>Une question sur tes chiffres ?</h3>
-            <p className={styles.empty}>
-              L’assistant lit ton poids, tes séances, tes macros, ton objectif et ton planning — et
-              ce que tu lui as dit de retenir.
-            </p>
-          </div>
-        </div>
-        <div className="row mt">
-          <Link className={styles.assistant} to="/assistant">
+        <div className={styles.assistantActions}>
+          <LinkButton variant="primary" className={styles.assistantOpen} to="/assistant">
             Ouvrir l’assistant
-          </Link>
+          </LinkButton>
+          <div className="row">
+            {/* Une adresse et non un état d'écran : la feuille s'ouvre à l'arrivée, le
+                bouton système « précédent » la referme, et le lien se garde en favori. */}
+            <LinkButton variant="ghost" to="/assistant?ouvre=discussions">
+              Discussions
+            </LinkButton>
+            <LinkButton variant="ghost" to="/assistant?ouvre=memoire">
+              Mémoire
+            </LinkButton>
+          </div>
         </div>
       </Card>
 

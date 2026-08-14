@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from app import __version__
 from app.config import Settings, get_settings
 from app.core.errors import register_error_handlers
+from app.core.limits import RequestSizeLimit
 from app.core.security import PasswordChecker, TokenIssuer
 from app.core.throttle import LoginThrottle
 from app.domains.ai.service import AiProvider
@@ -123,6 +124,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Le plafond de transport, **au-dessus** du CORS pour être traversé en premier : un
+    # corps trop gros est refusé avant d'être lu, et le refus prend la forme de toutes les
+    # autres erreurs — `{code, message}` en français — plutôt qu'un `413` nu sur lequel le
+    # client n'a rien à décider.
+    app.add_middleware(RequestSizeLimit)
 
     register_error_handlers(app)
 

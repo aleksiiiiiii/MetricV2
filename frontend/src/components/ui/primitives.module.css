@@ -69,6 +69,13 @@
   padding: 10px 12px;
 }
 
+/* Ce qu'un `<a>` n'hérite pas d'un `<button>`. Le reste — hauteur, rayon, retrait,
+   états d'appui et de focus — vient de `.btn` et de la variante, comme pour un bouton :
+   deux apparences pour la même intention divergeraient au premier changement de charte. */
+.btnLink {
+  text-decoration: none;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .primary:hover:not(:disabled) {
     background: var(--signal-hover);
@@ -113,9 +120,27 @@
   }
 }
 
+/*
+ * **Un libellé qui passe à la ligne doit rester aligné à gauche.**
+ *
+ * Un `<button>` centre son texte par défaut — c'est la feuille de style du navigateur, et
+ * `.btn` ne l'écrasait pas. Tant qu'un libellé tenait sur une ligne, la disposition en
+ * `flex` le plaçait et le centrage ne se voyait pas ; « Développé couché incliné » ou
+ * « Photo et description », eux, arrivaient centrés sur deux lignes au milieu d'une liste
+ * de libellés alignés. C'est la moitié du défaut noté dans `CLAUDE.md` §7.
+ */
+.logLabel {
+  text-align: left;
+  min-width: 0;
+}
+
 .logHint {
   font-style: normal;
   color: var(--ink-low);
+  /* Le rappel de la dernière valeur ne se coupe pas pour laisser de la place au libellé :
+     c'est un nombre, et un nombre coupé est illisible. */
+  flex: none;
+  text-align: right;
 }
 
 .btnBusy {
@@ -449,6 +474,22 @@
   margin-inline: calc(-1 * var(--card-pad));
   padding-inline: var(--card-pad);
   padding-block: 2px;
+  /*
+   * **Le retrait ne tenait que sur les bandes qui ne débordent pas**, et c'est le
+   * défaut que la charte demandait de corriger sur le tableau de bord.
+   *
+   * Mesuré à 402 px : la carte pose son bord de contenu à 32 px ; la bande « Métrique
+   * du graphique » — treize pastilles, donc elle déborde — démarrait sa première à
+   * **17 px**, collée au bord de la carte, pendant que « Exercices proposés » — qui
+   * tient sans déborder — démarrait correctement à 33.
+   *
+   * L'accroche en est la cause. Le port d'accroche vaut par défaut le scrollport
+   * entier ; caler le premier enfant sur son bord revient donc à faire défiler la
+   * bande de la valeur exacte de son `padding-inline`, qui disparaît. `scroll-padding`
+   * rentre ce port du même retrait : la pastille s'aligne alors sur le bord du
+   * contenu, et le débordement reste visible à droite — ce qui était le but.
+   */
+  scroll-padding-inline: var(--card-pad);
 }
 
 .strip::-webkit-scrollbar {

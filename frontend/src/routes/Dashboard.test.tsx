@@ -98,6 +98,29 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('bloc assistant (C01)', () => {
+  it('porte trois portes, dont une seule principale', async () => {
+    // Le paragraphe qui énumérait ce que l'assistant lit est parti : six lignes de texte
+    // au-dessus d'un bouton de 44 px, pour décrire ce que l'assistant montre lui-même.
+    stub();
+    renderDashboard();
+
+    expect(await screen.findByRole('link', { name: 'Ouvrir l’assistant' })).toHaveAttribute(
+      'href',
+      '/assistant',
+    );
+    expect(screen.getByRole('link', { name: 'Discussions' })).toHaveAttribute(
+      'href',
+      '/assistant?ouvre=discussions',
+    );
+    expect(screen.getByRole('link', { name: 'Mémoire' })).toHaveAttribute(
+      'href',
+      '/assistant?ouvre=memoire',
+    );
+    expect(screen.queryByText(/L’assistant lit ton poids/)).toBeNull();
+  });
+});
+
 describe('tableau de bord', () => {
   it("ne fait qu'un seul appel d'agrégats au chargement", async () => {
     // `AGG-01`, la raison d'être du lot. Dix appels parallèles au chargement d'un écran

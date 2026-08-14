@@ -44,13 +44,16 @@ Strava…) et relève les valeurs affichées.
 
 Réponds par cet objet JSON exactement :
 {"kind": "run", "activity": "…", "date": "…", "distance": "…", "duration": "…",
- "avg_hr": "…", "elevation_m": "…", "calories": "…", "readable": true}
+ "pace": "…", "cadence_spm": "…", "avg_hr": "…", "elevation_m": "…", "calories": "…",
+ "readable": true}
 
 - "kind" : "run" si l'activité parcourt une distance (course, marche, vélo), sinon "workout".
 - "activity" : le nom de l'activité tel qu'affiché ("Course à pied", "Musculation"…).
 - "date" : telle qu'affichée ("28/07/2026", "Hier", "Lundi"). Ne la calcule pas.
 - "distance" : recopie le nombre ET son unité, exactement ("5,20 MI", "8,37 KM").
 - "duration" : recopie telle quelle ("28:45", "1:18:44").
+- "pace" : allure moyenne, recopiée telle quelle ("5:16", "5\'16"). Ne la calcule pas.
+- "cadence_spm" : cadence moyenne en pas par minute (SPM), le nombre seul.
 - "avg_hr" : fréquence cardiaque moyenne en battements par minute.
 - "elevation_m" : dénivelé positif, en mètres.
 - "calories" : kilocalories actives.
@@ -66,10 +69,20 @@ _BOUNDS: dict[str, tuple[float, float]] = {
     "avg_hr": (1, 260),
     "elevation_m": (0, 10000),
     "calories": (0, 10000),
+    "cadence_spm": (30, 300),
 }
 
 #: Ordre d'affichage des champs manquants — celui de la capture, pas celui du modèle.
-_REPORTED = ("date", "distance_km", "duration_min", "avg_hr", "elevation_m", "calories")
+_REPORTED = (
+    "date",
+    "distance_km",
+    "duration_min",
+    "pace_min_km",
+    "cadence_spm",
+    "avg_hr",
+    "elevation_m",
+    "calories",
+)
 
 
 def _text(payload: dict[str, Any], key: str) -> str:
@@ -131,12 +144,23 @@ def read_draft(payload: dict[str, Any], *, today: date) -> AppleDraft:
             minutes = 0.0
         duration = round(minutes, 2) if 0 < minutes <= 1440 else None
 
+    # L'allure se lit **comme une durée** — `5:16` vaut 5 min 16 s par kilomètre. Un
+    # second analyseur pour la même écriture divergerait du premier au cas limite.
+    pace: float | None = None
+    raw_pace = _text(payload, "pace").replace("\u2019", ":").replace("'", ":")
+    if raw_pace:
+        try:
+            minutes_per_km = parse_duration_minutes(raw_pace)
+        except ParseError:
+            minutes_per_km = 0.0
+        pace = round(minutes_per_km, 3) if 1 < minutes_per_km <= 60 else None
+
     activity = _text(payload, "activity") or None
     kind = "run" if str(payload.get("kind", "")).strip().lower() == "run" else "workout"
-    # Une course sans distance ne peut pas s'écrire dans `runs.csv` (`ACT-02` : l'allure
-    # n'existe pas sans elle). Plutôt que de proposer un import impossible à valider, on
-    # la présente en séance — que l'écran laisse rebasculer en un appui.
-    if kind == "run" and distance is None:
+    # Une course a besoin de sa distance **ou** de son allure : le serveur calcule l'une
+    # depuis l'autre. Sans ni l'une ni l'autre elle ne peut pas s'écrire dans `runs.csv`,
+    # et on la présente en séance — que l'écran laisse rebasculer en un appui.
+    if kind == "run" and distance is None and pace is None:
         kind = "workout"
 
     draft = AppleDraft(
@@ -145,6 +169,8 @@ def read_draft(payload: dict[str, Any], *, today: date) -> AppleDraft:
         workout_type=activity,
         distance_km=distance,
         duration_min=duration,
+        pace_min_km=pace,
+        cadence_spm=_integer(payload, "cadence_spm"),
         avg_hr=_integer(payload, "avg_hr"),
         elevation_m=_integer(payload, "elevation_m"),
         calories=_integer(payload, "calories"),
@@ -163,4 +189,4 @@ def is_unreadable(payload: dict[str, Any], draft: AppleDraft) -> bool:
     """
     if payload.get("readable") is False:
         return True
-    return draft.duration_min is None and draft.distance_km is None
+    return draft.duration_min is None and draft.distance_km is None and draft.pace_min_km is None

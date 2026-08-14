@@ -8,11 +8,19 @@ se fait ici, à la frontière, pour que le domaine ne voie jamais que des minute
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.parsing import ParseError, parse_decimal, parse_distance_km, parse_duration_minutes
+from app.core.parsing import (
+    ParseError,
+    pace_min_per_km,
+    parse_decimal,
+    parse_distance_km,
+    parse_duration_minutes,
+)
 from app.core.validation import (
+    CadenceSpm,
     Calories,
     DistanceKm,
     DurationMin,
@@ -21,6 +29,7 @@ from app.core.validation import (
     Label,
     LoadKg,
     Note,
+    PaceMinKm,
     PastDate,
     Reps,
     Rpe,
@@ -48,33 +57,85 @@ def _distance(value: str | float) -> float:
 
 
 class RunPayload(BaseModel):
-    """Saisie d'une course (`ACT-01`)."""
+    """Saisie d'une course (`ACT-01`).
+
+    ## Distance et allure : deux lectures du même trajet
+
+    Elles ne sont pas indépendantes — `allure = durée ÷ distance` —, et **le serveur en
+    calcule toujours une** à partir de l'autre. C'est l'invariant « aucun calcul métier
+    côté client » appliqué à un cas où le client aurait été tenté de le faire.
+
+    Trois formes de saisie sont donc acceptées, et la durée est requise dans les trois :
+
+    | Ce qui est envoyé | Ce que le serveur en fait |
+    |---|---|
+    | distance seule | il calcule l'allure — c'est le cas historique, inchangé |
+    | allure seule | il calcule la distance |
+    | les deux | **l'allure gagne**, la distance est recalculée |
+
+    Le dernier cas mérite sa règle. Il survient quand on corrige l'allure d'une course
+    déjà saisie : les trois nombres à l'écran deviennent incohérents entre eux, et il faut
+    dire lequel fait foi. C'est l'allure, parce que c'est le champ qu'on vient de toucher —
+    et une distance qu'on n'a pas corrigée est une distance qu'on ne défend pas.
+    """
 
     date: PastDate
-    #: Accepte `8,40`, `8.4`, `5mi`.
-    distance_km: DistanceKm
     #: Accepte `44:12`, `1:18:44`, `44`, `1h30`.
     duration_min: DurationMin
+    #: Accepte `8,40`, `8.4`, `5mi`. Facultative **si** l'allure est donnée.
+    distance_km: DistanceKm | None = None
+    #: Accepte `5:16` ou `5,27`. Même lecture qu'une durée : `5:16` vaut 5 min 16 s par
+    #: kilomètre. Un second analyseur pour la même écriture divergerait du premier.
+    pace_min_km: PaceMinKm | None = None
     avg_hr: HeartRate | None = None
     elevation_m: ElevationM | None = None
+    cadence_spm: CadenceSpm | None = None
     note: Note | None = None
 
     @field_validator("distance_km", mode="before")
     @classmethod
     def read_distance(cls, value: object) -> object:
-        return _distance(value) if isinstance(value, str) else value
+        if isinstance(value, str):
+            return None if not value.strip() else _distance(value)
+        return value
 
     @field_validator("duration_min", mode="before")
     @classmethod
     def read_duration(cls, value: object) -> object:
         return _duration(value) if isinstance(value, str) else value
 
-    @field_validator("avg_hr", "elevation_m", mode="before")
+    @field_validator("pace_min_km", mode="before")
+    @classmethod
+    def read_pace(cls, value: object) -> object:
+        if isinstance(value, str):
+            return None if not value.strip() else _duration(value)
+        return value
+
+    @field_validator("avg_hr", "elevation_m", "cadence_spm", mode="before")
     @classmethod
     def read_optional_number(cls, value: object) -> object:
         if isinstance(value, str):
             return None if not value.strip() else round(parse_decimal(value))
         return value
+
+    @model_validator(mode="after")
+    def resolve_distance_and_pace(self) -> RunPayload:
+        """Complète l'une depuis l'autre, et refuse une course qui n'a ni l'une ni l'autre.
+
+        Fait **ici** et non dans le service : c'est la frontière du domaine, et une course
+        dont on ne connaît que la durée n'est pas une course incomplète — c'est une saisie
+        qu'on ne sait pas interpréter, donc un refus de validation (`API-06`).
+        """
+        if self.pace_min_km is not None:
+            # L'allure fait foi : la distance en découle, y compris quand elle était là.
+            object.__setattr__(self, "distance_km", round(self.duration_min / self.pace_min_km, 3))
+        elif self.distance_km is not None:
+            object.__setattr__(
+                self, "pace_min_km", pace_min_per_km(self.distance_km, self.duration_min)
+            )
+        else:
+            raise ValueError("une course a besoin de sa distance ou de son allure")
+        return self
 
 
 class Run(BaseModel):
@@ -90,34 +151,12 @@ class Run(BaseModel):
     speed_kmh: float | None = None
     avg_hr: int | None = None
     elevation_m: int | None = None
+    cadence_spm: int | None = None
     note: str | None = None
     source: str
 
 
 # ── Séances ───────────────────────────────────────────
-
-
-class WorkoutPayload(BaseModel):
-    """Saisie d'une séance (`ACT-03`, `ACT-18`)."""
-
-    date: PastDate
-    type: Label
-    duration_min: DurationMin
-    calories: Calories | None = None
-    rpe: Rpe | None = None
-    note: Note | None = None
-
-    @field_validator("duration_min", mode="before")
-    @classmethod
-    def read_duration(cls, value: object) -> object:
-        return _duration(value) if isinstance(value, str) else value
-
-    @field_validator("calories", "rpe", mode="before")
-    @classmethod
-    def read_optional_number(cls, value: object) -> object:
-        if isinstance(value, str):
-            return None if not value.strip() else round(parse_decimal(value))
-        return value
 
 
 class ExerciseEntryPayload(BaseModel):
@@ -134,6 +173,50 @@ class ExerciseEntryPayload(BaseModel):
     @classmethod
     def read_load(cls, value: object) -> object:
         return parse_decimal(value) if isinstance(value, str) and value.strip() else value
+
+
+class WorkoutPayload(BaseModel):
+    """Saisie d'une séance (`ACT-03`, `ACT-18`).
+
+    ## Les exercices peuvent venir avec
+
+    Ils étaient forcément **après** : on créait la séance, puis on consignait chaque série
+    par un appel de plus. C'est la bonne forme quand on consigne au fil de la séance, et
+    c'est celle que le journal garde. Mais l'assistant de saisie (C06) et l'import de
+    notes (C07) construisent une séance entière avant de rien écrire, et pour eux la
+    séparation avait un coût visible : abandonner l'assistant après avoir passé la
+    première étape laissait une séance vide dans l'historique.
+
+    `exercises` est donc facultatif et vaut la liste vide — les appelants d'avant ne
+    changent pas d'un caractère.
+
+    **Ce n'est pas une transaction**, et il ne faut pas le laisser croire : le stockage
+    est un dépôt CSV sur WebDAV, il n'en a pas. Ce que le service garantit est plus
+    modeste et suffit au cas réel : **tous les exercices sont résolus avant la première
+    écriture**, donc un identifiant inconnu — le seul échec courant — refuse la demande
+    entière sans avoir rien écrit. Une panne de stockage au milieu, elle, laisse une
+    séance partielle, comme n'importe quelle autre écriture du projet.
+    """
+
+    date: PastDate
+    type: Label
+    duration_min: DurationMin
+    calories: Calories | None = None
+    rpe: Rpe | None = None
+    note: Note | None = None
+    exercises: list[ExerciseEntryPayload] = Field(default_factory=list, max_length=60)
+
+    @field_validator("duration_min", mode="before")
+    @classmethod
+    def read_duration(cls, value: object) -> object:
+        return _duration(value) if isinstance(value, str) else value
+
+    @field_validator("calories", "rpe", mode="before")
+    @classmethod
+    def read_optional_number(cls, value: object) -> object:
+        if isinstance(value, str):
+            return None if not value.strip() else round(parse_decimal(value))
+        return value
 
 
 class ExerciseEntry(BaseModel):
@@ -178,6 +261,31 @@ class Workout(BaseModel):
 class ExercisePayload(BaseModel):
     name: Label
     muscle_group: str
+    #: Les autres façons d'écrire cet exercice (`C07`). Absent = inchangé, `[]` = effacé.
+    #:
+    #: `None` et liste vide se distinguent volontairement : le formulaire du catalogue ne
+    #: parle pas d'alias et ne doit pas les effacer en corrigeant un nom, alors que la
+    #: validation d'une note en ajoute un explicitement.
+    aliases: list[Label] | None = None
+
+    @field_validator("aliases", mode="before")
+    @classmethod
+    def clean_aliases(cls, value: object) -> object:
+        """Sans doublon, sans vide, et **sans point-virgule** — c'est le séparateur.
+
+        Un alias qui en contiendrait un couperait la cellule en deux à la relecture, et
+        ferait apparaître un alias qui n'a jamais été saisi.
+        """
+        if not isinstance(value, list):
+            return value
+        seen: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            cleaned = item.replace(";", " ").strip()
+            if cleaned and cleaned.casefold() not in {other.casefold() for other in seen}:
+                seen.append(cleaned)
+        return seen
 
     @field_validator("muscle_group")
     @classmethod
@@ -189,12 +297,58 @@ class ExercisePayload(BaseModel):
         return value
 
 
+class NoteLine(BaseModel):
+    """Un exercice lu dans une note, avant toute écriture (`C07`).
+
+    Tout est facultatif sauf le nom : une note qui dit « tractions 3xmax » ne porte ni
+    répétitions ni charge, et remplir ces champs les inventerait. L'écran affiche le vide
+    et l'utilisateur complète — ou pas.
+    """
+
+    name: str = Field(max_length=80)
+    muscle_group: str = "autre"
+    sets: int | None = None
+    reps: int | None = None
+    #: `0` = poids du corps, valeur légitime (`ACT-07`). `None` = charge absente ou
+    #: exprimée dans une unité qu'on ne convertit pas.
+    weight_kg: float | None = None
+    #: Pourquoi la charge est vide, quand il y a une raison à dire — « charge en lbs, non
+    #: convertie ». Sans elle, la ligne passerait pour une lecture ratée.
+    note: str | None = None
+    #: Ce que la ligne coûterait si on la validait :
+    #:
+    #: * `known` — l'exercice existe, rien à écrire au catalogue ;
+    #: * `alias` — même exercice sous un autre nom : la graphie de la note s'ajoute en
+    #:   alias, et le nom du catalogue s'impose ;
+    #: * `new` — absent du catalogue, à créer avec le groupe déduit.
+    #:
+    #: Les deux derniers se valident **un par un** à l'écran : une fusion erronée est
+    #: difficile à défaire et pollue l'historique.
+    status: Literal["known", "alias", "new"] = "new"
+    exercise_id: str | None = None
+    #: Sur un `alias` : la graphie de la note, qui sera ajoutée à l'exercice du catalogue.
+    #: `name`, lui, porte déjà le nom du catalogue — c'est lui qui s'impose.
+    alias_of: str | None = None
+
+
+class NoteDraft(BaseModel):
+    """Ce qu'une note a produit. **Rien n'est écrit** tant que rien n'est validé."""
+
+    lines: list[NoteLine] = Field(default_factory=list)
+    #: Le texte réellement lu — celui qui a été tapé, ou celui que l'OCR a tiré de la
+    #: photo. Affiché pour que l'utilisateur voie **ce que le modèle a vu** quand une
+    #: ligne le surprend.
+    source_text: str = ""
+
+
 class Exercise(BaseModel):
     id: int
     token: str
     exercise_id: str
     name: str
     muscle_group: str
+    #: Les autres écritures reconnues pour cet exercice (`C07`).
+    aliases: list[str] = Field(default_factory=list)
     #: Séries déjà consignées sur cet exercice. Dit ce qu'un retrait laisse intact
     #: (`ACT-06`) et ce qu'une correction de nom ou de groupe répercute.
     entries: int = 0

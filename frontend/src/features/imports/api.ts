@@ -25,6 +25,9 @@ export interface AppleDraft {
   workout_type: string | null;
   distance_km: number | null;
   duration_min: number | null;
+  /** Allure lue sur la capture, en min/km. **Pas déduite** de la distance et de la durée. */
+  pace_min_km: number | null;
+  cadence_spm: number | null;
   avg_hr: number | null;
   elevation_m: number | null;
   calories: number | null;
@@ -39,6 +42,9 @@ export interface ImportPayload {
   duration_min: string;
   type: string;
   distance_km?: string | null;
+  /** L'une des deux suffit : le serveur calcule celle qui manque, l'allure l'emporte. */
+  pace_min_km?: string | null;
+  cadence_spm?: string | null;
   avg_hr?: string | null;
   elevation_m?: string | null;
   calories?: string | null;

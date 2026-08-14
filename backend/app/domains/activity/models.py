@@ -60,6 +60,10 @@ class RunRow(CsvModel):
     pace_min_km: float | None = None
     avg_hr: int | None = None
     elevation_m: int | None = None
+    #: Cadence en pas par minute. Colonne ajoutée au lot C06 : les lignes écrites avant
+    #: portent une cellule vide, ce qui est une valeur légitime et non un fichier cassé
+    #: (`STO-04`). Rien ne la déduit — une cadence ne se calcule pas depuis une allure.
+    cadence_spm: int | None = None
     note: str | None = None
     source: str = "manual"
 
@@ -93,6 +97,17 @@ class ExerciseRow(CsvModel):
     id: str = ""
     name: str = ""
     muscle_group: str = ""
+    #: Les autres façons d'écrire cet exercice, séparées par des points-virgules —
+    #: `dev couché;développé couché barre`. C'est ce qui permet de reconnaître une note
+    #: manuscrite au deuxième passage (`C07`).
+    #:
+    #: **Une colonne et non un fichier à part**, et la raison est une conséquence : retirer
+    #: un exercice doit emporter ses alias. Un `exercise_aliases.csv` laisserait des
+    #: orphelins, et un nom retiré du catalogue continuerait d'être reconnu à la saisie.
+    #:
+    #: Le point-virgule et non la virgule : c'est un CSV, et le lecteur de `csv` de la
+    #: bibliothèque standard couperait la cellule au mauvais endroit sans se plaindre.
+    aliases: str = ""
 
 
 class ExerciseLogRow(CsvModel):

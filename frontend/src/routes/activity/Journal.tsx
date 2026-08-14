@@ -23,6 +23,8 @@ import {
   Chip,
   ChipStrip,
   Empty,
+  Field,
+  LinkButton,
   LogButton,
   Stepper,
   SwipeRow,
@@ -41,7 +43,13 @@ import { useHorizontalSwipe } from '@/lib/swipe';
 import { useToast } from '@/lib/toast';
 
 import styles from '../Activity.module.css';
-import { kgText, useInvalidateActivity, type Session } from './shared';
+import { fold, kgText, useInvalidateActivity, type Session } from './shared';
+
+/** Exercices proposés d'emblée, avant toute recherche. */
+const SUGGESTED = 6;
+
+/** Résultats affichés au plus pour une recherche. Au-delà, préciser coûte moins que défiler. */
+const MATCHES = 8;
 
 /** Comment une série se lit sur une ligne, et dans un nom accessible. */
 function seriesLabel(entry: ExerciseEntry): string {
@@ -64,16 +72,11 @@ function SeriesForm({
   catalogue,
   editing,
   onDone,
-  onMissingExercise,
-  preselect,
 }: {
   workoutId: number;
   catalogue: Exercise[] | undefined;
   editing: ExerciseEntry | null;
   onDone: () => void;
-  onMissingExercise: () => void;
-  /** Exercice à choisir d'emblée — celui qu'on vient de déclarer depuis le journal. */
-  preselect: string | null;
 }) {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
@@ -87,12 +90,12 @@ function SeriesForm({
   // Séries et réps restent du **texte** tant qu'on saisit : les convertir à chaque frappe
   // ramenait le champ à 1 dès qu'on l'effaçait pour retaper.
   const [form, setForm] = useState({
-    exercise_id: editing?.exercise_id ?? preselect ?? '',
+    exercise_id: editing?.exercise_id ?? '',
     weight_kg: editing === null ? '' : kgText(editing.weight_kg),
     sets: editing === null ? '3' : String(editing.sets),
     reps: editing === null ? '8' : String(editing.reps),
   });
-  const [group, setGroup] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [error, setError] = useState<ApiError | null>(null);
 
   // Le formulaire est au-dessus de la liste, et le sélecteur d'exercice le rend haut :
@@ -134,13 +137,48 @@ function SeriesForm({
     },
   });
 
-  const empty = catalogue !== undefined && catalogue.length === 0;
-  const selected = (catalogue ?? []).find((item) => item.exercise_id === form.exercise_id);
+  const entries = catalogue ?? [];
+  const empty = catalogue !== undefined && entries.length === 0;
+  const selected = entries.find((item) => item.exercise_id === form.exercise_id);
 
-  // Les groupes réellement présents au catalogue, dans l'ordre où il les rend. Filtrer
-  // n'est pas dériver : c'est la même liste, moins ce qu'on ne cherche pas.
-  const groups = [...new Set((catalogue ?? []).map((item) => item.muscle_group))];
-  const shown = (catalogue ?? []).filter((item) => group === null || item.muscle_group === group);
+  /*
+   * La recherche a remplacé la grille.
+   *
+   * Le sélecteur affichait **tout le catalogue**, un bouton par exercice. À vingt-cinq
+   * exercices cela faisait treize rangées et plus d'une hauteur d'écran, au-dessus des
+   * champs qu'on vient remplir — et le filtre par groupe musculaire, neuf pastilles de
+   * plus, s'ajoutait par-dessus pour rattraper le problème qu'il créait.
+   *
+   * Un champ, et la liste se réduit à ce qu'on cherche. La recherche porte aussi sur le
+   * **groupe musculaire** : taper « dos » rend les exercices de dos, ce qui absorbe le
+   * filtre à pastilles au lieu de le doubler.
+   *
+   * Filtrer et ordonner ne sont pas dériver : ce sont les lignes du serveur, dans un
+   * autre ordre. Aucun nombre n'est calculé ici.
+   */
+  const asked = fold(query.trim());
+  const matched =
+    asked === ''
+      ? [...entries]
+          // Sans recherche, ce qu'on a soulevé le plus récemment : la date vient du
+          // serveur, on ne fait que s'en servir pour ranger.
+          .sort((a, b) => (b.last_date ?? '').localeCompare(a.last_date ?? ''))
+      : entries.filter(
+          (item) => fold(item.name).includes(asked) || fold(item.muscle_group).includes(asked),
+        );
+
+  // Le plafond s'applique **après** le compte, jamais avant. En coupant `matched` d'abord,
+  // le reste valait toujours zéro : sept exercices au catalogue, six à l'écran, et rien
+  // qui dise qu'il en manquait un. Vu en capture, pas par un test.
+  const shown = matched.slice(0, asked === '' ? SUGGESTED : MATCHES);
+  const hidden = matched.length - shown.length;
+
+  // L'exercice choisi reste visible même quand la recherche ne le rend plus : sans cela,
+  // taper une lettre de trop effaçait de l'écran ce sur quoi la charge va être consignée.
+  const list =
+    selected !== undefined && !shown.some((item) => item.exercise_id === selected.exercise_id)
+      ? [selected, ...shown]
+      : shown;
 
   // Charges rapides : les dernières valeurs **réellement soulevées**, telles que le
   // serveur les a calculées (`max_series`). Aucune n'est suggérée par arrondi ni par
@@ -183,48 +221,34 @@ function SeriesForm({
         </p>
       )}
 
-      {/* Sélection rapide : un appui par exercice, avec sa dernière charge en regard.
-          La liste déroulante native demandait un appui, un panneau système, un
-          défilement et un second appui — pour le geste le plus répété de l'écran. */}
+      {/* Sélection par recherche : un champ, puis un appui par exercice avec sa dernière
+          charge en regard. La liste déroulante native demandait un appui, un panneau
+          système, un défilement et un second appui — pour le geste le plus répété de
+          l'écran ; la grille complète, elle, prenait la hauteur de l'écran. */}
       <div className={styles.pickField}>
-        <span className={styles.pickLabel} id="exercise-label">
-          Exercice
-        </span>
-
         {empty ? (
-          <span className={styles.empty}>
-            catalogue vide — déclare un exercice pour pouvoir consigner une charge
-          </span>
+          <>
+            <span className={styles.pickLabel}>Exercice</span>
+            <span className={styles.empty}>
+              catalogue vide — déclare un exercice pour pouvoir consigner une charge
+            </span>
+          </>
         ) : (
           <>
-            {/* Au-delà d'une dizaine d'exercices, la grille dépasse la hauteur de
-                l'écran. Le filtre la ramène à ce qu'on travaille aujourd'hui. */}
-            {groups.length > 2 && (
-              <ChipStrip label="Filtrer par groupe">
-                <Chip
-                  selected={group === null}
-                  onClick={() => {
-                    setGroup(null);
-                  }}
-                >
-                  tous
-                </Chip>
-                {groups.map((item) => (
-                  <Chip
-                    key={item}
-                    selected={group === item}
-                    onClick={() => {
-                      setGroup(item);
-                    }}
-                  >
-                    {item}
-                  </Chip>
-                ))}
-              </ChipStrip>
-            )}
+            <Field
+              label="Exercice"
+              type="search"
+              // `search` et non `text` : iOS rend une croix d'effacement native, et un
+              // clavier dont la touche d'action dit « rechercher ».
+              placeholder="nom ou groupe musculaire…"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+            />
 
-            <div className={styles.pickGrid} role="group" aria-labelledby="exercise-label">
-              {shown.map((item) => (
+            <div className={styles.pickList} role="group" aria-label="Exercices proposés">
+              {list.map((item) => (
                 <LogButton
                   key={item.exercise_id}
                   label={item.name}
@@ -245,21 +269,31 @@ function SeriesForm({
                 />
               ))}
             </div>
+
+            {/* Ce que la liste ne montre pas se dit, plutôt que de laisser croire que le
+                catalogue s'arrête là. Et un catalogue vide de résultats n'est pas un
+                catalogue vide : les deux phrases sont différentes. */}
+            {list.length === 0 ? (
+              <span className={styles.empty}>
+                aucun exercice ne correspond — vérifie l’orthographe, ou déclare-le
+              </span>
+            ) : (
+              hidden > 0 && (
+                <span className={styles.empty}>
+                  {hidden} {plural(hidden, 'autre')} au catalogue
+                  {asked === '' ? ' — cherche par nom ou groupe' : ' — précise ta recherche'}
+                </span>
+              )
+            )}
           </>
         )}
 
         {/* Découvrir un exercice manquant en pleine séance demandait de descendre tout
-            l'écran, de le déclarer, de remonter et de le re-choisir.
-
-            Une pastille et non un bouton discret : sans bordure, la phrase se lisait
-            comme une légende posée sous la grille, et rien ne disait qu'on pouvait
-            appuyer dessus. C'est le vocabulaire des autres actions de ligne de l'écran.
-
-            Et un libellé court : « Cet exercice n'est pas dans la liste ? » faisait une
-            pastille aussi large que la carte, collée à ses deux bords. Nommer l'action
-            vaut mieux que poser la question qui y mène. */}
+            l'écran, de le déclarer, de remonter et de le re-choisir. C'est maintenant
+            une navigation vers le catalogue, et le bouton système « précédent » ramène
+            ici — la séance ouverte et les champs déjà tapés sont intacts. */}
         <div className={styles.missing}>
-          <Chip onClick={onMissingExercise}>Déclarer un exercice</Chip>
+          <LinkButton to="/activite/catalogue">Déclarer un exercice</LinkButton>
         </div>
       </div>
 
@@ -353,13 +387,9 @@ function SeriesForm({
 function SessionLog({
   workoutId,
   onEditWorkout,
-  onMissingExercise,
-  preselect,
 }: {
   workoutId: number;
   onEditWorkout: () => void;
-  onMissingExercise: () => void;
-  preselect: string | null;
 }) {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
@@ -414,9 +444,12 @@ function SessionLog({
   return (
     <>
       <div className={styles.meta}>
-        {/* Pas de date ici : le sélecteur juste au-dessus la porte déjà, et la lire
-            deux fois de suite ne dit rien de plus. Cette ligne le complète. */}
+        {/* **La date est revenue ici.** Elle était omise parce que la bande de pastilles
+            juste au-dessus la portait déjà ; cette bande a disparu, et sans elle plus
+            rien ne disait dans quelle séance la charge allait s'écrire. C'est la seule
+            information de cette ligne dont une erreur coûte une donnée fausse. */}
         <p className={styles.note}>
+          <strong>{shortDate(detail.date)}</strong> · {detail.type} ·{' '}
           {hoursMinutes(detail.duration_min)}
           {detail.volume_kg > 0 && ` · ${num(detail.volume_kg, 0)} kg de tonnage`}
         </p>
@@ -434,8 +467,6 @@ function SessionLog({
         workoutId={workoutId}
         catalogue={catalogue}
         editing={editing}
-        preselect={preselect}
-        onMissingExercise={onMissingExercise}
         onDone={() => {
           setEditing(null);
         }}
@@ -492,22 +523,21 @@ export function Journal({
   onPick,
   onNew,
   onEditWorkout,
-  onMissingExercise,
-  preselect,
   ready,
 }: {
   sessions: Session[];
   currentId: number | null;
   onPick: (session: Session) => void;
-  onNew: (kind: 'run' | 'workout') => void;
+  /** Ouvre l'assistant de création. Il demande lui-même de quoi il s'agit. */
+  onNew: () => void;
   onEditWorkout: (id: number) => void;
-  onMissingExercise: () => void;
-  preselect: string | null;
   /** Le jour du serveur est connu. Sans lui, une saisie ne peut pas se dater. */
   ready: boolean;
 }) {
-  // Balayer le journal passe d'une séance à l'autre. L'ordre est celui de la bande —
-  // vers la gauche on remonte le temps, vers la droite on revient au récent.
+  // Balayer le journal passe d'une séance à l'autre — vers la gauche on remonte le temps,
+  // vers la droite on revient au récent. C'est un raccourci, jamais la seule porte :
+  // l'historique, juste dessous, porte un « ouvrir » par séance et il est dans le
+  // document. La date affichée sous le titre dit à chaque instant où l'on a atterri.
   const rank = sessions.findIndex((item) => item.id === currentId);
   const swipe = useHorizontalSwipe({
     touchOnly: true,
@@ -533,27 +563,14 @@ export function Journal({
             {currentId !== null && ' La séance la plus récente est ouverte d’office.'}
           </p>
         </div>
-        {/* Deux portes de même rang, donc deux boutons de même apparence : en `ghost` et
-            en `quiet`, l'une passait pour l'action principale et l'autre pour un lien —
-            alors qu'enregistrer une course n'est pas un geste de second ordre. */}
+        {/* **Une seule porte.** Il y en avait deux — « Nouvelle séance » et « Nouvelle
+            course » —, ce qui demandait de trancher avant d'avoir ouvert quoi que ce
+            soit, et laissait deux cibles côte à côte dans un en-tête de 390 px. C'est
+            désormais la première étape de l'assistant, où la question a la place de se
+            poser en toutes lettres. */}
         <div className={styles.headActions}>
-          <Button
-            variant="ghost"
-            disabled={!ready}
-            onClick={() => {
-              onNew('workout');
-            }}
-          >
-            Nouvelle séance
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={!ready}
-            onClick={() => {
-              onNew('run');
-            }}
-          >
-            Nouvelle course
+          <Button variant="primary" disabled={!ready} onClick={onNew}>
+            Enregistrer une activité
           </Button>
         </div>
       </CardHead>
@@ -566,35 +583,17 @@ export function Journal({
           </Empty>
         </div>
       ) : (
-        <>
-          <ChipStrip label="Séance">
-            {sessions.map((item) => (
-              <Chip
-                key={item.id}
-                selected={item.id === currentId}
-                onClick={() => {
-                  onPick(item);
-                }}
-              >
-                {shortDate(item.date)} · {item.label}
-              </Chip>
-            ))}
-          </ChipStrip>
-
-          {/* Remonter le journal à chaque changement de séance : une charge tapée pour
-              l'une ne doit pas se retrouver pré-remplie sur l'autre. */}
-          <div className={styles.swipeArea} {...swipe.handlers}>
-            <SessionLog
-              key={currentId}
-              workoutId={currentId}
-              preselect={preselect}
-              onMissingExercise={onMissingExercise}
-              onEditWorkout={() => {
-                onEditWorkout(currentId);
-              }}
-            />
-          </div>
-        </>
+        /* Remonter le journal à chaque changement de séance : une charge tapée pour
+           l'une ne doit pas se retrouver pré-remplie sur l'autre. */
+        <div className={styles.swipeArea} {...swipe.handlers}>
+          <SessionLog
+            key={currentId}
+            workoutId={currentId}
+            onEditWorkout={() => {
+              onEditWorkout(currentId);
+            }}
+          />
+        </div>
       )}
     </Card>
   );

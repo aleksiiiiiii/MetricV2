@@ -18,11 +18,17 @@ opération publiée exige un jeton (`AUTH-05`).
 
 from __future__ import annotations
 
-from typing import Annotated
+import asyncio
+import json
+import logging
+from collections.abc import AsyncIterator
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Path, status
+from fastapi.responses import StreamingResponse
 
 from app.core.deps import StoreDep
+from app.core.exceptions import MetricError
 from app.domains.ai.deps import AiServiceDep
 from app.domains.assistant.schemas import (
     ActionReport,
@@ -32,12 +38,16 @@ from app.domains.assistant.schemas import (
     ConfirmRequest,
     MemoryEntry,
     MemoryPayload,
+    RenamePayload,
     ThreadDetail,
     ThreadList,
+    ThreadSummary,
 )
 from app.domains.assistant.service import AssistantService
 from app.domains.planning.service import DEFAULT_ADHERENCE_WEEKS, PlanningService
 from app.storage.errors import StorageConflictError
+
+logger = logging.getLogger("metric.assistant")
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -121,6 +131,27 @@ async def thread(thread_id: ThreadId, store: StoreDep) -> ThreadDetail:
     return await AssistantService(store).thread(thread_id)
 
 
+@router.patch(
+    "/threads/{thread_id}",
+    response_model=ThreadSummary,
+    summary="Renommer une discussion",
+)
+async def rename_thread(
+    thread_id: ThreadId, payload: RenamePayload, store: StoreDep
+) -> ThreadSummary:
+    """Change le titre d'un fil, et rien d'autre.
+
+    Les titres sont écrits par le modèle à l'ouverture, et il se trompe. On ne pouvait que
+    supprimer le fil — ce qui emportait la conversation avec son mauvais titre.
+
+    **Sans dépendance à l'IA**, comme la liste et le carnet : corriger un libellé n'a pas
+    à attendre qu'un modèle réponde (`IA-07`). Et sans garde `If-Match`, pour la même
+    raison que la suppression : un fil se désigne par son identifiant stable et non par sa
+    position dans le fichier.
+    """
+    return await AssistantService(store).rename_thread(thread_id, payload.title)
+
+
 @router.delete(
     "/threads/{thread_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -183,3 +214,77 @@ async def chat(payload: ChatRequest, store: StoreDep, ai: AiServiceDep) -> ChatR
     """
     adherence = await PlanningService(store).adherence(weeks=DEFAULT_ADHERENCE_WEEKS)
     return await AssistantService(store).ask(ai, payload, adherence=adherence)
+
+
+@router.post("/chat/stream", summary="Poser une question, en suivant l'avancement")
+async def chat_stream(payload: ChatRequest, store: StoreDep, ai: AiServiceDep) -> StreamingResponse:
+    """La même réponse que `/chat`, précédée de ce que le serveur est en train de faire.
+
+    ## Pourquoi un flux, et pourquoi pas les jetons du modèle
+
+    Une réponse demande cinq à quinze secondes, et l'écran n'affichait que trois points.
+    Streamer le texte du modèle, lui, n'est **pas** possible sans casser autre chose : la
+    conversation rend un objet JSON — `reply`, `remember`, `actions`, `need` — dont l'ordre
+    des champs n'est pas garanti, et une seconde passe remplace entièrement la première.
+    Un texte affiché au fil de l'eau devrait donc parfois être effacé sous les yeux.
+
+    Ce flux transporte donc des **étapes**, pas des jetons. Chacune est émise au moment où
+    elle commence : ce que l'écran affiche est arrivé, ce qui est la seule différence qui
+    compte entre un compte rendu et une animation.
+
+    ## La forme
+
+    `event: step` pendant, puis exactement un `event: reply` ou un `event: error` à la fin.
+    L'erreur voyage **dans le flux** et non en statut HTTP : les en-têtes sont partis
+    depuis longtemps quand un modèle renonce. Elle porte le même `{code, message}` que
+    partout ailleurs, pour que le client décide sur le code comme d'habitude (`API-07`).
+    """
+    adherence = await PlanningService(store).adherence(weeks=DEFAULT_ADHERENCE_WEEKS)
+    service = AssistantService(store)
+
+    async def events() -> AsyncIterator[str]:
+        steps: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def report(message: str) -> None:
+            await steps.put(message)
+
+        async def run() -> ChatReply:
+            try:
+                return await service.ask(ai, payload, adherence=adherence, on_step=report)
+            finally:
+                # La sentinelle libère le lecteur, que la réponse arrive ou qu'elle échoue.
+                await steps.put(None)
+
+        task = asyncio.create_task(run())
+
+        while True:
+            step = await steps.get()
+            if step is None:
+                break
+            yield _sse("step", {"step": step})
+
+        try:
+            reply = await task
+        except MetricError as error:
+            logger.warning("chat diffusé → %s : %s", error.code, error)
+            yield _sse("error", {"code": error.code, "message": error.message})
+            return
+
+        yield _sse("reply", reply.model_dump(mode="json"))
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            # Sans lui, Nginx met le flux en tampon et livre les étapes **toutes ensemble
+            # à la fin** — ce qui rend l'endpoint exactement aussi muet qu'avant, sans
+            # que rien ne le signale en développement où il n'y a pas de proxy.
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    """Un événement `text/event-stream`, terminé par sa ligne vide."""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"

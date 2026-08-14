@@ -81,6 +81,13 @@ MeasurementCm = Annotated[float, Field(gt=0, le=300, description="Mensuration en
 DistanceKm = Annotated[float, Field(gt=0, le=1000, description="Distance en kilomètres")]
 DurationMin = Annotated[float, Field(gt=0, le=1440, description="Durée en minutes")]
 HeartRate = Annotated[int, Field(ge=1, le=260, description="Fréquence cardiaque moyenne")]
+#: Allure en minutes par kilomètre. La borne basse est en dessous d'un sprint sur piste,
+#: la haute au-dessus d'une marche lente : ce qui sort de là n'est pas une allure de
+#: course à pied, et vaut mieux refusé que rangé (`API-06`).
+PaceMinKm = Annotated[float, Field(gt=1, le=60, description="Allure en minutes par km")]
+#: Cadence en pas par minute. Une foulée de course tient entre 150 et 200 ; la marche
+#: descend vers 100. Les bornes laissent large sans accepter un nombre qui n'en est pas un.
+CadenceSpm = Annotated[int, Field(ge=30, le=300, description="Cadence en pas par minute")]
 ElevationM = Annotated[int, Field(ge=0, le=10000, description="Dénivelé positif en mètres")]
 Reps = Annotated[int, Field(ge=1, le=200, description="Répétitions par série")]
 Sets = Annotated[int, Field(ge=1, le=50, description="Nombre de séries")]

@@ -138,7 +138,7 @@ describe('import Apple', () => {
     );
     renderActivity();
 
-    await screen.findByText('Nouvelle course');
+    await screen.findByRole('button', { name: 'Enregistrer une activité' });
     expect(screen.queryByText("Import d'une capture")).not.toBeInTheDocument();
   });
 
@@ -300,7 +300,7 @@ describe('import Apple', () => {
     // La capture reste choisie : relancer l'analyse est à un appui (`IMP-06`).
     expect(screen.getByRole('button', { name: 'Lire la capture' })).toBeInTheDocument();
     // Et la saisie manuelle n'a jamais bougé : elle reste à un appui, dans le document.
-    expect(screen.getByRole('button', { name: 'Nouvelle course' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enregistrer une activité' })).toBeInTheDocument();
   });
 
   it('refuse d’importer tant que la date manque', async () => {

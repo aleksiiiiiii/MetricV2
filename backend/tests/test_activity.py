@@ -793,6 +793,208 @@ def test_the_run_file_stays_readable_in_a_spreadsheet(
 
     lines = dav.content_of(RUNS_FILE).splitlines()
 
-    assert lines[0] == "date,distance_km,duration_min,pace_min_km,avg_hr,elevation_m,note,source"
+    assert (
+        lines[0]
+        == "date,distance_km,duration_min,pace_min_km,avg_hr,elevation_m,cadence_spm,note,source"
+    )
     assert lines[1].startswith("2026-07-20,8.4,44.2,5.262")
     assert lines[1].endswith("jambes lourdes,manual")
+
+
+# ── Allure, distance et cadence (C06) ─────────────────
+
+# Distance et allure sont deux lectures du même trajet, liées par la durée. Le serveur en
+# calcule toujours une depuis l'autre : c'est « aucun calcul métier côté client » appliqué
+# au seul cas du domaine où le client aurait été tenté de le faire.
+
+
+def test_a_distance_still_yields_its_pace(app_client: TestClient, auth: dict[str, str]) -> None:
+    """Le cas historique, inchangé : on saisit une distance, l'allure en découle."""
+    body = app_client.post(
+        "/api/activity/runs",
+        json={"date": "2026-07-20", "distance_km": "8,40", "duration_min": "44:12"},
+        headers=auth,
+    ).json()
+
+    assert body["distance_km"] == 8.4
+    assert body["pace_min_km"] == 5.262
+
+
+def test_a_pace_alone_yields_its_distance(app_client: TestClient, auth: dict[str, str]) -> None:
+    """Le cas nouveau : la capture donne une allure, pas toujours une distance."""
+    body = app_client.post(
+        "/api/activity/runs",
+        json={"date": "2026-07-20", "pace_min_km": "5:00", "duration_min": "45"},
+        headers=auth,
+    ).json()
+
+    assert body["pace_min_km"] == 5
+    assert body["distance_km"] == 9
+
+
+def test_a_corrected_pace_wins_over_the_distance(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Les deux ensemble : l'allure fait foi, la distance est recalculée.
+
+    C'est le cas d'une correction — les trois nombres à l'écran deviennent incohérents
+    entre eux, et il faut dire lequel on défend. C'est celui qu'on vient de toucher.
+    """
+    body = app_client.post(
+        "/api/activity/runs",
+        json={
+            "date": "2026-07-20",
+            "distance_km": "8,40",
+            "pace_min_km": "5:00",
+            "duration_min": "45",
+        },
+        headers=auth,
+    ).json()
+
+    assert body["pace_min_km"] == 5
+    # 45 min à 5:00/km font 9 km, et non les 8,4 envoyés.
+    assert body["distance_km"] == 9
+
+
+def test_a_run_without_distance_nor_pace_is_refused(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Une durée seule n'est pas une course incomplète : c'est une saisie illisible."""
+    response = app_client.post(
+        "/api/activity/runs",
+        json={"date": "2026-07-20", "duration_min": "45"},
+        headers=auth,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+
+
+def test_a_pace_is_read_like_a_duration(app_client: TestClient, auth: dict[str, str]) -> None:
+    """`5:16` vaut 5 min 16 s par kilomètre — la même grammaire qu'une durée.
+
+    Un second analyseur pour la même écriture divergerait du premier au cas limite.
+    """
+    body = app_client.post(
+        "/api/activity/runs",
+        json={"date": "2026-07-20", "pace_min_km": "5:16", "duration_min": "44:12"},
+        headers=auth,
+    ).json()
+
+    assert body["pace_min_km"] == 5.267
+
+
+def test_the_cadence_is_stored_and_returned(app_client: TestClient, auth: dict[str, str]) -> None:
+    """Rien ne la déduit : une cadence ne se calcule pas depuis une allure."""
+    created = app_client.post(
+        "/api/activity/runs",
+        json={
+            "date": "2026-07-20",
+            "distance_km": "8,40",
+            "duration_min": "44:12",
+            "cadence_spm": "172",
+        },
+        headers=auth,
+    ).json()
+
+    assert created["cadence_spm"] == 172
+    assert app_client.get("/api/activity/runs/0", headers=auth).json()["cadence_spm"] == 172
+
+
+def test_a_run_without_cadence_keeps_an_empty_cell(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """`STO-04` : une colonne ajoutée ne casse ni les lignes d'avant ni celles d'après."""
+    create_run(app_client, auth)
+
+    assert app_client.get("/api/activity/runs/0", headers=auth).json()["cadence_spm"] is None
+    assert ",," in dav.content_of(RUNS_FILE).splitlines()[1]
+
+
+def test_an_absurd_cadence_is_refused(app_client: TestClient, auth: dict[str, str]) -> None:
+    response = app_client.post(
+        "/api/activity/runs",
+        json={
+            "date": "2026-07-20",
+            "distance_km": "8,40",
+            "duration_min": "44:12",
+            "cadence_spm": "9000",
+        },
+        headers=auth,
+    )
+
+    assert response.status_code == 422
+
+
+# ── Une séance et ses exercices d'un seul geste (C06) ──
+
+
+def test_a_workout_can_be_created_with_its_exercises(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """L'assistant de saisie construit la séance entière avant de rien écrire."""
+    exercise = app_client.post(
+        "/api/activity/exercises",
+        json={"name": "Développé couché", "muscle_group": "pectoraux"},
+        headers=auth,
+    ).json()
+
+    response = app_client.post(
+        "/api/activity/workouts",
+        json={
+            "date": "2026-07-20",
+            "type": "musculation",
+            "duration_min": "1h15",
+            "exercises": [
+                {"exercise_id": exercise["exercise_id"], "weight_kg": "60", "sets": 4, "reps": 8},
+                {"exercise_id": exercise["exercise_id"], "weight_kg": "0", "sets": 3, "reps": 12},
+            ],
+        },
+        headers=auth,
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert len(body["exercises"]) == 2
+    assert body["exercises"][0]["weight_kg"] == 60
+    # Le tonnage de la séance suit, calculé par le serveur comme pour toute autre.
+    assert body["volume_kg"] == 60 * 4 * 8
+
+
+def test_an_unknown_exercise_writes_absolutely_nothing(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Le seul échec courant de cette route, et il ne doit pas laisser de séance vide.
+
+    C'est tout l'intérêt d'écrire la séance et ses exercices d'un geste : abandonner ou
+    se tromper ne laisse rien derrière soi.
+    """
+    before = dict(dav.files)
+
+    response = app_client.post(
+        "/api/activity/workouts",
+        json={
+            "date": "2026-07-20",
+            "type": "musculation",
+            "duration_min": "1h15",
+            "exercises": [{"exercise_id": "inconnu", "weight_kg": "60", "sets": 4, "reps": 8}],
+        },
+        headers=auth,
+    )
+
+    assert response.status_code >= 400
+    assert dict(dav.files) == before
+
+
+def test_a_workout_without_exercises_is_unchanged(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Les appelants d'avant ne changent pas d'un caractère : la liste vaut `[]`."""
+    response = app_client.post(
+        "/api/activity/workouts",
+        json={"date": "2026-07-20", "type": "musculation", "duration_min": "1h15"},
+        headers=auth,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["exercises"] == []

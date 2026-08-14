@@ -1,0 +1,56 @@
+/* Le rendu d'une réponse de modèle, dans une bulle de discussion.
+   Rien n'y décide de couleur ni de taille propre : tout suit l'encre et l'échelle de la
+   bulle qui l'accueille, pour qu'une réponse ne se distingue pas d'un texte de l'app. */
+
+/* Un paragraphe ne porte pas de marge haute : c'est l'écart entre deux blocs qui la
+   donne, et la première ligne doit toucher le haut de la bulle. */
+.paragraph + .paragraph,
+.paragraph + .list,
+.list + .paragraph,
+.list + .list,
+.paragraph + .heading,
+.list + .heading {
+  margin-top: var(--s3);
+}
+
+/*
+ * Un seul niveau de titre, et il ne grossit pas.
+ *
+ * Dans une bulle, un `h3` de 17 px au milieu d'un corps de 16 crée une hiérarchie que la
+ * réponse n'a pas — le modèle écrit « ## Ce que disent tes chiffres » comme il écrirait
+ * une phrase d'introduction. La graisse suffit à la marquer.
+ */
+.heading {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.list {
+  /* Le retrait porte la puce : sans lui, elle sort de la bulle et se fait couper. */
+  padding-left: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* `white-space: pre-wrap` est hérité de la bulle, et il ferait tenir chaque puce sur une
+   seule ligne à défilement. Le markdown a déjà découpé les lignes : ici, on enroule. */
+.list li,
+.paragraph,
+.heading {
+  white-space: normal;
+}
+
+/*
+ * Un fragment de code — un nom de fichier, une valeur. Il se distingue par sa chasse et
+ * un fond léger, jamais par une couleur : les quatre tons de la charte portent un sens
+ * fixe, et « du code » n'en est pas un.
+ */
+.code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: rgb(var(--ink-rgb) / 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  overflow-wrap: anywhere;
+}

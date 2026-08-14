@@ -37,6 +37,10 @@ _HTTP_FALLBACKS = {
     403: ("forbidden", "Accès refusé."),
     404: ("not_found", "Cette ressource n'existe pas."),
     405: ("method_not_allowed", "Cette méthode n'est pas autorisée sur cette adresse."),
+    # Un `413` peut venir d'ailleurs que de notre garde — d'un reverse-proxy placé devant,
+    # dont le refus n'a ni code ni français. Le rattacher ici lui donne la forme de toutes
+    # les autres erreurs, pour que le client décide sur un code et non sur un statut nu.
+    413: ("payload_too_large", "Ce fichier est trop lourd pour être envoyé."),
     422: ("validation_error", "Les données envoyées sont invalides."),
 }
 

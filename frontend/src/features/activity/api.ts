@@ -18,6 +18,8 @@ export interface Run {
   speed_kmh: number | null;
   avg_hr: number | null;
   elevation_m: number | null;
+  /** Pas par minute. Rien ne la déduit : elle est saisie ou lue sur une capture. */
+  cadence_spm: number | null;
   note: string | null;
   source: string;
 }
@@ -59,6 +61,8 @@ export interface Exercise {
   exercise_id: string;
   name: string;
   muscle_group: string;
+  /** Les autres écritures reconnues pour cet exercice (`C07`). */
+  aliases: string[];
   /** Séries déjà consignées : ce qu'un retrait conserve, ce qu'une correction répercute. */
   entries: number;
   last_weight_kg: number | null;
@@ -127,6 +131,37 @@ export interface ActivityOverview {
   total: number;
 }
 
+/**
+ * Un exercice lu dans une note, **avant** toute écriture (`C07`).
+ *
+ * `status` dit ce que la ligne coûterait si on la validait, et l'écran les distingue
+ * parce qu'elles ne coûtent pas la même chose :
+ *
+ * * `known` — l'exercice existe, rien à écrire au catalogue ;
+ * * `alias` — même mouvement sous un autre nom : la graphie de la note s'ajoute en alias,
+ *   et le nom du catalogue s'impose ;
+ * * `new` — absent du catalogue, à créer avec le groupe déduit.
+ */
+export interface NoteLine {
+  name: string;
+  muscle_group: string;
+  sets: number | null;
+  reps: number | null;
+  /** `0` = poids du corps, valeur légitime. `null` = absente ou dans une autre unité. */
+  weight_kg: number | null;
+  /** Pourquoi la charge est vide, quand il y a une raison — « charge en lbs ». */
+  note: string | null;
+  status: 'known' | 'alias' | 'new';
+  exercise_id: string | null;
+  /** Sur un `alias` : la graphie de la note, à ajouter à l'exercice du catalogue. */
+  alias_of: string | null;
+}
+
+export interface NoteDraft {
+  lines: NoteLine[];
+  source_text: string;
+}
+
 export interface ExerciseProgress {
   exercise_id: string;
   name: string;
@@ -140,13 +175,26 @@ export interface ExerciseProgress {
   best_one_rep_max_kg: number | null;
 }
 
-/** Les champs souples restent des chaînes jusqu'au serveur. */
+/**
+ * Les champs souples restent des chaînes jusqu'au serveur.
+ *
+ * **Distance et allure ne s'envoient pas ensemble sans conséquence.** Elles sont deux
+ * lectures du même trajet, liées par la durée, et le serveur en calcule toujours une
+ * depuis l'autre — jamais ce client. Quand les deux partent, l'allure l'emporte et la
+ * distance est recalculée : c'est la règle du serveur, et l'écran envoie donc **celle que
+ * l'utilisateur vient de corriger**.
+ *
+ * L'une des deux au moins est requise ; une durée seule est refusée.
+ */
 export interface RunPayload {
   date: string;
-  distance_km: string;
   duration_min: string;
+  distance_km?: string | null;
+  /** `5:16` ou `5,27` — même écriture qu'une durée. */
+  pace_min_km?: string | null;
   avg_hr?: string | null;
   elevation_m?: string | null;
+  cadence_spm?: string | null;
   note?: string | null;
 }
 
@@ -157,6 +205,14 @@ export interface WorkoutPayload {
   calories?: string | null;
   rpe?: number | null;
   note?: string | null;
+  /**
+   * Les exercices de la séance, écrits **avec elle**.
+   *
+   * Facultatif : le journal consigne toujours série par série, au fil de la séance.
+   * C'est l'assistant de saisie qui s'en sert — il construit la séance entière avant de
+   * rien écrire, pour qu'un abandon ne laisse pas une séance vide dans l'historique.
+   */
+  exercises?: ExerciseEntryPayload[];
 }
 
 export interface ExerciseEntryPayload {
@@ -210,10 +266,29 @@ export const activityApi = {
     }),
 
   exercises: () => request<Exercise[]>('/api/activity/exercises'),
-  createExercise: (name: string, muscle_group: string) =>
+
+  /**
+   * Lit une séance écrite en clair, ou photographiée. **N'écrit rien** (`C07`).
+   *
+   * Une photo passe par le même modèle que le texte : l'OCR n'est pas une brique à part.
+   */
+  readNotes: (text: string, photo: File | null) => {
+    const form = new FormData();
+    if (text.trim()) form.set('text', text.trim());
+    if (photo) form.set('photo', photo);
+    return request<NoteDraft>('/api/activity/notes/read', { method: 'POST', form });
+  },
+
+  /** Fait reconnaître une autre écriture d'un exercice. Le nom du catalogue ne bouge pas. */
+  addAlias: (exerciseId: string, alias: string) =>
+    request<Exercise>(`/api/activity/exercises/${exerciseId}/aliases`, {
+      method: 'POST',
+      body: { alias },
+    }),
+  createExercise: (name: string, muscle_group: string, aliases?: string[]) =>
     request<Exercise>('/api/activity/exercises', {
       method: 'POST',
-      body: { name, muscle_group },
+      body: aliases === undefined ? { name, muscle_group } : { name, muscle_group, aliases },
     }),
   /** Corrige nom et groupe. Le serveur répercute la correction sur les séries (`ACT-06`). */
   updateExercise: (id: number, token: string, name: string, muscle_group: string) =>

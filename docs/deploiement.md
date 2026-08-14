@@ -223,7 +223,7 @@ seul le proxy la joint. Ne lui donne pas `--host 0.0.0.0`.
 > montage sur le lien fige la cible au démarrage du conteneur, et la première bascule
 > servirait encore l'ancienne version sans que rien ne le dise.
 
-### Trois réglages sans lesquels ça a l'air de marcher
+### Quatre réglages sans lesquels ça a l'air de marcher
 
 ```nginx
 # 1. L'application est une SPA. Sans ce repli, ouvrir /reglages fonctionne depuis la
@@ -253,6 +253,16 @@ location /api/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_cache off;
 }
+
+# 5. Une photo de repas ne tient pas dans le plafond par défaut. NPM hérite du
+#    `client_max_body_size 1m` de nginx : au-delà, il refuse **lui-même**, l'API ne voit
+#    jamais la requête, et le refus n'a ni code ni français. Symptôme relevé en usage :
+#    « Estimer les macros » rendait un 413 nu et l'écran un échec sans phrase.
+#
+#    16 Mo, la même valeur que la garde de l'API (`app/core/limits.py`). Les deux ne se
+#    remplacent pas : celle-ci refuse au bord, celle de l'API refuse ce qui la joint
+#    directement — et elle, au moins, répond dans la forme du catalogue d'erreurs.
+client_max_body_size 16m;
 ```
 
 **Le TLS est la condition de tout le lot L15** : un service worker et Web Push exigent un

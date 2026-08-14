@@ -9,9 +9,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Header, Path, Query, status
+from fastapi import APIRouter, Body, File, Form, Header, Path, Query, UploadFile, status
 
 from app.core.deps import StoreDep
+from app.core.exceptions import ValidationFailedError
 from app.core.validation import today_local
 from app.domains.activity.models import WORKOUT_TYPES, MuscleGroup
 from app.domains.activity.schemas import (
@@ -21,6 +22,7 @@ from app.domains.activity.schemas import (
     ExerciseEntryPayload,
     ExercisePayload,
     ExerciseProgress,
+    NoteDraft,
     Run,
     RunPayload,
     Workout,
@@ -28,6 +30,7 @@ from app.domains.activity.schemas import (
 )
 from app.domains.activity.service import ExerciseService, RunService, WorkoutService
 from app.domains.activity.stats import ActivityStats
+from app.domains.ai.deps import AiServiceDep
 from app.storage.errors import StorageConflictError
 
 router = APIRouter(prefix="/activity", tags=["activité"])
@@ -192,6 +195,59 @@ async def update_exercise(
 async def delete_exercise(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
     """Retire du catalogue sans toucher au journal : l'historique survit (`ACT-06`)."""
     await ExerciseService(store).delete(row_id, _token(if_match))
+
+
+# ── Lecture d'une séance écrite en clair (`C07`) ──────
+
+
+@router.post("/notes/read", response_model=NoteDraft, summary="Lire une séance en notes libres")
+async def read_notes(
+    ai: AiServiceDep,
+    store: StoreDep,
+    text: Annotated[str | None, Form(max_length=4000)] = None,
+    photo: Annotated[UploadFile | None, File()] = None,
+) -> NoteDraft:
+    """Traduit « développé couché 4x8 60kg / tractions 3xmax » en lignes relisables.
+
+    **Rien n'est écrit** : ni séance, ni série, ni entrée de catalogue. Ce qui sort d'ici
+    est un tableau que l'écran fait valider ligne par ligne — une fusion de deux noms est
+    difficile à défaire et pollue l'historique, elle ne peut pas se faire en silence.
+
+    Texte ou photo, jamais rien : une photo passe par le **même modèle** que le reste,
+    avec la même consigne. L'OCR n'est pas une brique à part.
+    """
+    data = await photo.read() if photo is not None else None
+    if photo is not None:
+        await photo.close()
+
+    written = (text or "").strip()
+    if not data and not written:
+        raise ValidationFailedError("Colle tes notes, ou choisis une photo.")
+
+    return await ExerciseService(store).read_notes(ai, written, data)
+
+
+@router.post(
+    "/exercises/{exercise_id}/aliases",
+    response_model=Exercise,
+    summary="Reconnaître une autre écriture d'un exercice",
+)
+async def add_alias(
+    exercise_id: Annotated[str, Path(min_length=1, max_length=40)],
+    store: StoreDep,
+    alias: Annotated[str, Body(embed=True, max_length=80)],
+) -> Exercise:
+    """Ajoute une graphie reconnue à un exercice existant (`C07`).
+
+    C'est ce qui rend la lecture de notes de plus en plus silencieuse : « dev couché »
+    validé une fois est reconnu tout seul les fois suivantes. **Le nom du catalogue ne
+    change pas** — un alias s'ajoute à côté de lui, il ne le remplace jamais.
+
+    Sans garde `If-Match`, comme le renommage d'un fil : l'exercice se désigne par son
+    identifiant stable et non par sa position, et l'opération est sûre à rejouer — un
+    alias déjà connu ne se réécrit pas.
+    """
+    return await ExerciseService(store).add_alias(exercise_id, alias)
 
 
 # ── Journal d'exercices ───────────────────────────────
