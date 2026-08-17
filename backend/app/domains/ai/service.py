@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.config import Settings
@@ -36,13 +36,20 @@ from app.domains.ai.client import (
     ModelUnusableError,
     OpenRouterClient,
 )
-from app.domains.ai.extract import first_json_object
+from app.domains.ai.extract import ReplyStream, first_json_object
 
 #: Durée de mémorisation du catalogue (`IA-02`).
 CATALOGUE_TTL = 3600.0
 
 #: Modèles interrogés au maximum pour une même demande.
 MAX_ATTEMPTS = 5
+
+#: Ce qu'un appelant fournit pour recevoir la réponse pendant qu'elle s'écrit.
+#:
+#: `(texte, remise_a_zero)`. Le second est vrai dans un seul cas — un modèle qui tombe
+#: après avoir déjà écrit —, et il vaut mieux le porter dans la signature que le déduire
+#: d'un texte vide, qui voudrait dire deux choses.
+DeltaReporter = Callable[[str, bool], Awaitable[None]]
 
 
 class ModelCatalogue:
@@ -199,6 +206,84 @@ class AiService:
             # objet. Ce n'est pas une question de quota : insister plus tard ne changerait
             # rien à ce que ce modèle sait faire.
             quota_only = False
+
+        if quota_only and attempted:
+            raise AiQuotaError
+        raise AiUnavailableError(
+            "Les modèles disponibles n'ont rien rendu d'exploitable. "
+            "Saisis les valeurs à la main, ou réessaie."
+        )
+
+    async def stream_json(
+        self,
+        *,
+        instruction: str,
+        prompt: str,
+        max_tokens: int = 900,
+        temperature: float | None = EXTRACTION_TEMPERATURE,
+        on_delta: DeltaReporter,
+        assured: bool = False,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Comme `ask_json`, en annonçant la réponse pendant qu'elle s'écrit.
+
+        **Rend le même objet, aux mêmes conditions, et lève les mêmes erreurs.** La
+        diffusion est un supplément : ce qui décide de la suite reste l'objet JSON relu en
+        entier à la fin. Un appelant qui ignore `on_delta` obtient exactement `ask_json`.
+
+        `on_delta` reçoit `(texte, remise_a_zero)`. La remise à zéro n'arrive que dans un
+        cas — **un modèle qui tombe après avoir déjà écrit** : le suivant repart de zéro, et
+        l'écran doit effacer ce que le premier avait commencé. C'est rare, le modèle
+        configuré étant essayé en tête, mais c'est le seul endroit du dessin où du texte
+        disparaît, alors il est signalé plutôt que subi.
+
+        `assured` et `limit` vont à `ReplyStream` : voir sa docstring pour ce qu'ils
+        garantissent, et §7.1 du plan de coaching pour pourquoi ils existent.
+        """
+        models = await self.candidates(vision=False)
+        if not models:
+            raise AiUnavailableError(
+                "Aucun modèle gratuit n'est disponible pour l'instant. "
+                "La saisie manuelle reste possible."
+            )
+
+        quota_only = True
+        attempted = 0
+
+        for model in models[:MAX_ATTEMPTS]:
+            attempted += 1
+            reader = ReplyStream(assured=assured, limit=limit)
+            raw: list[str] = []
+            said = False
+            try:
+                async for piece in self._client.stream_complete(
+                    model.id,
+                    instruction=instruction,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ):
+                    raw.append(piece)
+                    fresh = reader.feed(piece)
+                    if fresh:
+                        await on_delta(fresh, False)
+                        said = True
+            except ModelQuotaError:
+                if said:
+                    await on_delta("", True)
+                continue
+            except ModelUnusableError:
+                quota_only = False
+                if said:
+                    await on_delta("", True)
+                continue
+
+            parsed = first_json_object("".join(raw))
+            if parsed is not None:
+                return parsed
+            quota_only = False
+            if said:
+                await on_delta("", True)
 
         if quota_only and attempted:
             raise AiQuotaError

@@ -309,6 +309,50 @@ describe('avancement', () => {
     expect(writes().some((call) => call.url.endsWith('/chat'))).toBe(false);
   });
 
+  it('écrit la réponse pendant qu’elle arrive, morceau par morceau', async () => {
+    // Ce n'est pas une cinquième façon de dire « proposé » : c'est le même `reply`, plus
+    // tôt. Le serveur ne diffuse que ce qu'il a prouvé final, donc rien de ce qui
+    // s'affiche ici n'aura à être effacé.
+    stub({
+      custom: (url) =>
+        url.includes('/chat/stream')
+          ? sseBody([
+              'event: step\ndata: {"step": "je demande au modèle"}\n\n',
+              'event: delta\ndata: {"text": "Tu tournes à "}\n\n',
+              'event: delta\ndata: {"text": "1,8 séance."}\n\n',
+              `event: reply\ndata: ${JSON.stringify({ ...REPLY, reply: 'Tu tournes à 1,8 séance.' })}\n\n`,
+            ])
+          : undefined,
+    });
+    renderScreen();
+    await askSomething();
+
+    expect(await screen.findByText('Tu tournes à 1,8 séance.')).toBeInTheDocument();
+    expect(writes().some((call) => call.url.endsWith('/chat'))).toBe(false);
+  });
+
+  it('oublie ce qu’un modèle avait commencé quand il tombe en route', async () => {
+    // Le seul endroit du dessin où du texte disparaît. Sans `reset`, la réponse du modèle
+    // suivant se collerait au début abandonné du premier, formant un texte que personne
+    // n'a rédigé.
+    stub({
+      custom: (url) =>
+        url.includes('/chat/stream')
+          ? sseBody([
+              'event: delta\ndata: {"text": "Début abandonné"}\n\n',
+              'event: reset\ndata: {}\n\n',
+              'event: delta\ndata: {"text": "Réponse du suivant."}\n\n',
+              `event: reply\ndata: ${JSON.stringify({ ...REPLY, reply: 'Réponse du suivant.' })}\n\n`,
+            ])
+          : undefined,
+    });
+    renderScreen();
+    await askSomething();
+
+    expect(await screen.findByText('Réponse du suivant.')).toBeInTheDocument();
+    expect(screen.queryByText(/Début abandonné/)).not.toBeInTheDocument();
+  });
+
   it('remonte une erreur venue du flux, avec son message', async () => {
     // Les en-têtes sont partis depuis longtemps quand un modèle renonce : l'erreur ne
     // peut plus être un statut HTTP, elle voyage dans le flux.

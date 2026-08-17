@@ -21,7 +21,9 @@ scénarise un `429` en cascade ou un JSON tronqué sans toucher au vrai service.
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any
@@ -337,6 +339,64 @@ class OpenRouterClient:
             body["temperature"] = temperature
         return body | (extra or {})
 
+    async def stream_complete(
+        self,
+        model: str,
+        *,
+        instruction: str,
+        prompt: str,
+        max_tokens: int = 900,
+        temperature: float | None = EXTRACTION_TEMPERATURE,
+        extra: dict[str, Any] | None = None,
+    ) -> AsyncIterator[str]:
+        """Interroge un modèle et rend son texte **par morceaux**, dans l'ordre d'arrivée.
+
+        Même corps que `complete`, plus `stream: true`. Les erreurs sont les mêmes et
+        portent le même sens : la cascade décide de la suite sans savoir si l'appel était
+        diffusé ou non.
+
+        **Ce qui sort est le texte brut du modèle**, pas la réponse de l'assistant : c'est
+        du JSON qui s'écrit, accolades comprises, et parfois un monologue de raisonnement
+        avant. Le tri est le travail de `ReplyStream`, en aval.
+
+        Sans image : un appel vision ne se diffuse pas ici parce que rien n'en a besoin —
+        une estimation d'assiette s'affiche d'un coup, et la retenir dans le client évite
+        un chemin qui ne serait jamais éprouvé.
+        """
+        body = self.build_body(
+            model,
+            instruction=instruction,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            extra=extra,
+        )
+        body["stream"] = True
+
+        try:
+            async with self._client.stream("POST", "/chat/completions", json=body) as response:
+                if response.status_code >= 400:
+                    # Le corps n'a pas encore été lu : sans ce `aread`, le message
+                    # d'erreur du fournisseur serait perdu et tout deviendrait « HTTP 400 ».
+                    await response.aread()
+                    self._raise_for(model, response)
+
+                async for line in response.aiter_lines():
+                    piece = _read_stream_line(model, line)
+                    if piece is None:
+                        return
+                    if piece:
+                        yield piece
+        except httpx2.HTTPError as exc:
+            raise ModelUnusableError(f"{model} injoignable : {exc}") from exc
+
+    @staticmethod
+    def _raise_for(model: str, response: httpx2.Response) -> None:
+        """Traduit un statut d'erreur en refus nommé. Ne rend jamais la main sans lever."""
+        if response.status_code == 429:
+            raise ModelQuotaError(f"{model} : quota atteint")
+        raise ModelUnusableError(f"{model} : HTTP {response.status_code}")
+
     @staticmethod
     def _read(model: str, response: httpx2.Response) -> str:
         """Traduit une réponse HTTP en texte, ou en refus nommé."""
@@ -351,6 +411,53 @@ class OpenRouterClient:
             raise ModelUnusableError(f"{model} : réponse non-JSON") from exc
 
         return _read_content(model, payload)
+
+
+def _read_stream_line(model: str, line: str) -> str | None:
+    """Un morceau de texte, `""` si la ligne n'en porte pas, `None` à la fin du flux.
+
+    Trois formes traversent un `text/event-stream` d'OpenRouter et deux ne disent rien :
+    les lignes vides qui séparent les événements, et les commentaires `: OPENROUTER
+    PROCESSING` qu'il envoie pour tenir la connexion ouverte pendant qu'un modèle démarre.
+    Les prendre pour des données ferait échouer l'analyse à intervalles réguliers.
+
+    Un `error` **dans** le flux garde le sens qu'il a ailleurs (`IA-03`) : un quota se
+    réessaie sur le modèle suivant, une panne aussi mais sans le même conseil à l'écran.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith(":"):
+        return ""
+    if not stripped.startswith("data:"):
+        return ""
+
+    data = stripped[len("data:") :].strip()
+    if data == "[DONE]":
+        return None
+
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        # Une ligne illisible au milieu d'un flux n'est pas une panne du modèle : on la
+        # saute. Ce qui compte est ce qui arrive à écrire, et la relecture finale tranchera.
+        return ""
+
+    if not isinstance(payload, dict):
+        return ""
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        message = str(error.get("message") or "")
+        if error.get("code") == 429 or "rate limit" in message.lower():
+            raise ModelQuotaError(f"{model} : {message or 'quota atteint'}")
+        raise ModelUnusableError(f"{model} : {message or 'erreur du fournisseur'}")
+
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    delta = first.get("delta") if isinstance(first, dict) else None
+    content = delta.get("content") if isinstance(delta, dict) else None
+    return content if isinstance(content, str) else ""
 
 
 def _read_content(model: str, payload: Any) -> str:

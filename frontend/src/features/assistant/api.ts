@@ -136,11 +136,15 @@ export const assistantApi = {
   /**
    * La même question, en suivant ce que le serveur fait pendant qu'il le fait.
    *
-   * **Le flux ne transporte pas les jetons du modèle**, et ce n'est pas un raccourci : la
-   * conversation rend un objet JSON dont l'ordre des champs n'est pas garanti, et une
-   * seconde passe remplace entièrement la première. Un texte affiché au fil de l'eau
-   * devrait donc parfois être effacé sous les yeux. Ce sont des **étapes** qui arrivent,
-   * émises au moment où elles commencent.
+   * **Le flux transporte les étapes et la réponse pendant qu'elle s'écrit.** Il ne l'a pas
+   * toujours fait : une seconde passe remplace entièrement la première, donc un texte
+   * affiché au fil de l'eau aurait parfois dû être effacé. C'est le serveur qui a levé
+   * l'objection, pas l'écran — il ne diffuse que ce qu'il peut prouver final.
+   *
+   * Ce qui arrive ici est donc sûr : `onDelta` ne reçoit que du texte qui restera, et
+   * `onReset` n'est appelé que si un modèle tombe après avoir parlé, cas où le suivant
+   * repart de zéro. **La réponse rendue reste l'autorité** : c'est elle qui a été relue,
+   * bornée et stockée, et l'appelant l'affiche telle quelle à la fin.
    *
    * Écrit à la main plutôt qu'avec `request` : celui-ci lit le corps en entier avant de
    * rendre, ce qui est exactement ce qu'un flux ne doit pas faire. Et `EventSource` ne
@@ -155,6 +159,8 @@ export const assistantApi = {
     question: string,
     threadId: string | null,
     onStep: (step: string) => void,
+    onDelta?: (text: string) => void,
+    onReset?: () => void,
   ): Promise<ChatReply> => {
     const token = tokenStore.read();
     let response: Response;
@@ -195,6 +201,8 @@ export const assistantApi = {
         buffer = buffer.slice(cut + 2);
         const parsed = readEvent(block);
         if (parsed?.event === 'step') onStep(asText(parsed.data.step, ''));
+        if (parsed?.event === 'delta') onDelta?.(asText(parsed.data.text, ''));
+        if (parsed?.event === 'reset') onReset?.();
         if (parsed?.event === 'reply') reply = parsed.data as unknown as ChatReply;
         if (parsed?.event === 'error') {
           failure = new ApiError(

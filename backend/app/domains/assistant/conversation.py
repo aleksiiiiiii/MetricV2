@@ -94,15 +94,8 @@ _TEMPLATE = """Réponds à la question en t'appuyant sur ce qui suit, et sur rie
 
 ## Réponse attendue
 
-{{"reply": "…", "remember": [{{"topic": "…", "note": "…"}}]{extra}}}
+{shape}
 
-- "reply" : ta réponse, en français. **Sa longueur suit ce que je demande** — un chiffre se
-  rend en une phrase, un plan ou une analyse se développe autant qu'il le faut. Cite les
-  chiffres ci-dessus quand ils répondent ; dis que tu ne sais pas quand ils ne disent rien
-  là-dessus.
-- "remember" : ce que **je viens de t'apprendre sur moi** et qui vaudra encore dans six
-  mois — une blessure, un sommeil, un traitement, une contrainte. Liste vide le plus
-  souvent, et c'est le cas normal.
 {fields}
 Règles :
 - **Quand je demande quoi faire, réponds par ce qu'il faut faire.** Tu es mon coach : une
@@ -119,17 +112,46 @@ Règles :
   professionnel dans "reply". Les deux, pas l'un ou l'autre.
 """
 
-#: Ce qui s'ajoute à la consigne quand des actions sont possibles.
+# ── L'ordre des champs, et pourquoi il est ce qu'il est ──
+#
+# **`need` et `actions` précèdent `reply`, délibérément.** Un modèle écrit son JSON de
+# gauche à droite : quand `need` arrive en premier, le serveur sait **avant** le premier
+# caractère de la réponse si cette passe sera remplacée par une seconde. C'est ce qui
+# permet de diffuser `reply` au fil de l'eau sans jamais avoir à l'effacer — voir
+# `stream_reply` et §7.1 du plan de coaching.
+#
+# Le bénéfice est double et le second ne doit rien au flux : décider ce qu'on écrit avant
+# de rédiger sert la règle « ne parle dans "reply" que des actions réellement mises ».
+#
+# Rien ne *garantit* cet ordre côté modèle. Le lot 5 le garantira par `json_schema` ; en
+# attendant, un modèle qui ne le respecte pas coûte la diffusion de cette passe, jamais sa
+# justesse — le serveur ne diffuse que ce qu'il peut prouver final.
+
+#: Description de `need`. En tête parce que c'est la première décision à prendre.
+_NEED_FIELD = """- "need" : ce qui te manque pour répondre ou pour agir, à choisir dans la liste des
+  tranches ci-dessus. Ne le remplis que si tu ne peux pas t'en passer. Tu ne l'obtiendras
+  qu'une fois, alors demande tout d'un coup."""
+
+#: Description de `actions`.
 #:
-#: Rédigé en « je te demande / tu fais » et non en « tu peux » : un modèle à qui on offre
+#: Rédigée en « je te demande / tu fais » et non en « tu peux » : un modèle à qui on offre
 #: une possibilité la prend, et la plupart des questions n'appellent aucune écriture. La
 #: liste vide doit être présentée comme le cas normal, sinon chaque « où j'en suis ? »
 #: repart avec une séance ajoutée.
-_ACTION_FIELDS = """- "actions" : ce que je te demande d'écrire dans mes données. **Liste vide le plus
+_ACTIONS_FIELD = """- "actions" : ce que je te demande d'écrire dans mes données. **Liste vide le plus
   souvent** — une question est une question, pas une instruction. N'agis que si je te le
-  demande explicitement, dans ce message-ci.
-- "need" : ce qui te manque pour agir, à choisir dans la liste des tranches ci-dessus.
-  Ne le remplis que si tu ne peux pas agir sans. Tu ne l'obtiendras qu'une fois."""
+  demande explicitement, dans ce message-ci."""
+
+_REPLY_FIELD = """- "reply" : ta réponse, en français. **Sa longueur suit ce que je demande** — un chiffre se
+  rend en une phrase, un plan ou une analyse se développe autant qu'il le faut. Cite les
+  chiffres ci-dessus quand ils répondent ; dis que tu ne sais pas quand ils ne disent rien
+  là-dessus."""
+
+_REMEMBER_FIELD = """- "remember" : ce que **je viens de t'apprendre sur moi** et qui vaudra encore dans six
+  mois — une blessure, un sommeil, un traitement, une contrainte. Liste vide le plus
+  souvent, et c'est le cas normal."""
+
+_TITLE_FIELD = '- "title" : cinq mots qui nomment cette discussion, pour la retrouver plus tard.'
 
 _ACTION_RULES = """- Une action est {"name": "…", "args": {…}}. N'emploie **que** les noms listés, avec
   exactement les arguments décrits. Un nom inventé est ignoré, et je ne le saurai pas.
@@ -169,6 +191,10 @@ def build_prompt(
     `naming` n'est vrai qu'au premier tour : c'est là qu'un fil se nomme. Le redemander à
     chaque tour coûterait des jetons et inviterait le modèle à rebaptiser une discussion
     en cours, ce qu'on ne cherche pas.
+
+    **L'ordre des champs est porteur** et non cosmétique : `need` et `actions` d'abord, la
+    réponse ensuite. Voir la note qui précède `_NEED_FIELD` — c'est ce qui rend la
+    diffusion au fil de l'eau possible sans effacement.
     """
     turns = ""
     if history:
@@ -177,10 +203,13 @@ def build_prompt(
         )
         turns = f"## Ce qu'on s'est déjà dit\n\n{lines}\n\n"
 
+    # Le squelette et les descriptions sont construits **ensemble**, dans le même ordre :
+    # deux listes qui divergeraient décriraient un champ à une place qu'il n'occupe pas.
     catalogue = ""
-    extra = ""
-    fields = ""
     rules = ""
+    shape: list[str] = []
+    fields: list[str] = []
+
     if actions:
         listed = "\n".join(f"- {line}" for line in actions)
         available = ", ".join(slices or []) or "aucune"
@@ -188,13 +217,16 @@ def build_prompt(
             f"## Ce que tu peux faire dans mes données\n\n{listed}\n\n"
             f"Tranches de contexte disponibles à la demande : {available}.\n\n"
         )
-        extra = ', "actions": [], "need": []'
-        fields = f"{_ACTION_FIELDS}\n"
+        shape += ['"need": []', '"actions": []']
+        fields += [_NEED_FIELD, _ACTIONS_FIELD]
         rules = f"\n{_ACTION_RULES}"
 
+    shape += ['"reply": "…"', '"remember": [{"topic": "…", "note": "…"}]']
+    fields += [_REPLY_FIELD, _REMEMBER_FIELD]
+
     if naming:
-        extra = f'{extra}, "title": "…"'
-        fields = f'{fields}- "title" : cinq mots qui nomment cette discussion, pour la retrouver plus tard.\n'
+        shape.append('"title": "…"')
+        fields.append(_TITLE_FIELD)
 
     return (
         _TEMPLATE.format(
@@ -203,8 +235,8 @@ def build_prompt(
             history=turns,
             actions=catalogue,
             question=question.strip(),
-            extra=extra,
-            fields=fields,
+            shape="{" + ", ".join(shape) + "}",
+            fields="\n".join(fields),
         ).rstrip()
         + f"{rules}\n"
     )

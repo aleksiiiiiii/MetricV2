@@ -220,21 +220,36 @@ async def chat(payload: ChatRequest, store: StoreDep, ai: AiServiceDep) -> ChatR
 async def chat_stream(payload: ChatRequest, store: StoreDep, ai: AiServiceDep) -> StreamingResponse:
     """La même réponse que `/chat`, précédée de ce que le serveur est en train de faire.
 
-    ## Pourquoi un flux, et pourquoi pas les jetons du modèle
+    ## Les jetons du modèle, et l'objection qui les interdisait
 
-    Une réponse demande cinq à quinze secondes, et l'écran n'affichait que trois points.
-    Streamer le texte du modèle, lui, n'est **pas** possible sans casser autre chose : la
-    conversation rend un objet JSON — `reply`, `remember`, `actions`, `need` — dont l'ordre
-    des champs n'est pas garanti, et une seconde passe remplace entièrement la première.
-    Un texte affiché au fil de l'eau devrait donc parfois être effacé sous les yeux.
+    Cette page a longtemps porté un refus argumenté de diffuser le texte du modèle. Il
+    tenait sur trois raisons : l'ordre des champs du JSON n'est pas garanti, une seconde
+    passe remplace entièrement la première, donc un texte affiché au fil de l'eau devrait
+    parfois être effacé sous les yeux.
 
-    Ce flux transporte donc des **étapes**, pas des jetons. Chacune est émise au moment où
-    elle commence : ce que l'écran affiche est arrivé, ce qui est la seule différence qui
-    compte entre un compte rendu et une animation.
+    **La deuxième était la seule qui comptait, et elle s'est aggravée** — depuis que le
+    condensé porte les charges, une question de coaching réclame presque toujours une
+    tranche, donc une seconde passe. Diffuser la première serait effacer souvent.
+
+    Ce qui a changé n'est pas l'avis, c'est le contrat : `need` précède désormais `reply`,
+    et le serveur **ne diffuse que ce qu'il peut prouver final**. Une passe qui réclame une
+    tranche ne s'affiche pas ; la seconde, finale par construction, s'affiche toujours ; un
+    modèle qui ignore l'ordre coûte sa diffusion et rien d'autre. Le détail est dans
+    `ReplyStream` et en §7.1 du plan de coaching.
 
     ## La forme
 
-    `event: step` pendant, puis exactement un `event: reply` ou un `event: error` à la fin.
+    `event: step` et `event: delta` pendant, puis exactement un `event: reply` ou un
+    `event: error` à la fin.
+
+    `event: reset` n'arrive que si un modèle tombe après avoir déjà écrit : le suivant
+    repart de zéro et l'écran doit oublier ce qui précède. C'est le seul endroit du dessin
+    où du texte disparaît, et il est annoncé plutôt que subi.
+
+    **`event: reply` reste l'autorité.** Ce qui a été diffusé est un aperçu ; ce qui est
+    affiché à la fin est ce qui a été relu, borné et stocké. Un client qui ignorerait les
+    `delta` afficherait exactement ce qu'il affichait avant ce lot.
+
     L'erreur voyage **dans le flux** et non en statut HTTP : les en-têtes sont partis
     depuis longtemps quand un modèle renonce. Elle porte le même `{code, message}` que
     partout ailleurs, pour que le client décide sur le code comme d'habitude (`API-07`).
@@ -243,25 +258,34 @@ async def chat_stream(payload: ChatRequest, store: StoreDep, ai: AiServiceDep) -
     service = AssistantService(store)
 
     async def events() -> AsyncIterator[str]:
-        steps: asyncio.Queue[str | None] = asyncio.Queue()
+        # Une seule file pour les étapes **et** les morceaux de réponse : deux files
+        # rendraient leur entrelacement dépendant de l'ordonnanceur, et un `delta` servi
+        # avant l'étape qui l'annonce se lit comme un défaut à l'écran.
+        outbox: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
 
         async def report(message: str) -> None:
-            await steps.put(message)
+            await outbox.put(("step", {"step": message}))
+
+        async def emit(text: str, reset: bool) -> None:
+            await outbox.put(("reset", {}) if reset else ("delta", {"text": text}))
 
         async def run() -> ChatReply:
             try:
-                return await service.ask(ai, payload, adherence=adherence, on_step=report)
+                return await service.ask(
+                    ai, payload, adherence=adherence, on_step=report, on_delta=emit
+                )
             finally:
                 # La sentinelle libère le lecteur, que la réponse arrive ou qu'elle échoue.
-                await steps.put(None)
+                await outbox.put(None)
 
         task = asyncio.create_task(run())
 
         while True:
-            step = await steps.get()
-            if step is None:
+            event = await outbox.get()
+            if event is None:
                 break
-            yield _sse("step", {"step": step})
+            name, data = event
+            yield _sse(name, data)
 
         try:
             reply = await task

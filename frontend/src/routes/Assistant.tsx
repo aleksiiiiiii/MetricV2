@@ -629,6 +629,18 @@ export function Assistant() {
    * dont le client ne sait rien. Chaque étape arrive du flux au moment où elle commence.
    */
   const [step, setStep] = useState<string | null>(null);
+  /**
+   * La réponse pendant qu'elle s'écrit.
+   *
+   * **Ce n'est pas une cinquième façon de dire « proposé ».** C'est le même `reply`, qui
+   * arrive plus tôt — le serveur ne diffuse que ce qu'il a prouvé final, et le texte
+   * affiché ici est mot pour mot celui que `onSuccess` posera dans le fil. Rien à
+   * rattraper, rien à effacer, donc rien à signaler à l'utilisateur.
+   *
+   * Remis à zéro par `onSettled` comme `step`, et par `event: reset` quand un modèle
+   * tombe après avoir parlé — le seul cas où le début affiché n'aura pas de suite.
+   */
+  const [draft, setDraft] = useState('');
   const [threadId, setThreadId] = useState<string | null>(null);
   /**
    * Les deux feuilles s'ouvrent aussi **par l'adresse** — `?ouvre=memoire`.
@@ -695,7 +707,18 @@ export function Assistant() {
   const shown = [...past, ...exchanges];
 
   const ask = useMutation({
-    mutationFn: (asked: string) => assistantApi.askStreaming(asked, threadId, setStep),
+    mutationFn: (asked: string) =>
+      assistantApi.askStreaming(
+        asked,
+        threadId,
+        setStep,
+        (text) => {
+          setDraft((current) => current + text);
+        },
+        () => {
+          setDraft('');
+        },
+      ),
     onSuccess: (result, asked) => {
       setThreadId(result.thread_id);
       setExchanges((current) => [
@@ -730,6 +753,7 @@ export function Assistant() {
     onSettled: () => {
       setInFlight(null);
       setStep(null);
+      setDraft('');
     },
   });
 
@@ -759,12 +783,17 @@ export function Assistant() {
    * Sans cette garde, relire une réponse d'il y a dix questions se ferait arracher dès que
    * la suivante arrive. C'est le défaut le plus courant des interfaces de discussion, et
    * il ne coûte qu'une référence à éviter.
+   *
+   * **`draft` est dans les dépendances, et il a fallu y penser.** Le nombre de messages ne
+   * bouge pas pendant qu'une réponse se diffuse : sans lui, une réponse longue grandirait
+   * sous le bas de l'écran et on la regarderait partir. Le lot qui allonge les réponses
+   * est exactement celui qui rend cette dépendance nécessaire.
    */
   useEffect(() => {
     if (!following.current) return;
     const node = stream.current;
     if (node !== null) node.scrollTop = node.scrollHeight;
-  }, [shown.length, inFlight]);
+  }, [shown.length, inFlight, draft]);
 
   function send(): void {
     const cleaned = question.trim();
@@ -947,22 +976,30 @@ export function Assistant() {
         {inFlight !== null && (
           <div className={styles.turn}>
             <p className={cx(styles.bubble, styles.mine)}>{inFlight}</p>
-            {/* Cinq à quinze secondes d'attente, et la durée varie du simple au triple
-                selon qu'une seconde passe est nécessaire. Les trois points ne disaient
-                rien de tout cela ; l'étape en cours, si — et elle vient du serveur. */}
+            {/* Trois états, et non deux, parce que l'attente en a trois.
+                Le texte dès qu'il arrive ; à défaut l'étape en cours, qui vient du
+                serveur ; à défaut les trois points. La durée varie du simple au triple
+                selon qu'une seconde passe est nécessaire, et rien de tout cela ne se
+                devine côté écran. */}
             <p
-              className={cx(styles.bubble, styles.theirs, step === null && styles.thinking)}
-              aria-label="L’assistant réfléchit"
+              className={cx(
+                styles.bubble,
+                styles.theirs,
+                draft === '' && step === null && styles.thinking,
+              )}
+              aria-label={draft === '' ? 'L’assistant réfléchit' : undefined}
               aria-live="polite"
             >
-              {step === null ? (
+              {draft !== '' ? (
+                draft
+              ) : step !== null ? (
+                <span className={styles.step}>{step}…</span>
+              ) : (
                 <>
                   <span />
                   <span />
                   <span />
                 </>
-              ) : (
-                <span className={styles.step}>{step}…</span>
               )}
             </p>
           </div>

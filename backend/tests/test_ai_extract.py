@@ -6,7 +6,10 @@ malveillances imaginées : c'est ce que rendent les modèles quand on leur deman
 
 from __future__ import annotations
 
-from app.domains.ai.extract import first_json_object, strip_reasoning
+import json
+import random
+
+from app.domains.ai.extract import ReplyStream, first_json_object, strip_reasoning
 
 
 def test_a_bare_object_is_read() -> None:
@@ -101,3 +104,105 @@ def test_a_json_array_is_not_an_object() -> None:
 
 def test_prose_without_json_yields_nothing() -> None:
     assert first_json_object("Je ne peux pas analyser cette image, désolé.") is None
+
+
+# ── La lecture au fil de l'eau (§7.1 du plan de coaching) ──
+#
+# Le réseau coupe où il veut. Chaque cas se joue donc **caractère par caractère** : servir
+# de gros morceaux éviterait toutes les coupures intéressantes et rendrait ces tests muets
+# sur exactement ce qu'ils doivent couvrir.
+
+
+def jouer(texte: str, *, assured: bool = False, taille: int = 1, limite: int | None = None) -> str:
+    """Fait passer `texte` par le lecteur, découpé, et rend ce qui a été diffusé."""
+    lecteur = ReplyStream(assured=assured, limit=limite)
+    return "".join(lecteur.feed(texte[i : i + taille]) for i in range(0, len(texte), taille))
+
+
+def test_an_empty_need_proves_the_pass_is_final_and_the_reply_flows() -> None:
+    """Le cas normal : le modèle ne demande rien, donc sa réponse ne sera pas remplacée."""
+    raw = json.dumps({"need": [], "actions": [], "reply": "Charge 67,5 kg.", "remember": []})
+
+    assert jouer(raw) == "Charge 67,5 kg."
+
+
+def test_a_pass_that_asks_for_a_slice_says_nothing() -> None:
+    """L'objection qui interdisait de diffuser, et la raison d'être de tout ce dessin.
+
+    Une seconde passe remplace **entièrement** la première. Ce qui serait diffusé ici
+    devrait être effacé quinze secondes plus tard.
+    """
+    raw = json.dumps({"need": ["progression_charges"], "reply": "Je regarde.", "remember": []})
+
+    assert jouer(raw) == ""
+
+
+def test_the_second_pass_needs_no_proof_because_there_is_no_third() -> None:
+    """`assured` : le plafond de `IA-16` rend la preuve inutile sur la passe finale."""
+    raw = json.dumps({"need": ["progression_charges"], "reply": "Je regarde.", "remember": []})
+
+    assert jouer(raw, assured=True) == "Je regarde."
+
+
+def test_a_reply_written_before_need_is_not_streamed() -> None:
+    """Le repli, silencieux par construction.
+
+    Rien ne garantit qu'un modèle respecte l'ordre demandé — le lot 5 le garantira par
+    `json_schema`. En attendant, une réponse qu'on ne peut pas prouver finale ne s'affiche
+    pas : le pire cas est le comportement d'avant ce lot, jamais un effacement.
+    """
+    raw = json.dumps({"reply": "Hors contrat.", "need": [], "remember": []})
+
+    assert jouer(raw) == ""
+
+
+def test_escapes_survive_a_cut_anywhere() -> None:
+    """Un morceau réseau tombe entre `\\` et `u`, ou au milieu des quatre chiffres.
+
+    Décoder un préfixe coupé là lèverait, ou rendrait un caractère faux. Le cas mêle
+    guillemet échappé, retour à la ligne, antislash littéral et deux caractères non ASCII
+    que `json.dumps` écrit en `\\uXXXX`.
+    """
+    texte = 'Il a dit "oui".\nPuis \\ — 82,4 kg é'
+    raw = json.dumps({"need": [], "reply": texte, "remember": []})
+
+    assert jouer(raw) == texte
+
+
+def test_any_random_split_yields_the_same_text() -> None:
+    """La propriété qui compte : le découpage ne doit rien changer au texte rendu."""
+    texte = 'Ligne 1\nLigne "2" \\ fin é—'
+    raw = json.dumps({"need": [], "reply": texte, "remember": []})
+    alea = random.Random(7)
+
+    for _ in range(200):
+        lecteur = ReplyStream()
+        rendu = ""
+        position = 0
+        while position < len(raw):
+            taille = alea.randint(1, 7)
+            rendu += lecteur.feed(raw[position : position + taille])
+            position += taille
+        assert rendu == texte
+
+
+def test_the_preview_never_outgrows_what_will_be_stored() -> None:
+    """`limit` vient de `MAX_REPLY` : un aperçu plus long serait raccourci sous les yeux
+    au moment où la réponse définitive arrive."""
+    raw = json.dumps({"need": [], "reply": "Charge 67,5 kg lundi.", "remember": []})
+
+    assert jouer(raw, limite=10) == "Charge 67,"
+
+
+def test_a_scalar_field_before_the_reply_does_not_derail_the_reader() -> None:
+    """Un nombre ou un booléen se termine sur le séparateur et non sur une fermeture."""
+    raw = '{"need": [], "score": 12, "flag": true, "reply": "Après les scalaires.", "x": null}'
+
+    assert jouer(raw) == "Après les scalaires."
+
+
+def test_braces_inside_a_string_do_not_count_as_nesting() -> None:
+    """Sinon une réponse qui cite du JSON refermerait l'objet trop tôt."""
+    raw = json.dumps({"need": [], "title": 'un {"faux": "objet"}', "reply": "Vraie réponse."})
+
+    assert jouer(raw) == "Vraie réponse."

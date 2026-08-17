@@ -42,7 +42,18 @@ CONTEXT = [
 
 
 def answer(**fields: Any) -> str:
-    base: dict[str, Any] = {"reply": "Tu tournes à 1,8 séance par semaine.", "remember": []}
+    """Une réponse de modèle, **dans l'ordre que le contrat demande**.
+
+    `need` en tête n'est pas cosmétique : c'est ce qui permet au serveur de savoir, avant
+    d'afficher le premier caractère, si cette passe sera remplacée par une seconde. Une
+    doublure qui rendrait les champs dans un autre ordre testerait un contrat qui n'existe
+    pas — et masquerait la diffusion au lieu de la couvrir.
+    """
+    base: dict[str, Any] = {
+        "need": [],
+        "reply": "Tu tournes à 1,8 séance par semaine.",
+        "remember": [],
+    }
     return json.dumps({**base, **fields})
 
 
@@ -565,10 +576,19 @@ def test_the_stream_reports_its_steps_then_the_reply(
     assert response.headers["content-type"].startswith("text/event-stream")
 
     events = sse(response.text)
-    assert [name for name, _ in events] == ["step", "step", "reply"]
+    names = [name for name, _ in events]
+    assert names[:2] == ["step", "step"]
+    assert names[-1] == "reply"
     assert events[0][1]["step"] == "je relis tes chiffres"
     assert events[1][1]["step"] == "je demande au modèle"
     assert events[-1][1]["reply"] == "Tu tournes à 1,8 séance par semaine."
+
+    # Les morceaux **reconstituent** la réponse finale, ils ne l'approchent pas. C'est ce
+    # qui distingue un aperçu d'une seconde version du texte : l'écran n'a rien à
+    # rattraper quand `reply` arrive.
+    diffuse = "".join(data["text"] for name, data in events if name == "delta")
+    assert diffuse == events[-1][1]["reply"]
+    assert "reset" not in names
 
 
 def test_the_stream_names_the_second_pass(
@@ -591,6 +611,97 @@ def test_the_stream_names_the_second_pass(
 
     steps = [data["step"] for name, data in events if name == "step"]
     assert any("il me manque" in step for step in steps)
+
+
+def test_a_pass_that_will_be_replaced_is_never_shown(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """L'objection qui interdisait de diffuser les jetons, et la façon dont elle tombe.
+
+    Une seconde passe remplace **entièrement** la première. Diffuser la première afficherait
+    donc un texte à effacer ensuite — et depuis que le condensé porte les charges, une
+    question de coaching réclame presque toujours une tranche, donc ce cas est fréquent.
+
+    Le contrat place `need` avant `reply` : quand la première passe déclare une tranche
+    manquante, le serveur le sait **avant** le premier caractère de sa réponse et n'en
+    diffuse rien. Seule la seconde, finale par construction, s'affiche.
+    """
+    openrouter.say(
+        answer(need=["repas_du_jour"], reply="Je regarde tes repas."),
+        answer(reply="Tu as pris 78 g de protéines."),
+    )
+
+    events = sse(
+        ai_app_client.post(
+            f"{ASSISTANT}/chat/stream",
+            json={"question": "J'ai mangé assez de protéines ?"},
+            headers=auth,
+        ).text
+    )
+
+    diffuse = "".join(data["text"] for name, data in events if name == "delta")
+    assert diffuse == "Tu as pris 78 g de protéines."
+    assert "Je regarde" not in diffuse
+    # Rien n'a été effacé : il n'y avait rien à effacer.
+    assert "reset" not in [name for name, _ in events]
+
+
+def test_a_model_that_ignores_the_field_order_costs_its_own_streaming(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Le repli, et il est silencieux par construction.
+
+    Rien ne *garantit* qu'un modèle respecte l'ordre demandé — le lot 5 le garantira par
+    `json_schema`. En attendant, `reply` écrit avant `need` ne peut pas être prouvé final :
+    on ne diffuse pas. Le pire cas est donc le comportement d'avant ce lot, jamais un texte
+    effacé sous les yeux, et la réponse arrive entière comme elle l'a toujours fait.
+    """
+    openrouter.replies = [
+        Reply.says(json.dumps({"reply": "Réponse hors contrat.", "need": [], "remember": []}))
+    ]
+
+    events = sse(
+        ai_app_client.post(
+            f"{ASSISTANT}/chat/stream",
+            json={"question": "Où j'en suis cette semaine ?"},
+            headers=auth,
+        ).text
+    )
+
+    assert [name for name, _ in events if name == "delta"] == []
+    assert events[-1][0] == "reply"
+    assert events[-1][1]["reply"] == "Réponse hors contrat."
+
+
+def test_a_model_that_dies_after_speaking_gets_the_screen_cleared(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Le seul endroit du dessin où du texte disparaît, et il est annoncé.
+
+    La cascade essaie le modèle suivant quand le premier tombe. S'il avait déjà écrit,
+    l'écran porte un début de phrase qui n'a plus de suite — et la réponse du suivant s'y
+    ajouterait, formant un texte que personne n'a rédigé. `reset` dit à l'écran d'oublier.
+    """
+    openrouter.replies = [
+        Reply.says(json.dumps({"need": [], "reply": "Début interrompu"})[:-1]),
+        Reply.says(answer(reply="Réponse complète du suivant.")),
+    ]
+
+    events = sse(
+        ai_app_client.post(
+            f"{ASSISTANT}/chat/stream",
+            json={"question": "Où j'en suis cette semaine ?"},
+            headers=auth,
+        ).text
+    )
+
+    names = [name for name, _ in events]
+    assert "reset" in names
+    # Ce qui suit la remise à zéro est la réponse entière du modèle suivant, et elle seule.
+    after = names.index("reset")
+    tail = "".join(data["text"] for name, data in events[after:] if name == "delta")
+    assert tail == "Réponse complète du suivant."
+    assert events[-1][1]["reply"] == "Réponse complète du suivant."
 
 
 def test_a_model_failure_travels_inside_the_stream(

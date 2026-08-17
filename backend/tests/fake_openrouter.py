@@ -121,6 +121,13 @@ class FakeOpenRouter:
     models_calls: int = 0
     #: Réponse servie quand la file est vide : un modèle qui n'avait rien à dire.
     replies_exhausted: Reply = field(default_factory=Reply.mute)
+    #: Taille des morceaux servis quand l'appelant demande `stream: true`.
+    #:
+    #: **Un caractère par défaut, et c'est un choix de sévérité.** Le lecteur incrémental
+    #: doit tenir une coupure n'importe où — entre `\\` et `u`, au milieu d'un `\\u00e9`,
+    #: entre la clé `need` et sa valeur. Servir de gros morceaux les éviterait toutes et
+    #: rendrait la batterie muette sur exactement ce qu'elle doit couvrir.
+    chunk: int = 1
 
     def say(self, *contents: str) -> None:
         """Scénarise des réponses textuelles, dans l'ordre."""
@@ -158,6 +165,10 @@ class FakeOpenRouter:
         payload = reply.body
         if payload is None:
             payload = {"choices": [{"message": {"content": reply.content or ""}}]}
+
+        if request.get("stream") and reply.status < 400 and reply.body is None:
+            await _stream(send, reply.content or "", chunk=self.chunk)
+            return
         await _respond(send, reply.status, payload)
 
 
@@ -216,3 +227,33 @@ async def _respond(send: Send, status: int, payload: dict[str, Any]) -> None:
         }
     )
     await send({"type": "http.response.body", "body": raw})
+
+
+async def _stream(send: Send, content: str, *, chunk: int) -> None:
+    """Sert un contenu à la forme d'un `text/event-stream` d'OpenRouter.
+
+    Les deux formes qui ne portent rien sont servies elles aussi — un commentaire de
+    maintien de connexion en tête, la sentinelle `[DONE]` à la fin. C'est du décor, et
+    c'est précisément le décor sur lequel un lecteur naïf trébuche.
+    """
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [(b"content-type", b"text/event-stream")],
+        }
+    )
+    await send(
+        {
+            "type": "http.response.body",
+            "body": b": OPENROUTER PROCESSING\n\n",
+            "more_body": True,
+        }
+    )
+
+    for index in range(0, len(content), chunk):
+        piece = {"choices": [{"delta": {"content": content[index : index + chunk]}}]}
+        raw = f"data: {json.dumps(piece, ensure_ascii=False)}\n\n".encode()
+        await send({"type": "http.response.body", "body": raw, "more_body": True})
+
+    await send({"type": "http.response.body", "body": b"data: [DONE]\n\n", "more_body": False})

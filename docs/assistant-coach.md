@@ -339,8 +339,8 @@ et elle suffit pour du repli. Ce lot ne la touche pas.
 
 ## 7. Défaire trois réglages hérités de l'extraction
 
-> **Jalon 4 — deux tiers faits le 2026-08-17.** La température et la longueur sont réglées ;
-> le streaming reste entier. Le détail, et ce que la mesure ne dit pas encore, sont en §11.
+> **Jalons 4 et 5 — fait le 2026-08-17.** Température, longueur, bornes, puis le streaming
+> (§7.1). Le détail, et ce que la mesure ne dit pas encore, sont en §11.
 
 Trois valeurs viennent du premier usage de l'IA — lire une photo de repas — et n'ont jamais
 été rediscutées quand une conversation est apparue.
@@ -366,6 +366,53 @@ sur le même canal SSE ; les actions et le carnet arrivent à la fin, comme aujo
 flux ; côté front, l'écran doit rendre un texte qui s'allonge. La règle « une valeur proposée
 n'est pas une mesure » ne bouge pas — un texte en cours de diffusion n'est pas une cinquième
 façon de dire « proposé », c'est le même `reply` qui arrive plus tôt.
+
+### 7.1 Le streaming — ce que le plan avait omis, et le dessin qui en sort
+
+**`chat_stream` porte une décision écrite *contre* cette idée**, et le paragraphe ci-dessus
+ne l'affronte pas. Elle donne trois raisons, toutes vraies :
+
+1. l'ordre des champs du JSON n'est pas garanti — `reply` peut ne pas arriver en premier ;
+2. **une seconde passe remplace entièrement la première** ;
+3. donc un texte affiché au fil de l'eau devrait parfois être effacé sous les yeux.
+
+La deuxième est la seule qui compte, et elle s'est *aggravée* depuis : le lot 1 a rendu la
+seconde passe **fréquente** — une question de coaching réclame presque toujours une tranche.
+Diffuser la première passe, c'est donc effacer du texte souvent, pas rarement.
+
+**Le dessin qui lève l'objection : ne diffuser que ce qu'on peut prouver final.**
+
+- **Le contrat change d'ordre** : `{"need": …, "actions": …, "reply": …, "remember": …}`.
+  Le modèle écrit de gauche à droite ; quand `need` précède `reply`, on **sait déjà**, au
+  moment où le premier caractère de la réponse arrive, si cette passe sera remplacée.
+- `need` non vide → on ne diffuse rien de cette passe. La seconde, elle, est finale par
+  construction (le plafond est à deux passes) et se diffuse toujours.
+- `need` vide → la passe est finale, on diffuse.
+- **Ordre non respecté par le modèle → on ne diffuse pas.** Pas de preuve, pas de
+  diffusion : le pire cas est le comportement d'aujourd'hui, jamais un effacement.
+
+Ce réordonnancement a un bénéfice second, indépendant du flux : il force le modèle à
+décider ce qu'il écrit **avant** de rédiger, ce qui sert la règle « ne parle dans `reply`
+que des actions que tu as réellement mises ».
+
+**`event: reset` reste nécessaire, pour un seul cas** : la cascade. Si un modèle rend
+deux cents caractères puis tombe, le suivant repart de zéro. C'est rare — le modèle
+configuré est essayé en premier — mais ça ne peut pas être ignoré en silence.
+
+**Le `event: reply` final ne bouge pas et reste l'autorité.** Ce qui a été diffusé est un
+aperçu ; ce qui est affiché à la fin est ce qui a été **relu et stocké**, après
+`MAX_REPLY`. Un texte diffusé ne peut donc jamais différer du texte conservé, ce qui est la
+version « flux » de l'invariant du dépôt sur les valeurs affichées.
+
+**Ce que ça ne franchit pas.** `IA-16` est intact — le plafond de deux passes ne bouge pas
+et rien n'est servi que le modèle n'ait demandé. `IA-09` non plus : le condensé est le même.
+Les actions et le carnet arrivent toujours à la fin, dans `event: reply`.
+
+**Ce qui n'est pas mesurable ici, et c'est la vraie limite.** Le réordonnancement du contrat
+change ce que le modèle produit. Il peut rendre `need` plus saillant, donc plus souvent
+rempli — donc plus de secondes passes, plus de latence et plus de coût. **Seul le jeu
+d'évaluation le dira**, et il demande des appels payants. Le repli est d'une ligne : remettre
+l'ordre d'origine désactive la diffusion de la première passe sans rien casser d'autre.
 
 ---
 
@@ -474,7 +521,7 @@ L'ordre n'est pas celui des numéros. Il suit les dépendances et le rapport bé
 | 2 | ~~**§10 — le jeu d'évaluation**~~ | ✅ **Fait le 2026-08-16.** 25 cas, `make eval`, mesure d'origine posée ; voir §11. |
 | 3 | **§0.1 — passer à Opus 5** | Une ligne de `.env`, plus `MAX_TOKENS` par prudence. Le jeu dit maintenant ce que ça change. |
 | 4 | **§1 + §2 — le contexte** | ✅ **Fait le 2026-08-17.** Les tranches de coaching sont servies ; voir §11. §3 (le profil) reste à faire. |
-| 5 | **§7 — les réglages hérités** | ✅ **À moitié fait le 2026-08-17.** Longueur, température et bornes ; voir §11. **Le streaming reste entier**, et il passe devant l'étape 3 seulement s'il devient gênant. |
+| 5 | **§7 — les réglages hérités** | ✅ **Fait le 2026-08-17**, streaming compris (§7.1). Voir les jalons 4 et 5 du §11. |
 | 6 | **§9 — le rebouclage sur échec** | Petit, isolé, corrige un mensonge visible. |
 | 7 | **§4 — trois passes** | Utile seulement une fois que les tranches du lot 4 existent. |
 | 8 | **§5 — tool calling natif** | Le plus lourd. À prendre pour lui-même, avec le lot 10 pour dire s'il a servi. |
@@ -793,6 +840,78 @@ l'œil, ce qui reste la seule façon de voir qu'une règle en contredit une autr
 - **Le streaming**, nommé plus haut. Le lot 7 est donc à moitié fait, et c'est délibéré.
 - **`_echoes` reste défait par une reformulation.** Quatrième jalon consécutif où c'est vrai.
   Aucun lot ne le couvre toujours, et le carnet se remplit pendant ce temps-là.
+
+### Jalon 5 — §7.1, le streaming · 2026-08-17 · **l'objection est tombée, pas ignorée**
+
+**`chat_stream` portait un refus argumenté de diffuser les jetons du modèle.** Le §7 du plan
+l'annonçait pourtant en une phrase, sans y répondre. Les trois raisons du refus étaient
+justes, et la deuxième — *une seconde passe remplace entièrement la première* — s'était
+**aggravée** depuis le jalon 3 : le condensé porte les charges, donc une question de coaching
+réclame presque toujours une tranche, donc une seconde passe. Diffuser la première aurait
+effacé du texte souvent, pas rarement.
+
+**Ce qui a changé n'est pas l'avis, c'est le contrat.** `need` et `actions` précèdent
+désormais `reply`. Un modèle écrit son JSON de gauche à droite : quand `need` arrive avant,
+le serveur sait **au premier caractère de la réponse** si cette passe sera remplacée.
+
+| Cas | Ce qui se passe |
+|---|---|
+| `need` vide | passe finale prouvée → diffusée |
+| `need` rempli | passe remplaçable → **rien** n'est diffusé ; c'est la seconde qui s'affiche |
+| Seconde passe | finale par construction (`IA-16` plafonne à deux) → diffusée toujours |
+| Ordre non respecté | pas de preuve → pas de diffusion. **Le pire cas est le comportement d'avant.** |
+
+Le réordonnancement a un bénéfice second qui ne doit rien au flux : décider ce qu'on écrit
+avant de rédiger sert la règle « ne parle dans `reply` que des actions réellement mises ».
+
+**Les pièces.** `ReplyStream` dans `extract.py` — un lecteur **incrémental** du champ
+`reply` ; relire un objet de quinze kilo-octets à chaque jeton coûterait le carré de sa
+taille, ce qui se verrait à l'écran sur exactement les réponses longues que le lot 7 rend
+possibles. `stream_complete` dans `client.py`, `stream_json` dans `ai/service.py` avec la
+cascade, `on_delta` dans le service, `event: delta` et `event: reset` dans le routeur, puis
+`api.ts` et `Assistant.tsx`.
+
+**`event: reply` reste l'autorité.** Ce qui est diffusé est un aperçu, borné par la même
+`MAX_REPLY` que la réponse stockée — sinon l'aperçu serait raccourci sous les yeux à
+l'arrivée du texte définitif. Un client qui ignorerait les `delta` afficherait exactement ce
+qu'il affichait avant ce lot.
+
+**Deux choses trouvées en écrivant, et aucune n'était dans le plan.**
+
+**1. La doublure ne diffusait pas, et cachait donc le seul risque qui compte.** `answer()`
+rendait `{"reply", "remember"}` sans `need` — c'est-à-dire un modèle qui ne respecte pas le
+contrat. Résultat : les tests passaient au vert **sans qu'un seul octet ne soit diffusé**.
+La doublure sert désormais un vrai `text/event-stream`, commentaire de maintien et `[DONE]`
+compris, **un caractère par morceau** — les grosses tranches éviteraient toutes les coupures
+intéressantes. C'est ce changement qui a fait apparaître les 36 `delta` d'une réponse de
+37 caractères.
+
+**2. Le fil ne suivait plus le texte qui grandit.** L'effet de défilement dépendait de
+`[shown.length, inFlight]` : ni l'un ni l'autre ne bouge pendant une diffusion. Une réponse
+longue aurait grandi sous le bas de l'écran et on l'aurait regardée partir — le lot qui
+allonge les réponses est précisément celui qui rend cette dépendance nécessaire. **Aucun test
+ne l'aurait montré** : il a fallu regarder l'écran.
+
+**Mesure.** `make check` vert : **1 275 tests backend, 376 écran**. Et l'écran regardé pour
+de vrai, à 402 × 874 DPR 3, avec une doublure d'API qui diffuse — étape, texte qui s'écrit,
+bulle définitive, sans saut visible entre l'aperçu et la réponse. Neuf cas de `ReplyStream`
+en batterie, dont 200 découpages aléatoires : la propriété qui compte est que le découpage
+réseau ne change rien au texte rendu.
+
+**Ce qui n'a pas été fait, et le risque qui reste ouvert.**
+
+- **Toujours aucun appel payant.** Le risque central de ce jalon n'est donc **pas mesuré** :
+  le réordonnancement du contrat change ce que le modèle produit. Il peut rendre `need` plus
+  saillant, donc plus souvent rempli — donc **plus de secondes passes, plus de latence et
+  plus de coût**, ce qui prendrait d'une main ce que le flux donne de l'autre. Le jeu
+  d'évaluation le dira ; le repli est d'une ligne (remettre l'ordre d'origine désactive la
+  diffusion de la première passe sans rien casser).
+- **Un modèle qui omet `need` ne diffuse jamais.** Le squelette de la consigne montre
+  `"need": []`, ce qui rend l'omission peu probable, mais rien ne l'empêche. Même remède :
+  le `json_schema` du lot 5.
+- **`«  1 lignes »`** — accord au pluriel manqué sous la réponse, vu en capture. Antérieur à
+  ce lot, pas corrigé ici pour ne pas élargir le périmètre en silence.
+- **`_echoes`**, cinquième jalon d'affilée.
 
 ---
 

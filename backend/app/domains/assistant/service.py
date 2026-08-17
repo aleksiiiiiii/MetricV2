@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.core.dates import local_moment, now_local, today_local
 from app.core.exceptions import AiUnreadableError, MetricError, ValidationFailedError
-from app.domains.ai.service import AiService
+from app.domains.ai.service import AiService, DeltaReporter
 from app.domains.assistant import actions as catalogue
 from app.domains.assistant import context, conversation
 from app.domains.assistant.models import (
@@ -534,8 +534,20 @@ class AssistantService:
         adherence: AdherenceView,
         today: date | None = None,
         on_step: StepReporter | None = None,
+        on_delta: DeltaReporter | None = None,
     ) -> ChatReply:
         """Répond à une question, dans un fil.
+
+        ## `on_delta` : la réponse pendant qu'elle s'écrit
+
+        Fourni, le texte de `reply` est annoncé au fil de l'eau. **Jamais au prix d'un
+        effacement** : la première passe n'est diffusée que si le modèle a déclaré n'avoir
+        besoin de rien — le contrat place `need` avant `reply` exactement pour que ce soit
+        connu à temps. La seconde passe, finale par construction, se diffuse toujours.
+
+        Ce qui est diffusé reste un **aperçu**. L'autorité est `ChatReply.reply`, relu et
+        borné à `MAX_REPLY`, et c'est lui qui est stocké — d'où la même borne passée au
+        lecteur de flux, pour que l'aperçu ne puisse pas dépasser ce qui sera conservé.
 
         ## `on_step` : dire ce qu'on fait pendant qu'on le fait
 
@@ -590,19 +602,46 @@ class AssistantService:
                 naming=opening,
             )
 
+        async def consult(prompt: str, *, assured: bool) -> dict[str, Any]:
+            """Une passe. Diffusée si quelqu'un écoute, ordinaire sinon.
+
+            Les deux chemins portent les mêmes réglages — c'est la raison d'être de cette
+            fermeture. Un `temperature` qui ne serait retiré que d'un côté ferait répondre
+            la route diffusée autrement que l'autre, et le défaut ne se verrait qu'en
+            comparant deux copies d'écran.
+            """
+            if on_delta is None:
+                return await ai.ask_json(
+                    instruction=conversation.INSTRUCTION,
+                    prompt=prompt,
+                    max_tokens=MAX_TOKENS,
+                    # **Pas le tirage d'une extraction.** `0,1` est arrivé pour qu'une photo
+                    # d'assiette rende deux fois le même chiffre ; appliqué à une
+                    # conversation, il rend dix réponses quasi identiques à dix questions
+                    # voisines. Le champ part d'ici plutôt que de prendre une autre valeur :
+                    # sur la famille Claude 5 il est filtré de toute façon (voir
+                    # `EXTRACTION_TEMPERATURE`), et inventer un `0,7` que personne n'a mesuré
+                    # vaudrait moins que le défaut du fournisseur.
+                    temperature=None,
+                )
+            return await ai.stream_json(
+                instruction=conversation.INSTRUCTION,
+                prompt=prompt,
+                max_tokens=MAX_TOKENS,
+                temperature=None,
+                on_delta=on_delta,
+                assured=assured,
+                # L'aperçu ne peut pas dépasser ce qui sera conservé : `read_reply` borne à
+                # `MAX_REPLY`, et un texte diffusé plus long serait raccourci sous les yeux
+                # au moment où la réponse définitive arrive.
+                limit=conversation.MAX_REPLY,
+            )
+
         await _step(on_step, "je demande au modèle")
-        payload = await ai.ask_json(
-            instruction=conversation.INSTRUCTION,
-            prompt=prompt_for([]),
-            max_tokens=MAX_TOKENS,
-            # **Pas le tirage d'une extraction.** `0,1` est arrivé pour qu'une photo
-            # d'assiette rende deux fois le même chiffre ; appliqué à une conversation, il
-            # rend dix réponses quasi identiques à dix questions voisines. Le champ part
-            # d'ici plutôt que de prendre une autre valeur : sur la famille Claude 5 il est
-            # filtré de toute façon (voir `EXTRACTION_TEMPERATURE`), et inventer un `0,7`
-            # que personne n'a mesuré vaudrait moins que le défaut du fournisseur.
-            temperature=None,
-        )
+        # `assured=False` : cette passe n'est diffusable que si le modèle déclare lui-même
+        # n'avoir besoin d'aucune tranche, ce que le contrat lui fait écrire **avant** sa
+        # réponse. Voir `ReplyStream` et §7.1 du plan.
+        payload = await consult(prompt_for([]), assured=False)
 
         # ── La seconde passe, et il n'y en a jamais de troisième (`IA-16`)
         #
@@ -620,11 +659,13 @@ class AssistantService:
             # fois plus longtemps qu'une autre. La nommer, avec ce qui manquait, remplace
             # une attente inexpliquée par une attente qu'on comprend.
             await _step(on_step, f"il me manque {', '.join(need)} — je relis")
-            payload = await ai.ask_json(
-                instruction=conversation.INSTRUCTION,
-                prompt=prompt_for(await context.slices(self._store, need, today=current)),
-                max_tokens=MAX_TOKENS,
-                temperature=None,
+            # `assured=True` : il n'y a pas de troisième passe, donc celle-ci est finale
+            # quoi qu'elle réponde. C'est le plafond de `IA-16` qui rend la preuve inutile
+            # ici — et c'est aussi ce qui fait que la question la plus lente de toutes est
+            # celle qui se diffuse à coup sûr.
+            payload = await consult(
+                prompt_for(await context.slices(self._store, need, today=current)),
+                assured=True,
             )
 
         wanted = conversation.read_actions(payload)
