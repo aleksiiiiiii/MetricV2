@@ -48,6 +48,26 @@ MAX_MEMORY_LINES = 40
 #: et rien de plus ». La borne ne refuse pas la demande, elle la coupe **en le disant**.
 MAX_PERIOD_LINES = 40
 
+#: Bilans hebdomadaires servis par la tranche. Le condensé en rappelle deux ; une question
+#: sur un trimestre en demande davantage, et treize couvrent l'année sans la dépasser.
+MAX_REVIEWS = 13
+
+#: Fenêtre de la tranche d'assiduité détaillée. Un mois de dates tient en une ligne par
+#: source ; trois mois en feraient un mur de chiffres que personne ne lit, modèle compris.
+MAX_TRACKING_DAYS = 30
+
+#: Les sept sources de l'assiduité (`AGG-03`), en français. Leurs clés sont techniques et
+#: anglaises ; la consigne, elle, est en français de bout en bout.
+_SOURCES = {
+    "weight": "des pesées",
+    "measurements": "des mensurations",
+    "runs": "des courses",
+    "workouts": "des séances",
+    "meals": "des repas",
+    "hydration": "de l'hydratation",
+    "supplements": "des suppléments",
+}
+
 _WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
@@ -579,6 +599,104 @@ async def _activity_recent(store: FileStore, _today: date) -> list[str]:
     return lines or ["Activités récentes : aucune"]
 
 
+async def _trends(store: FileStore, today: date) -> list[str]:
+    """Les cinq chiffres de `AGG-04` pour chaque métrique suivie, sur trois mois.
+
+    **C'est la tranche qui débloque la comparaison** — « compare ma progression au développé
+    couché avec mon sommeil » n'avait aucune donnée pour se poser. Elle rend les *stats* et
+    non les points : quatre-vingt-dix nombres par métrique noieraient la consigne, et un
+    modèle n'en tire pas une corrélation qu'on pourrait croire. Dernier, variation, moyenne,
+    minimum, maximum situent une tendance, ce qui est la question réelle.
+
+    `SeriesStats` rend `None` partout sur une plage vide, et c'est délibéré côté service :
+    « un zéro s'afficherait comme une mesure alors qu'il n'y a rien eu à mesurer ». On dit
+    donc l'absence plutôt que d'écrire des tirets qui ressembleraient à des chiffres.
+    """
+    from app.domains.aggregates.service import METRICS, SeriesService
+
+    service = SeriesService(store)
+    lines: list[str] = []
+    # **Les métriques vides se regroupent en une ligne, elles ne s'énumèrent pas.** Sur un
+    # suivi ordinaire, onze des treize métriques n'ont rien — six mensurations que presque
+    # personne ne relève. Les annoncer une par une remplissait la tranche de « rien relevé »
+    # et noyait les deux qui parlent : c'est le volume que `IA-09` interdit, obtenu par
+    # accident plutôt que par excès de zèle.
+    muettes: list[str] = []
+    for key, metric in METRICS.items():
+        if metric.parameterised:
+            # `exercise_load` demande un exercice ; `progression_charges` le sert déjà,
+            # exercice par exercice, et le refaire ici donnerait deux chiffres pour la
+            # même chose.
+            continue
+        view = await service.series(key, today, range_key="3m")
+        stats = view.stats
+        if stats.count == 0 or stats.average is None:
+            muettes.append(view.label)
+            continue
+        variation = "" if stats.change is None else f", variation {fr(stats.change)} {view.unit}"
+        lines.append(
+            f"Tendance {view.label} sur trois mois : dernier {fr(stats.latest or 0)} {view.unit} "
+            f"({stats.latest_date:%d/%m/%Y}), moyenne {fr(stats.average)} {view.unit}, "
+            f"de {fr(stats.minimum or 0)} à {fr(stats.maximum or 0)} {view.unit}, "
+            f"{stats.count} relevé(s){variation}"
+        )
+
+    if muettes:
+        # L'absence reste dite — un coach doit savoir ce qui n'est pas suivi avant de
+        # conseiller dessus — mais en une ligne plutôt qu'en onze.
+        lines.append(f"Rien relevé sur trois mois : {', '.join(muettes)}")
+    return lines
+
+
+async def _weekly_reviews(store: FileStore, today: date) -> list[str]:
+    """Tous les bilans hebdomadaires, là où le condensé n'en rappelle que deux.
+
+    Deux suffisent à situer une tendance et c'est pourquoi le condensé s'y tient ; une
+    question sur un trimestre en demande davantage, et c'est exactement ce qu'une tranche
+    à la demande existe pour servir.
+    """
+    view = await WeeklyInsightService(store).view(today=today)
+    if not view.entries:
+        return ["Bilans hebdomadaires : aucun enregistré"]
+    return [
+        f"Bilan de la semaine du {entry.week:%d/%m/%Y} : {entry.summary}"
+        for entry in view.entries[:MAX_REVIEWS]
+    ]
+
+
+async def _tracking_days(store: FileStore, today: date) -> list[str]:
+    """Quels jours ont été relevés, source par source, sur le dernier mois.
+
+    Le condensé donne le **compteur** d'assiduité — « 12 jours d'affilée ». Il ne dit pas
+    *quoi* a été relevé ni *quand* : un mois où seule l'hydratation est notée et un mois
+    complet donnent la même série. La différence change tout ce qu'un coach en conclut.
+    """
+    from app.domains.aggregates.service import DashboardService
+
+    depuis = today - timedelta(days=MAX_TRACKING_DAYS - 1)
+    sources = await DashboardService(store).sources()
+
+    lines: list[str] = []
+    muettes: list[str] = []
+    for cle, jours in sorted(sources.items()):
+        # Les clés de `sources()` sont techniques et anglaises ; tout le reste de la
+        # consigne est en français. Un modèle qui lit « workouts » au milieu de phrases
+        # françaises le recopie tel quel dans sa réponse.
+        nom = _SOURCES.get(cle, cle)
+        recents = sorted(day for day in jours if depuis <= day <= today)
+        if not recents:
+            muettes.append(nom)
+            continue
+        lines.append(
+            f"Suivi {nom} sur {MAX_TRACKING_DAYS} jours : {len(recents)} jour(s) — "
+            + ", ".join(f"{day:%d/%m}" for day in recents)
+        )
+
+    if muettes:
+        lines.append(f"Rien relevé sur {MAX_TRACKING_DAYS} jours : {', '.join(muettes)}")
+    return lines
+
+
 #: Les tranches, par nom. **La liste des clés est ce que le modèle a le droit de demander.**
 SLICES: dict[str, Callable[[FileStore, date], Awaitable[list[str]]]] = {
     "exercices": _exercises,
@@ -590,6 +708,9 @@ SLICES: dict[str, Callable[[FileStore, date], Awaitable[list[str]]]] = {
     "supplements_du_jour": _supplements_today,
     "planning_a_venir": _plan_ahead,
     "activites_recentes": _activity_recent,
+    "tendances": _trends,
+    "bilans_hebdomadaires": _weekly_reviews,
+    "jours_suivis": _tracking_days,
 }
 
 
@@ -660,8 +781,10 @@ __all__ = [
     "MAX_MEMORY_LINES",
     "MAX_PERIOD_LINES",
     "MAX_PROGRESS",
+    "MAX_REVIEWS",
     "MAX_SERIES",
     "MAX_SESSIONS",
+    "MAX_TRACKING_DAYS",
     "RECENT_INSIGHTS",
     "SLICES",
     "build",

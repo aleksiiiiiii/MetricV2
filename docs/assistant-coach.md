@@ -1146,6 +1146,41 @@ Ce qu'aucune tranche n'atteint aujourd'hui, par ordre d'utilité :
 **Ordre d'exécution retenu** : A, puis B, puis C — chacun pris pour lui-même. A est le seul
 qui améliore la latence en plus de la couverture.
 
+### 12.C — réalisé le 2026-08-17
+
+**Trois tranches nouvelles.** `tendances` rend les cinq chiffres de `AGG-04` par métrique
+sur trois mois — c'est elle qui débloque « compare ma progression avec mon sommeil ».
+`jours_suivis` dit **quoi** a été relevé et **quand**, là où le condensé ne donne qu'un
+compteur : un mois où seule l'hydratation est notée et un mois complet rendent la même
+série, et la différence change tout ce qu'un coach en conclut. `bilans_hebdomadaires` va
+au-delà des deux que le condensé rappelle.
+
+**Les points ne sont pas servis, les stats le sont.** Quatre-vingt-dix nombres par métrique
+noieraient la consigne, et un modèle n'en tire pas une corrélation qu'on pourrait croire.
+Dernier, variation, moyenne, minimum, maximum situent une tendance — c'est la question
+réelle.
+
+**Le calendrier du mois n'a pas eu besoin d'une tranche** : `planning_a_venir@2026-07-01`
+le sert depuis 12.B, puisque le chargeur lit vingt-huit jours à partir de la date reçue.
+Un trou de la liste comblé sans une ligne de code.
+
+**Deux défauts vus en regardant le rendu, tous deux dans ce que je venais d'écrire.**
+
+**1. Onze lignes sur treize disaient « rien relevé ».** Six mensurations que presque
+personne ne suit noyaient les deux métriques qui parlent — le volume que `IA-09` interdit,
+obtenu par accident plutôt que par excès de zèle. Les métriques muettes tiennent désormais
+en une ligne, et l'absence reste dite.
+
+**2. Les sources étaient nommées en anglais** — « workouts », « meals » — au milieu d'une
+consigne française de bout en bout. Un modèle recopie ce qu'il lit.
+
+**Mesure.** `make check` vert : 1 324 tests backend, 383 écran.
+
+### Ce que le §12 laisse ouvert
+
+L'antériorité des tranches datées n'est pas bornée : une date de 2019 lit le fichier entier
+sans rien trouver. Sans conséquence à l'échelle d'un carnet personnel.
+
 ### 12.A — réalisé le 2026-08-17
 
 **Livré.** Un bloc « Aujourd'hui — … » à la fin du condensé de base : hydratation (volume,
@@ -1176,13 +1211,16 @@ Un jour vide dit **ce qui est visé** et pas seulement qu'il est vide — « auc
 cibles 150 g de protéines… ». C'est la règle de l'état vide d'un écran, appliquée au
 prompt : dire ce que coûte le prochain geste plutôt que constater l'absence.
 
-**Trouvé et non corrigé.** Deux lignes au-dessus du nouveau bloc, `goals.summary_lines`
-rend « Protéines : 0 g (moyenne des 7 derniers jours révolus) » et « Hydratation : 0 ml »
-quand rien n'a été relevé sur la fenêtre — **des zéros pour une absence**, soit exactement
-ce que le bloc « aujourd'hui » évite deux lignes plus bas. Le service sait pourtant écrire
-« jamais relevé », puisque `fixtures.VIDE` du jeu d'évaluation le montre. C'est antérieur à
-ce lot et cela touche aussi la proposition d'objectif, qui partage ces lignes — donc un
-correctif à prendre pour lui-même, pas en passant.
+**Soupçonné puis réfuté — la note qui précédait ici était fausse.** J'avais relevé que
+`goals.summary_lines` rend « Protéines : 0 g (moyenne des 7 derniers jours révolus) » quand
+rien n'a été relevé sur la fenêtre, et je l'avais nommé comme un zéro tenant lieu de mesure.
+**Ce n'en est pas un**, et `current_value` le documente explicitement : « `None` n'arrive
+que pour une mesure — un poids jamais relevé. Une cadence rend toujours un nombre. »
+
+La distinction est juste et vaut d'être retenue : *zéro séance cette semaine* est un fait
+mesuré, *aucun poids relevé* est une absence. Le premier se chiffre, le second se dit. Le
+bloc « aujourd'hui » suit la même règle sans le savoir — il dit « rien de noté » pour un
+volume d'eau, qui est bien une mesure absente et non une cadence nulle.
 
 **Mesure.** `make check` vert : 1 305 tests backend, 383 écran. Neuf cas nouveaux, dont le
 jour vide, la séance d'hier qui ne passe pas pour celle du jour, et la vérification que les

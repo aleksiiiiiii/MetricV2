@@ -29,6 +29,8 @@ from app.domains.activity.service import ExerciseService, RunService, WorkoutSer
 from app.domains.assistant import context
 from app.domains.assistant.actions import Level, catalogue
 from app.domains.assistant.conversation import Need
+from app.domains.body.schemas import WeightPayload
+from app.domains.body.service import WeightService
 from app.domains.hydration.schemas import IntakePayload
 from app.domains.hydration.service import HydrationService
 from app.domains.nutrition.service import NutritionService
@@ -492,3 +494,79 @@ async def test_une_periode_ne_peut_pas_manger_la_consigne(store: FileStore) -> N
 
     assert len(rendu.splitlines()) <= context.MAX_PERIOD_LINES + 1
     assert "non montrées" in rendu
+
+
+# ── Les trous comblés (lot 12.C) ──────────────────────
+
+
+async def test_les_tendances_situent_une_metrique_sur_trois_mois(store: FileStore) -> None:
+    """**La tranche qui débloque la comparaison.**
+
+    « Compare ma progression au développé couché avec mon sommeil » n'avait aucune donnée
+    pour se poser. Elle rend les *stats* et non les points : quatre-vingt-dix nombres par
+    métrique noieraient la consigne, et un modèle n'en tire pas une corrélation qu'on
+    pourrait croire.
+    """
+    for offset, kg in enumerate([82.0, 81.0, 80.0]):
+        await WeightService(store).create(
+            WeightPayload(date=TODAY - timedelta(days=offset * 7), weight_kg=kg)
+        )
+
+    rendu = await _rendu(store, "tendances")
+
+    assert "Tendance Poids sur trois mois" in rendu
+    assert "moyenne 81 kg" in rendu
+    assert "3 relevé(s)" in rendu
+
+
+async def test_les_metriques_muettes_tiennent_en_une_ligne(store: FileStore) -> None:
+    """Vu en regardant le rendu : onze lignes sur treize disaient « rien relevé ».
+
+    Six mensurations que presque personne ne relève noyaient les deux métriques qui
+    parlent. C'est le volume que `IA-09` interdit, obtenu par accident plutôt que par excès
+    de zèle. L'absence reste dite — un coach doit savoir ce qui n'est pas suivi — mais en
+    une ligne.
+    """
+    rendu = await _rendu(store, "tendances")
+
+    assert rendu.count("Rien relevé sur trois mois") == 1
+    assert "Masse grasse" in rendu
+
+
+async def test_les_jours_suivis_disent_quoi_et_quand_pas_seulement_combien(
+    store: FileStore,
+) -> None:
+    """Le condensé donne le **compteur** d'assiduité, pas ce qui a été relevé.
+
+    Un mois où seule l'hydratation est notée et un mois complet donnent la même série, et
+    la différence change tout ce qu'un coach en conclut.
+    """
+    await HydrationService(store).create(IntakePayload(volume_ml=500))
+
+    rendu = await _rendu(store, "jours_suivis")
+
+    assert "Suivi de l'hydratation" in rendu
+    assert f"{TODAY:%d/%m}" in rendu
+
+
+async def test_les_sources_sont_nommees_en_francais(store: FileStore) -> None:
+    """Leurs clés sont techniques et anglaises ; la consigne est française de bout en bout.
+
+    Un modèle qui lit « workouts » au milieu de phrases françaises le recopie tel quel dans
+    sa réponse.
+    """
+    rendu = await _rendu(store, "jours_suivis")
+
+    for anglais in ("workouts", "meals", "runs", "hydration", "measurements"):
+        assert anglais not in rendu
+
+
+async def test_les_bilans_hebdomadaires_vont_au_dela_des_deux_du_condense(
+    store: FileStore,
+) -> None:
+    """Deux suffisent à situer une tendance, d'où la borne du condensé ; une question sur
+    un trimestre en demande davantage, et c'est ce qu'une tranche existe pour servir."""
+    rendu = await _rendu(store, "bilans_hebdomadaires")
+
+    assert "aucun enregistré" in rendu
+    assert context.MAX_REVIEWS > context.RECENT_INSIGHTS
