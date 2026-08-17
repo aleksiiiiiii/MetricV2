@@ -60,6 +60,12 @@ class DayTotals(BaseModel):
 
     protein_g: float
     protein_target_g: float
+    #: Ce qu'il reste à prendre pour atteindre la cible, **plancher à zéro**.
+    #:
+    #: Même raison que `HydrationStats.remaining_ml` : la soustraction se fait ici, une
+    #: fois, par le service qui détient la cible — pas dans chaque écran ni dans chaque
+    #: réponse de l'assistant.
+    protein_remaining_g: float = Field(ge=0)
     #: Rapport à l'objectif, plafonné pour l'affichage.
     protein_ratio: float = Field(ge=0, le=1)
     added_sugar_g: float

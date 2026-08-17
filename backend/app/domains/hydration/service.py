@@ -69,6 +69,7 @@ class HydrationService:
             today_ml=today_ml,
             target_ml=target,
             ratio=min(1.0, today_ml / target) if target > 0 else 0.0,
+            remaining_ml=max(0, target - today_ml),
             average_7d_ml=self._average(series[-7:]),
             average_30d_ml=self._average(series),
             days_reached=sum(1 for day in series if day.reached),

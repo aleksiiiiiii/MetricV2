@@ -133,6 +133,27 @@ def memory_lines(entries: list[tuple[str, str]]) -> list[str]:
 # une tranche qu'on lui a servie. Il ne peut donc pas effacer une ligne qu'il n'a pas lue.
 
 
+#: Exercices rendus par `progression_charges`. Au-delà, la tranche pèse plus que ce qu'elle
+#: apprend — un catalogue de trente exercices noierait les trois qui progressent.
+MAX_PROGRESS = 12
+
+#: Séances détaillées par `detail_seances`, et charges rappelées par exercice. Cinq séances
+#: couvrent un mois d'entraînement à deux par semaine : de quoi voir une tendance sans
+#: renvoyer le fichier.
+MAX_SESSIONS = 5
+MAX_SERIES = 6
+
+
+def _charge(kg: float) -> str:
+    """Une charge, en français. **`0` n'est pas une absence : c'est le poids du corps.**
+
+    `ACT-07` le pose au niveau du fichier — « `weight_kg = 0` signifie poids du corps,
+    c'est une valeur légitime, pas une absence de donnée ». Rendre « 0 kg » inviterait le
+    modèle à lire une charge nulle là où il y a eu des tractions.
+    """
+    return "poids du corps" if kg == 0 else f"{fr(kg)} kg"
+
+
 async def _exercises(store: FileStore, _today: date) -> list[str]:
     from app.domains.activity.service import ExerciseService
 
@@ -145,16 +166,140 @@ async def _exercises(store: FileStore, _today: date) -> list[str]:
     ]
 
 
+async def _lift_progress(store: FileStore, _today: date) -> list[str]:
+    """Charges, écarts et records par exercice — **le trou que ce lot comble**.
+
+    Sans cette tranche, l'assistant voyait « Séance du 12/08 : muscu » et rien d'autre : il
+    pouvait constater qu'on s'était entraîné, jamais dire quoi charger la fois suivante.
+
+    **Rien n'est calculé ici.** `ActivityStats.progress()` détient la règle — la charge du
+    jour est la plus lourde de la séance et non la dernière consignée, le 1RM vient de
+    `estimate_one_rep_max`. Recalculer un écart à cet endroit serait le plus sûr moyen que
+    l'assistant annonce un chiffre que `/activite` contredit.
+    """
+    from app.domains.activity.stats import ActivityStats
+
+    rows = await ActivityStats(store).progress()
+    if not rows:
+        return ["Progression des charges : aucun exercice relevé"]
+
+    lines: list[str] = []
+    for item in rows[:MAX_PROGRESS]:
+        details: list[str] = []
+        if item.last_weight_kg is not None and item.last_date is not None:
+            details.append(f"{_charge(item.last_weight_kg)} le {item.last_date:%d/%m/%Y}")
+        if item.delta_kg is not None:
+            # Le signe porte l'information : « +2,5 » et « -2,5 » ne se coachent pas pareil.
+            details.append(f"{item.delta_kg:+g} kg depuis la fois d'avant")
+        if item.best_weight_kg is not None:
+            details.append(f"record {_charge(item.best_weight_kg)}")
+        if item.best_one_rep_max_kg is not None:
+            details.append(f"1RM estimé {fr(item.best_one_rep_max_kg)} kg")
+        if item.max_series:
+            serie = ", ".join(_charge(kg) for kg in item.max_series[-MAX_SERIES:])
+            details.append(f"charges par séance : {serie}")
+        lines.append(
+            f"« {item.name} » ({item.muscle_group}, exercise_id={item.exercise_id}) : "
+            + " — ".join(details or ["jamais chargé"])
+        )
+    return lines
+
+
+async def _session_detail(store: FileStore, _today: date) -> list[str]:
+    """Les séries des dernières séances : exercice, charge, séries, répétitions, volume.
+
+    Complémentaire de `progression_charges`, qui agrège par exercice : ici on voit ce
+    qu'une séance a réellement contenu, donc ce qui a été négligé.
+    """
+    from app.domains.activity.service import ExerciseService
+
+    rows = await ExerciseService(store).log_entries()
+    if not rows:
+        return ["Détail des séances : aucune série relevée"]
+
+    entries = [ExerciseService.entry_to_schema(row) for row in rows]
+    par_seance: dict[tuple[date, str], list[str]] = {}
+    for entry in sorted(entries, key=lambda e: (e.date, e.id)):
+        rendu = f"{entry.exercise_name} {entry.sets}×{entry.reps} à {_charge(entry.weight_kg)}"
+        # Au poids du corps, `volume_kg` vaut zéro — le domaine le calcule ainsi et il a
+        # raison, un tonnage sans charge n'existe pas. Mais écrire « volume 0 kg » dirait à
+        # un coach que la séance n'a rien produit, alors qu'elle a produit 32 répétitions.
+        # Ce qui se compte alors, ce sont les répétitions.
+        if entry.weight_kg:
+            rendu += f" (volume {fr(entry.volume_kg)} kg)"
+        else:
+            rendu += f" ({entry.sets * entry.reps} répétitions)"
+        par_seance.setdefault((entry.date, entry.workout_id), []).append(rendu)
+
+    dernieres = sorted(par_seance)[-MAX_SESSIONS:]
+    return [
+        f"Séance du {jour:%d/%m/%Y} : " + " · ".join(par_seance[(jour, workout_id)])
+        for jour, workout_id in dernieres
+    ]
+
+
 async def _meals_today(store: FileStore, today: date) -> list[str]:
+    """Les repas du jour **et leurs totaux**.
+
+    Les identifiants seuls permettaient de supprimer un repas et rien d'autre : « il me
+    reste combien de protéines ? » restait sans réponse alors que `NutritionService.totals`
+    la calcule déjà pour l'écran. C'est la moitié lecture de `meal.add`, qui était au
+    catalogue sans elle.
+    """
     from app.domains.nutrition.service import NutritionService
 
-    view = await NutritionService(store).view(today)
+    service = NutritionService(store)
+    view = await service.view(today)
+    totals = await service.totals(today)
+
+    # Le restant est **servi**, pas laissé à soustraire. Mesuré au jeu d'évaluation : sans
+    # lui, tout modèle répond « 62 g » à « il me reste combien ? » — un écart qu'aucun
+    # service n'a calculé, donc invérifiable. Le servir range la question du bon côté de
+    # l'invariant sans priver l'utilisateur de sa réponse.
+    lines = [
+        f"Nutrition du jour : {fr(totals.protein_g)} g de protéines sur "
+        f"{fr(totals.protein_target_g)} g visés, il reste "
+        f"{fr(totals.protein_remaining_g)} g à prendre, {totals.calories} kcal "
+        f"({totals.calories_known} repas sur {totals.meals} avec les calories renseignées), "
+        f"sucres ajoutés {fr(totals.added_sugar_g)} g sur un plafond de "
+        f"{fr(totals.added_sugar_max_g)} g"
+    ]
     if not view.meals:
-        return ["Repas du jour : aucun"]
-    return [
+        return [*lines, "Repas du jour : aucun"]
+    lines += [
         f"Repas {meal.meal_type} à {meal.datetime:%H:%M} (row_id={meal.id}, token={meal.token})"
         for meal in view.meals
     ]
+    return lines
+
+
+async def _hydration_today(store: FileStore, today: date) -> list[str]:
+    """Ce qui a été bu aujourd'hui.
+
+    `water.add` était au catalogue sans tranche de lecture : l'assistant savait écrire dans
+    une donnée qu'il ne pouvait pas lire, et « j'ai assez bu ? » n'avait pas de réponse
+    possible. La règle que ce lot pose — **toute action d'écriture a sa tranche de
+    lecture** — se vérifie en comparant les deux tables.
+    """
+    from app.domains.hydration.service import HydrationService
+
+    view = await HydrationService(store).view(today)
+    stats = view.stats
+    lines = [
+        f"Hydratation du jour : {stats.today_ml} ml sur une cible de {stats.target_ml} ml"
+        f" ({fr(stats.ratio * 100)} %), il reste {stats.remaining_ml} ml à boire"
+    ]
+    if stats.average_7d_ml is not None:
+        lines.append(f"Moyenne d'hydratation sur 7 jours : {stats.average_7d_ml} ml")
+    if not view.today:
+        lines.append("Prises du jour : aucune")
+        return lines
+    lines += [
+        f"Prise de {intake.volume_ml} ml à {intake.datetime:%H:%M} "
+        f"(row_id={intake.id}, token={intake.token})"
+        for intake in view.today
+    ]
+    return lines
 
 
 async def _weights_recent(store: FileStore, _today: date) -> list[str]:
@@ -200,28 +345,58 @@ async def _plan_ahead(store: FileStore, today: date) -> list[str]:
 
 
 async def _activity_recent(store: FileStore, _today: date) -> list[str]:
+    """Courses et séances récentes, **avec ce qui les distingue**.
+
+    Ne rendait que la distance et le type. Or `RunPayload` porte l'allure, la fréquence
+    cardiaque, le dénivelé et la cadence, et `WorkoutRow.rpe` est documenté comme « transmis
+    à l'IA comme signal de charge et de fatigue » — ce qu'il n'était pas. Une course de 8 km
+    à 4'30 avec 140 de moyenne et une course de 8 km à 6'00 avec 165 ne se coachent pas
+    pareil, et l'assistant lisait la même ligne pour les deux.
+    """
     from app.domains.activity.service import RunService, WorkoutService
 
     runs = [RunService.to_schema(row) for row in (await RunService(store).all())[-5:]]
     workouts = (await WorkoutService(store).all())[-5:]
 
-    lines = [
-        f"Course du {run.date:%d/%m/%Y} : {run.distance_km:g} km "
-        f"(row_id={run.id}, token={run.token})"
-        for run in runs
-    ]
-    lines += [
-        f"Séance du {row.model.date:%d/%m/%Y} : {row.model.type} "
-        f"(row_id={row.index}, token={row.token})"
-        for row in workouts
-    ]
+    lines: list[str] = []
+    for run in runs:
+        details = [f"{fr(run.distance_km)} km", f"{fr(run.duration_min)} min"]
+        # Chaque détail n'est ajouté que s'il a été relevé : une allure absente ne devient
+        # pas « 0 », elle ne s'écrit pas.
+        if run.pace_min_km is not None:
+            details.append(f"allure {fr(run.pace_min_km)} min/km")
+        if run.avg_hr is not None:
+            details.append(f"FC moyenne {run.avg_hr}")
+        if run.elevation_m is not None:
+            details.append(f"dénivelé {run.elevation_m} m")
+        if run.cadence_spm is not None:
+            details.append(f"cadence {run.cadence_spm} ppm")
+        lines.append(
+            f"Course du {run.date:%d/%m/%Y} : {', '.join(details)} "
+            f"(row_id={run.id}, token={run.token})"
+        )
+
+    for row in workouts:
+        seance = row.model
+        details = [f"{fr(seance.duration_min)} min"]
+        if seance.rpe is not None:
+            details.append(f"effort perçu {seance.rpe}/10")
+        if seance.calories is not None:
+            details.append(f"{seance.calories} kcal")
+        lines.append(
+            f"Séance du {seance.date:%d/%m/%Y} : {seance.type}, {', '.join(details)} "
+            f"(row_id={row.index}, token={row.token})"
+        )
     return lines or ["Activités récentes : aucune"]
 
 
 #: Les tranches, par nom. **La liste des clés est ce que le modèle a le droit de demander.**
 SLICES: dict[str, Callable[[FileStore, date], Awaitable[list[str]]]] = {
     "exercices": _exercises,
+    "progression_charges": _lift_progress,
+    "detail_seances": _session_detail,
     "repas_du_jour": _meals_today,
+    "hydratation_du_jour": _hydration_today,
     "pesees_recentes": _weights_recent,
     "supplements_du_jour": _supplements_today,
     "planning_a_venir": _plan_ahead,
@@ -245,4 +420,14 @@ async def slices(store: FileStore, names: list[str], *, today: date | None = Non
     return lines
 
 
-__all__ = ["MAX_MEMORY_LINES", "RECENT_INSIGHTS", "SLICES", "build", "memory_lines", "slices"]
+__all__ = [
+    "MAX_MEMORY_LINES",
+    "MAX_PROGRESS",
+    "MAX_SERIES",
+    "MAX_SESSIONS",
+    "RECENT_INSIGHTS",
+    "SLICES",
+    "build",
+    "memory_lines",
+    "slices",
+]

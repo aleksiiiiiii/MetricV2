@@ -45,6 +45,17 @@ class HydrationStats(BaseModel):
     #: Rapport au but, plafonné à 1 pour l'affichage — le dépassement reste lisible
     #: dans `today_ml`.
     ratio: float = Field(ge=0, le=1)
+    #: Ce qu'il reste à boire pour atteindre la cible, **plancher à zéro**.
+    #:
+    #: Servi et non déduit. « Il me reste combien à boire ? » est la question la plus
+    #: naturelle qui soit, et sans ce champ chacun la calcule dans son coin — l'écran en
+    #: TypeScript, l'assistant dans sa réponse. « Moyennes, écarts, ratios : le serveur
+    #: calcule » vaut pour les deux, et un écart soustrait par un modèle est le moins
+    #: auditable de tous.
+    #:
+    #: Zéro quand la cible est atteinte : le dépassement se lit dans `today_ml`, comme
+    #: pour `ratio`. Un restant négatif dirait « bois -200 ml ».
+    remaining_ml: int = Field(ge=0)
     average_7d_ml: int | None = None
     average_30d_ml: int | None = None
     #: Jours ayant atteint l'objectif sur la plage retournée.

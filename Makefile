@@ -6,7 +6,7 @@ UVICORN := backend/.venv/bin/uvicorn
 
 .DEFAULT_GOAL := help
 .PHONY: help setup setup-api setup-web console dev dev-lan dev-api dev-web preview \
-        check check-api check-web test test-api test-web fmt fmt-check build fonts \
+        check check-api check-web test test-api test-web eval fmt fmt-check build fonts \
         check-storage hash-password vapid-keys clean
 
 help: ## Affiche cette aide
@@ -69,6 +69,21 @@ test-api:
 
 test-web:
 	cd frontend && npm run test
+
+# ── Qualité des réponses (hors « check ») ──────────
+#
+# **Délibérément hors de « check ».** Ce jeu appelle un modèle payant : il coûte, il dépend
+# du réseau, et il n'est pas déterministe — trois raisons pour lesquelles il n'a rien à
+# faire dans une batterie qui doit être verte avant chaque commit. Le
+# « testpaths = ["tests"] » du pyproject le garde hors de la collecte pytest.
+#
+# Il se lance à la main, avant et après tout changement de modèle ou de consigne :
+#
+#   make eval
+#   make eval ARGS="--model anthropic/claude-opus-5 --reflexion --sortie apres.json"
+#   make eval ARGS="--comparer apres.json"
+eval: ## Joue le jeu d'évaluation de l'assistant (APPELS PAYANTS — voir docs/assistant-coach.md)
+	cd backend && .venv/bin/python -m evals.runner $(ARGS)
 
 # ── Divers ─────────────────────────────────────────
 fmt: ## Formate le code

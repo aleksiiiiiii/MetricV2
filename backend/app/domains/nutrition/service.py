@@ -81,6 +81,7 @@ class NutritionService:
         return DayTotals(
             protein_g=round(protein, 1),
             protein_target_g=protein_target,
+            protein_remaining_g=round(max(0.0, protein_target - protein), 1),
             protein_ratio=min(1.0, protein / protein_target) if protein_target else 0.0,
             added_sugar_g=round(sugar, 1),
             added_sugar_max_g=sugar_max,

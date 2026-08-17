@@ -224,6 +224,7 @@ class OpenRouterClient:
         prompt: str,
         image_url: str | None = None,
         max_tokens: int = 900,
+        extra: dict[str, Any] | None = None,
     ) -> str:
         """Interroge un modèle et rend son texte brut.
 
@@ -237,6 +238,7 @@ class OpenRouterClient:
             prompt=prompt,
             image_url=image_url,
             max_tokens=max_tokens,
+            extra=extra,
         )
 
         try:
@@ -253,8 +255,21 @@ class OpenRouterClient:
         prompt: str,
         image_url: str | None = None,
         max_tokens: int = 900,
+        extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Le corps de la requête, séparé pour être vérifiable sans réseau."""
+        """Le corps de la requête, séparé pour être vérifiable sans réseau.
+
+        `extra` est fusionné **par-dessus** le corps rendu. Il existe pour les champs qui
+        dépendent du fournisseur et non de la fonction appelante — `reasoning` chez
+        OpenRouter, par exemple, qui n'a d'équivalent ni dans l'API d'OpenAI ni dans celle
+        d'Anthropic. Aucun appel du dépôt ne s'en sert : c'est le jeu d'évaluation qui
+        compare deux réglages du même modèle sans que le client ait à connaître lequel.
+
+        Il écrase ce qu'il recouvre, délibérément — c'est ce qui permet de *retirer* un
+        champ (`{"temperature": None}` ne le retire pas, mais `extra` peut le remplacer par
+        la valeur qu'un modèle accepte). Un réglage qui deviendrait permanent n'a rien à
+        faire ici : il se nomme dans la signature, comme `max_tokens`.
+        """
         content: list[dict[str, Any]] | str = prompt
         if image_url is not None:
             content = [
@@ -262,7 +277,7 @@ class OpenRouterClient:
                 {"type": "image_url", "image_url": {"url": image_url}},
             ]
 
-        return {
+        body: dict[str, Any] = {
             "model": model,
             "messages": [
                 {"role": "system", "content": instruction},
@@ -270,6 +285,20 @@ class OpenRouterClient:
             ],
             # Une estimation doit être reproductible : la même photo ne doit pas rendre
             # 32 g de protéines puis 41 g selon l'humeur du tirage.
+            #
+            # **La garantie ne vaut que pour les modèles qui acceptent le champ.** Anthropic
+            # a retiré `temperature`, `top_p` et `top_k` de son API sur la famille Claude 5 :
+            # une requête qui les porte y est refusée en `400`. OpenRouter les filtre avant
+            # de router — mesuré le 2026-08-16 sur `claude-opus-5` et `claude-sonnet-5`, avec
+            # et sans le champ, quatre réponses normales. Le réglage est donc **sans effet**
+            # sur le modèle configuré aujourd'hui, et la reproductibilité y repose sur la
+            # consigne seule.
+            #
+            # Il reste envoyé parce qu'il sert la cascade gratuite, qui l'accepte. Mais
+            # `openrouter_base_url` est un réglage : le pointer sur l'API Anthropic ferait
+            # tomber chaque appel en `400`, que `_read` traduirait en `ModelUnusableError` —
+            # donc en descente silencieuse vers un modèle gratuit, sans rien afficher. Le
+            # jour où ce chemin s'ouvre, ce champ se conditionne au modèle.
             "temperature": 0.1,
             "max_tokens": max_tokens,
             # **Le mode JSON du fournisseur**, et il a été ajouté sur constat.
@@ -287,6 +316,7 @@ class OpenRouterClient:
             # cinq répondus, aucun refus — le sixième était au quota, pas en erreur.
             "response_format": {"type": "json_object"},
         }
+        return body | (extra or {})
 
     @staticmethod
     def _read(model: str, response: httpx2.Response) -> str:
