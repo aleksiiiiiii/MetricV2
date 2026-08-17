@@ -13,6 +13,7 @@ La séparation est volontaire et c'est elle qui garde ce module pur.
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
 from app.domains.assistant.conversation import (
@@ -176,15 +177,82 @@ def test_a_requested_slice_must_be_one_we_offered() -> None:
     """
     need = read_need({"need": ["exercises", "inventé", "meals.today"]}, available=SLICES)
 
-    assert need == ["exercises", "meals.today"]
+    assert [item.name for item in need] == ["exercises", "meals.today"]
 
 
 def test_a_single_string_is_accepted_where_a_list_was_asked() -> None:
-    assert read_need({"need": "exercises"}, available=SLICES) == ["exercises"]
+    assert [item.name for item in read_need({"need": "exercises"}, available=SLICES)] == [
+        "exercises"
+    ]
 
 
 def test_a_slice_asked_twice_is_only_read_once() -> None:
-    assert read_need({"need": ["exercises", "exercises"]}, available=SLICES) == ["exercises"]
+    need = read_need({"need": ["exercises", "exercises"]}, available=SLICES)
+
+    assert [item.name for item in need] == ["exercises"]
+
+
+# ── 7. Les tranches datées (lot 12.B) ─────────────────
+
+
+def test_a_slice_without_a_date_still_means_today() -> None:
+    """Le cas d'avant ce lot, et de très loin le plus fréquent : il ne bouge pas."""
+    need = read_need({"need": ["exercises"]}, available=SLICES)
+
+    assert need[0].day is None
+    assert need[0].week is False
+
+
+def test_a_slice_can_name_the_day_it_wants() -> None:
+    """« Et mardi dernier ? » devient une question à laquelle l'assistant peut répondre."""
+    need = read_need({"need": ["meals.today@2026-08-15"]}, available=SLICES)
+
+    assert need[0].name == "meals.today"
+    assert need[0].day == dt.date(2026, 8, 15)
+    assert need[0].week is False
+
+
+def test_a_slice_can_name_a_whole_week() -> None:
+    need = read_need({"need": ["meals.today@semaine-2026-08-12"]}, available=SLICES)
+
+    assert need[0].day == dt.date(2026, 8, 12)
+    assert need[0].week is True
+
+
+def test_the_name_is_still_checked_against_the_closed_list() -> None:
+    """**La garantie de `IA-09` ne bouge pas d'un pouce.** Seule la période est libre, et
+    elle ne désigne aucun fichier : une date n'ouvre rien que le nom n'ouvrait déjà."""
+    need = read_need({"need": ["inventé@2026-08-15", "/etc/passwd@2026-08-15"]}, available=SLICES)
+
+    assert need == []
+
+
+def test_an_unreadable_date_yields_no_slice_rather_than_today() -> None:
+    """**Rien n'est deviné, et surtout pas un repli sur aujourd'hui.**
+
+    Servir les chiffres du jour à qui a demandé le 15/08 attribuerait à cette date des
+    mesures qui n'y ont pas eu lieu. C'est une valeur inventée, en pire : elle est datée.
+    """
+    need = read_need({"need": ["meals.today@hier", "meals.today@2026-13-45"]}, available=SLICES)
+
+    assert need == []
+
+
+def test_the_same_slice_on_two_days_is_two_requests() -> None:
+    """Le dédoublonnage porte sur la demande entière, pas sur le seul nom — sinon
+    « lundi et mardi » ne rendrait que lundi."""
+    need = read_need(
+        {"need": ["meals.today@2026-08-15", "meals.today@2026-08-16"]}, available=SLICES
+    )
+
+    assert [item.day for item in need] == [dt.date(2026, 8, 15), dt.date(2026, 8, 16)]
+
+
+def test_a_dated_slice_reads_legibly_in_a_step() -> None:
+    """L'écran annonce « repas (15/08) », pas la syntaxe du contrat."""
+    need = read_need({"need": ["meals.today@2026-08-15"]}, available=SLICES)
+
+    assert need[0].label == "meals.today (15/08)"
 
 
 def test_requested_slices_are_bounded() -> None:

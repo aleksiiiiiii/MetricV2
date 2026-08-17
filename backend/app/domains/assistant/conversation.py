@@ -40,13 +40,15 @@ qu'il est bien écrit.
 from __future__ import annotations
 
 import unicodedata
-from typing import Any
+from datetime import date
+from typing import Any, NamedTuple
 
 from app.domains.assistant.models import MAX_CONTENT, MAX_NOTE, MAX_TITLE, normalise_topic
 from app.domains.assistant.schemas import (
     MAX_ACTION_NAME,
     MAX_ACTIONS,
     MAX_NEED,
+    MAX_NEED_NAME,
     MAX_PROPOSED,
     ProposedAction,
     ProposedMemory,
@@ -153,6 +155,22 @@ Règles :
 # attendant, un modèle qui ne le respecte pas coûte la diffusion de cette passe, jamais sa
 # justesse — le serveur ne diffuse que ce qu'il peut prouver final.
 
+#: La syntaxe des périodes, décrite au modèle (lot 12.B).
+#:
+#: **Sans cette description, la capacité n'existe pas.** Le code sait lire
+#: `repas_du_jour@2026-08-15` depuis ce lot ; un modèle à qui personne ne l'a dit ne
+#: l'écrira jamais. C'est le même constat qu'au lot où le catalogue d'actions a été généré
+#: depuis les schémas : une possibilité non décrite est une possibilité morte.
+#:
+#: L'exemple est donné en toutes lettres plutôt qu'en gabarit abstrait — cinq échecs
+#: d'affilée sur un `kind` décrit comme « texte » ont montré ce que coûte une description
+#: qui laisse deviner la forme.
+_PERIODS = """Par défaut une tranche porte sur aujourd'hui. Pour un autre jour, ajoute
+« @ » et la date : "repas_du_jour@2026-08-15". Pour une semaine entière, ajoute
+« @semaine- » et n'importe quelle date de cette semaine : "repas_du_jour@semaine-2026-08-12"
+— tu recevras les sept jours, un par un. Les dates s'écrivent AAAA-MM-JJ ; une date que je
+ne sais pas lire ne rend aucune tranche, elle ne retombe pas sur aujourd'hui."""
+
 #: Description de `need`. En tête parce que c'est la première décision à prendre.
 _NEED_FIELD = """- "need" : ce qui te manque pour répondre ou pour agir, à choisir dans la liste des
   tranches ci-dessus. Ne le remplis que si tu ne peux pas t'en passer. Tu ne l'obtiendras
@@ -254,6 +272,7 @@ def build_prompt(
         catalogue = (
             f"## Ce que tu peux faire dans mes données\n\n{listed}\n\n"
             f"Tranches de contexte disponibles à la demande : {available}.\n\n"
+            f"{_PERIODS}\n\n"
         )
         shape += ['"need": []', '"actions": []']
         fields += [_NEED_FIELD, _ACTIONS_FIELD]
@@ -497,12 +516,54 @@ def read_actions(payload: dict[str, Any]) -> list[ProposedAction]:
     return kept
 
 
-def read_need(payload: dict[str, Any], *, available: list[str]) -> list[str]:
+class Need(NamedTuple):
+    """Une tranche réclamée, avec la période qu'elle couvre (lot 12.B).
+
+    `day` à `None` veut dire aujourd'hui — le cas de très loin le plus fréquent, et celui
+    qui existait seul avant ce lot. `week` demande les sept jours de la semaine contenant
+    `day`, servis un par un : on ne fabrique **aucun agrégat** hebdomadaire ici, ce serait
+    un calcul, et `context.py` n'en fait pas.
+    """
+
+    name: str
+    day: date | None = None
+    week: bool = False
+
+    @property
+    def label(self) -> str:
+        """Ce que l'étape annonce à l'écran — lisible, pas la syntaxe brute."""
+        if self.day is None:
+            return self.name
+        quand = f"semaine du {self.day:%d/%m}" if self.week else f"{self.day:%d/%m}"
+        return f"{self.name} ({quand})"
+
+
+def _read_period(suffix: str) -> tuple[date, bool] | None:
+    """Analyse `2026-08-15` ou `semaine-2026-08-10`. `None` si ce n'est pas une date.
+
+    **Rien n'est deviné**, et surtout pas un repli sur aujourd'hui : servir les chiffres du
+    jour à qui a demandé le 15/08 attribuerait à cette date des mesures qui n'y ont pas eu
+    lieu. C'est une valeur inventée, en pire — elle est datée. Une période illisible ne
+    rend donc pas de tranche du tout, et le modèle peut redemander.
+    """
+    week = suffix.startswith("semaine-")
+    raw = suffix.removeprefix("semaine-")
+    try:
+        return date.fromisoformat(raw), week
+    except ValueError:
+        return None
+
+
+def read_need(payload: dict[str, Any], *, available: list[str]) -> list[Need]:
     """Extrait les tranches de contexte réclamées, **filtrées sur ce qui existe**.
 
     Le filtre est ici et non plus haut, parce qu'il est la garantie de `IA-09` : le modèle
     ne choisit pas ce qu'on lui envoie, il choisit dans ce qu'on lui a dit pouvoir
     demander. Un nom inventé ne devient pas une lecture de fichier.
+
+    **La date, elle, est libre — et c'est sans conséquence sur cette garantie.** Le nom
+    reste choisi dans la liste fermée ; seule la période varie, et elle ne désigne aucun
+    fichier. `repas_du_jour@2026-08-15` lit ce que `repas_du_jour` lit déjà, un autre jour.
     """
     raw = payload.get("need")
     if isinstance(raw, str):
@@ -511,11 +572,24 @@ def read_need(payload: dict[str, Any], *, available: list[str]) -> list[str]:
         return []
 
     allowed = set(available)
-    kept: list[str] = []
+    kept: list[Need] = []
+    seen: set[str] = set()
     for entry in raw:
-        name = _text(entry)[:MAX_ACTION_NAME]
-        if name in allowed and name not in kept:
-            kept.append(name)
+        text = _text(entry)[:MAX_NEED_NAME]
+        name, _, suffix = text.partition("@")
+        if name not in allowed or text in seen:
+            continue
+
+        if not suffix:
+            kept.append(Need(name))
+        else:
+            period = _read_period(suffix)
+            if period is None:
+                continue
+            day, week = period
+            kept.append(Need(name, day, week))
+
+        seen.add(text)
         if len(kept) >= MAX_NEED:
             break
     return kept
@@ -535,6 +609,7 @@ __all__ = [
     "INSTRUCTION",
     "MAX_REPLY",
     "MIN_NOTE",
+    "Need",
     "build_prompt",
     "read_actions",
     "read_need",

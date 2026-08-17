@@ -66,6 +66,12 @@ MAX_ACTIONS = 30
 #: dossier entier, ce que `IA-09` interdit précisément.
 MAX_NEED = 4
 
+#: Longueur d'un nom de tranche réclamée. Plus large que `MAX_ACTION_NAME` depuis que les
+#: tranches se datent : « hydratation_du_jour@semaine-2026-08-10 » dépasse quarante signes,
+#: et le tronquer produirait une date amputée — donc une tranche refusée pour une raison
+#: que personne ne comprendrait en lisant le rapport.
+MAX_NEED_NAME = 64
+
 #: Longueur d'un nom d'action et d'une tranche de contexte. Bornées avant toute
 #: comparaison : un nom de mille signes n'est pas un nom, c'est une charge utile.
 MAX_ACTION_NAME = 40

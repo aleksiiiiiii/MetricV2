@@ -735,7 +735,10 @@ class AssistantService:
             # La seconde passe est **la** raison pour laquelle une réponse peut durer trois
             # fois plus longtemps qu'une autre. La nommer, avec ce qui manquait, remplace
             # une attente inexpliquée par une attente qu'on comprend.
-            await _step(on_step, f"il me manque {', '.join(need)} — je relis")
+            # `label` et non le nom brut : « repas_du_jour (15/08) » se lit à l'écran,
+            # « repas_du_jour@2026-08-15 » est une syntaxe de contrat.
+            manquant = ", ".join(item.label for item in need)
+            await _step(on_step, f"il me manque {manquant} — je relis")
             # `assured=True` : il n'y a pas de troisième passe, donc celle-ci est finale
             # quoi qu'elle réponde. C'est le plafond de `IA-16` qui rend la preuve inutile
             # ici — et c'est aussi ce qui fait que la question la plus lente de toutes est

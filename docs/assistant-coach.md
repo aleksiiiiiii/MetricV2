@@ -1086,6 +1086,51 @@ libre. Une date illisible vaut une absence de tranche, jamais une lecture inatte
 Et une tranche datée demandée cinq fois d'affilée multiplie les lectures de stockage — le
 plafond de `MAX_NEED` s'applique déjà, il faut vérifier qu'il suffit.
 
+### 12.B — réalisé le 2026-08-17
+
+**Livré.** `repas_du_jour@2026-08-15` pour un jour, `repas_du_jour@semaine-2026-08-12` pour
+les sept jours de cette semaine. `read_need` rend désormais des `Need(name, day, week)`, et
+la syntaxe est **décrite au modèle** dans le catalogue — sans quoi la capacité existerait
+dans le code sans jamais être employée.
+
+**Le piège du lot, et il n'était pas dans le plan.** Les tranches disaient « Hydratation du
+jour », « Repas du jour », sans nommer la date. Servies pour le 15/08, elles auraient
+attribué à cette date des mesures qui n'y ont pas eu lieu — **une valeur inventée, en pire,
+puisqu'elle est datée**. Toutes les tranches nomment maintenant le jour qu'elles couvrent,
+y compris ligne par ligne : une prise d'eau disait « à 08:15 », ce qui sur sept jours
+concaténés ne désignait plus rien.
+
+**Une date illisible ne rend aucune tranche**, et ne retombe pas sur aujourd'hui. Le repli
+aurait été le défaut le plus discret possible : la réponse aurait été juste, mais sur le
+mauvais jour.
+
+**La garantie de `IA-09` ne bouge pas.** Le nom reste choisi dans la liste fermée ; seule la
+période est libre, et une date ne désigne aucun fichier. `repas_du_jour@2026-08-15` lit ce
+que `repas_du_jour` lisait déjà, un autre jour.
+
+**Aucun agrégat hebdomadaire n'est fabriqué.** Sept journées servies telles quelles. Une
+moyenne calculée dans `context.py` serait le plus sûr moyen que l'assistant annonce un
+chiffre que `/activite` contredit, et une semaine ne suspend pas cette règle.
+
+**Deux défauts vus en regardant le rendu, qu'aucun test n'aurait montrés.**
+
+**1. La moyenne glissante arrivait sept fois.** Les chargeurs ajoutent des faits qui ne
+dépendent pas du jour rendu — « Moyenne d'hydratation sur 7 jours » se répétait à
+l'identique sur chaque journée d'une semaine. Le doublon se retire dans `slices`, puisque
+aucun chargeur ne sait qu'il est déroulé.
+
+**2. Rien ne bornait ce qu'une semaine peut rendre.** Sept jours de repas détaillés
+dépassent à eux seuls tout le reste du condensé — soit exactement ce que `IA-09` interdit.
+`MAX_PERIOD_LINES` coupe à quarante lignes, **en le disant** : un contexte tronqué en
+silence ferait conclure le modèle sur une semaine dont il n'a vu que le début.
+
+**Mesure.** `make check` vert : 1 319 tests backend, 383 écran. Rendu relu à l'œil sur une
+semaine et sur un jour précis — c'est là que les deux défauts ci-dessus sont sortis.
+
+**Reste ouvert.** L'antériorité n'est pas bornée : une date de 2019 lit le fichier entier
+sans rien trouver. Sans conséquence à l'échelle d'un carnet personnel, à revoir si les
+fichiers grossissent.
+
 ### 12.C — Combler les trous du catalogue
 
 Ce qu'aucune tranche n'atteint aujourd'hui, par ordre d'utilité :

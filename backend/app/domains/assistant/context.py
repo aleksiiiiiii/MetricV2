@@ -20,8 +20,9 @@ from collections.abc import Awaitable, Callable
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, NamedTuple
 
-from app.core.dates import today_local
+from app.core.dates import today_local, week_start
 from app.domains.aggregates.service import DashboardService
+from app.domains.assistant.conversation import Need
 from app.domains.goals.progress import fr
 from app.domains.goals.service import GoalService, WeeklyInsightService
 from app.storage.files import FileStore
@@ -39,6 +40,13 @@ RECENT_INSIGHTS = 2
 #: Notes de mémoire envoyées au maximum. Le carnet part **entier** dans chaque question :
 #: c'est ce qui rend l'assistant utile au dixième tour, et ce qui impose une borne.
 MAX_MEMORY_LINES = 40
+
+#: Lignes qu'une seule tranche réclamée peut rendre, périodes déroulées comprises.
+#:
+#: Sept jours de repas détaillés dépassent à eux seuls tout le reste du condensé, et
+#: `IA-09` existe pour empêcher exactement cela — « rassembler en une trentaine de lignes,
+#: et rien de plus ». La borne ne refuse pas la demande, elle la coupe **en le disant**.
+MAX_PERIOD_LINES = 40
 
 _WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
@@ -437,7 +445,7 @@ async def _meals_today(store: FileStore, today: date) -> list[str]:
     # service n'a calculé, donc invérifiable. Le servir range la question du bon côté de
     # l'invariant sans priver l'utilisateur de sa réponse.
     lines = [
-        f"Nutrition du jour : {fr(totals.protein_g)} g de protéines sur "
+        f"Nutrition du {today:%d/%m/%Y} : {fr(totals.protein_g)} g de protéines sur "
         f"{fr(totals.protein_target_g)} g visés, il reste "
         f"{fr(totals.protein_remaining_g)} g à prendre, {totals.calories} kcal "
         f"({totals.calories_known} repas sur {totals.meals} avec les calories renseignées), "
@@ -445,9 +453,10 @@ async def _meals_today(store: FileStore, today: date) -> list[str]:
         f"{fr(totals.added_sugar_max_g)} g"
     ]
     if not view.meals:
-        return [*lines, "Repas du jour : aucun"]
+        return [*lines, f"Repas du {today:%d/%m/%Y} : aucun"]
     lines += [
-        f"Repas {meal.meal_type} à {meal.datetime:%H:%M} (row_id={meal.id}, token={meal.token})"
+        f"Repas {meal.meal_type} le {meal.datetime:%d/%m à %H:%M} "
+        f"(row_id={meal.id}, token={meal.token})"
         for meal in view.meals
     ]
     return lines
@@ -466,16 +475,16 @@ async def _hydration_today(store: FileStore, today: date) -> list[str]:
     view = await HydrationService(store).view(today)
     stats = view.stats
     lines = [
-        f"Hydratation du jour : {stats.today_ml} ml sur une cible de {stats.target_ml} ml"
+        f"Hydratation du {today:%d/%m/%Y} : {stats.today_ml} ml sur une cible de {stats.target_ml} ml"
         f" ({fr(stats.ratio * 100)} %), il reste {stats.remaining_ml} ml à boire"
     ]
     if stats.average_7d_ml is not None:
         lines.append(f"Moyenne d'hydratation sur 7 jours : {stats.average_7d_ml} ml")
     if not view.today:
-        lines.append("Prises du jour : aucune")
+        lines.append(f"Prises du {today:%d/%m/%Y} : aucune")
         return lines
     lines += [
-        f"Prise de {intake.volume_ml} ml à {intake.datetime:%H:%M} "
+        f"Prise de {intake.volume_ml} ml le {intake.datetime:%d/%m à %H:%M} "
         f"(row_id={intake.id}, token={intake.token})"
         for intake in view.today
     ]
@@ -500,9 +509,9 @@ async def _supplements_today(store: FileStore, today: date) -> list[str]:
 
     view = await SupplementService(store).checklist(today)
     if not view.items:
-        return ["Suppléments du jour : aucun au programme"]
+        return [f"Suppléments du {today:%d/%m/%Y} : aucun au programme"]
     return [
-        f"Supplément « {item.name} » à {item.time} — "
+        f"Supplément « {item.name} » le {today:%d/%m} à {item.time} — "
         f"{'déjà pris' if item.taken else 'pas encore pris'} "
         f"(schedule_id={item.schedule_id})"
         for item in view.items
@@ -584,24 +593,72 @@ SLICES: dict[str, Callable[[FileStore, date], Awaitable[list[str]]]] = {
 }
 
 
-async def slices(store: FileStore, names: list[str], *, today: date | None = None) -> list[str]:
+async def slices(store: FileStore, wanted: list[Need], *, today: date | None = None) -> list[str]:
     """Rend les tranches demandées, dans l'ordre où elles ont été nommées.
 
-    `names` est **déjà filtré** par `read_need` sur les clés de `SLICES` : cette fonction
+    `wanted` est **déjà filtré** par `read_need` sur les clés de `SLICES` : cette fonction
     n'a donc aucun nom inconnu à refuser, et c'est voulu — le filtre vit à un seul endroit.
+
+    ## Les périodes (lot 12.B)
+
+    Sans date, la tranche porte sur aujourd'hui — le cas d'avant ce lot, et de loin le plus
+    fréquent. Avec une date, elle porte sur ce jour-là ; avec une semaine, sur les **sept
+    jours** de cette semaine, servis un par un.
+
+    **Aucun agrégat hebdomadaire n'est fabriqué ici**, et ce n'est pas un raccourci : une
+    moyenne calculée à cet endroit serait le plus sûr moyen que l'assistant annonce un
+    chiffre que `/activite` contredit. C'est la règle en tête de ce module, et une semaine
+    ne la suspend pas. Sept journées servies telles quelles disent la même chose, sans que
+    personne ait à croire un calcul que nul service n'a fait.
     """
     current = today or today_local()
     lines: list[str] = []
-    for name in names:
-        loader = SLICES.get(name)
+    for need in wanted:
+        loader = SLICES.get(need.name)
         if loader is None:  # pragma: no cover - `read_need` a déjà filtré
             continue
-        lines.extend(await loader(store, current))
+
+        rendu: list[str] = []
+        vues: set[str] = set()
+        for day in _days_of(need, current):
+            for line in await loader(store, day):
+                # **Une même phrase deux fois n'apprend rien**, et sur une semaine ça se
+                # voit : les tranches ajoutent des faits qui ne dépendent pas du jour rendu
+                # — « Moyenne d'hydratation sur 7 jours » arrivait sept fois à l'identique.
+                # Le doublon se retire ici plutôt que dans chaque chargeur, parce qu'aucun
+                # d'eux ne sait qu'il est déroulé sur une semaine.
+                if line in vues:
+                    continue
+                vues.add(line)
+                rendu.append(line)
+
+        if len(rendu) > MAX_PERIOD_LINES:
+            # Une semaine reste une demande explicite, mais elle ne doit pas pouvoir manger
+            # la consigne : sept jours de repas détaillés dépassent tout le reste du
+            # condensé réuni. La coupe est **annoncée** — un contexte tronqué en silence
+            # ferait conclure le modèle sur une semaine dont il n'a vu que le début.
+            rendu = [
+                *rendu[:MAX_PERIOD_LINES],
+                f"(…) {len(rendu) - MAX_PERIOD_LINES} ligne(s) de plus non montrées pour "
+                f"« {need.label} » — demande un jour précis pour les voir.",
+            ]
+        lines.extend(rendu)
     return lines
+
+
+def _days_of(need: Need, current: date) -> list[date]:
+    """Les jours qu'une tranche réclamée couvre. Un seul, sauf pour une semaine."""
+    if need.day is None:
+        return [current]
+    if not need.week:
+        return [need.day]
+    start = week_start(need.day)
+    return [start + timedelta(days=offset) for offset in range(7)]
 
 
 __all__ = [
     "MAX_MEMORY_LINES",
+    "MAX_PERIOD_LINES",
     "MAX_PROGRESS",
     "MAX_SERIES",
     "MAX_SESSIONS",

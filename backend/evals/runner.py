@@ -142,7 +142,9 @@ async def jouer(
             reclamees = conversation.read_need(objet, available=disponibles)
             # On ne sert que ce que le cas a figé. Une tranche réclamée mais non prévue est
             # un signal en soi : le rapport la montrera dans `need`.
-            a_servir = [n for n in reclamees if n in cas.tranches]
+            # Le cas fige des tranches **par nom** : une période demandée n'y change rien,
+            # puisque les fixtures ne portent qu'un état. C'est le nom qu'on compare.
+            a_servir = [besoin.name for besoin in reclamees if besoin.name in cas.tranches]
             if not a_servir or passe == MAX_PASSES:
                 break
             for nom in a_servir:
@@ -157,7 +159,7 @@ async def jouer(
             reply=reply,
             remember=retenues,
             actions=conversation.read_actions(objet),
-            need=conversation.read_need(objet, available=disponibles),
+            need=[besoin.label for besoin in conversation.read_need(objet, available=disponibles)],
             titre=conversation.read_title(objet, fallback=cas.question[:60]),
             condense=condense,
             passes=passe,

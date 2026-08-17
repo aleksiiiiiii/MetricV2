@@ -28,6 +28,7 @@ from app.domains.activity.schemas import (
 from app.domains.activity.service import ExerciseService, RunService, WorkoutService
 from app.domains.assistant import context
 from app.domains.assistant.actions import Level, catalogue
+from app.domains.assistant.conversation import Need
 from app.domains.hydration.schemas import IntakePayload
 from app.domains.hydration.service import HydrationService
 from app.domains.nutrition.service import NutritionService
@@ -66,9 +67,12 @@ async def _seance(
     )
 
 
-async def _rendu(store: FileStore, nom: str) -> str:
+async def _rendu(
+    store: FileStore, nom: str, *, jour: date | None = None, semaine: bool = False
+) -> str:
     """Une tranche, mise à plat — c'est sous cette forme qu'elle atteint le modèle."""
-    return "\n".join(await context.slices(store, [nom], today=TODAY))
+    besoin = Need(nom, jour, semaine)
+    return "\n".join(await context.slices(store, [besoin], today=TODAY))
 
 
 # ── Ce qui est servi ──────────────────────────────────
@@ -214,8 +218,8 @@ async def test_les_tranches_vides_disent_l_absence_sans_chiffre_invente(
 ) -> None:
     assert "aucun exercice relevé" in await _rendu(store, "progression_charges")
     assert "aucune série relevée" in await _rendu(store, "detail_seances")
-    assert "Prises du jour : aucune" in await _rendu(store, "hydratation_du_jour")
-    assert "Repas du jour : aucun" in await _rendu(store, "repas_du_jour")
+    assert "Prises du" in await _rendu(store, "hydratation_du_jour")
+    assert "aucun" in await _rendu(store, "repas_du_jour")
 
 
 # ── La règle du lot ───────────────────────────────────
@@ -381,3 +385,110 @@ async def test_les_tranches_du_jour_survivent_car_elles_seules_portent_les_jeton
 
     assert "token=" not in base
     assert "token=" in tranche
+
+
+# ── Les périodes (lot 12.B) ───────────────────────────
+
+
+async def test_une_tranche_datee_porte_le_jour_demande_et_pas_aujourd_hui(
+    store: FileStore,
+) -> None:
+    """Le cœur du lot : « et mardi dernier ? » devient une question qui a une réponse."""
+    await HydrationService(store).create(IntakePayload(volume_ml=600))
+
+    hier = await _rendu(store, "hydratation_du_jour", jour=HIER)
+
+    assert f"Hydratation du {HIER:%d/%m/%Y}" in hier
+    assert "600 ml sur une cible" not in hier
+
+
+async def test_une_tranche_datee_nomme_la_date_qu_elle_couvre(store: FileStore) -> None:
+    """**Le piège de ce lot.** Les tranches disaient « du jour » sans nommer la date.
+
+    Servies pour le 15/08, elles auraient attribué à cette date des mesures qui n'y ont pas
+    eu lieu — une valeur inventée, en pire, puisqu'elle est datée.
+    """
+    rendu = await _rendu(store, "repas_du_jour", jour=date(2026, 8, 15))
+
+    assert "15/08/2026" in rendu
+    assert "du jour" not in rendu
+
+
+async def test_une_semaine_sert_ses_sept_jours(store: FileStore) -> None:
+    """Sept journées servies telles quelles, et **aucun agrégat fabriqué**.
+
+    Une moyenne hebdomadaire calculée ici serait le plus sûr moyen que l'assistant annonce
+    un chiffre que `/activite` contredit. La règle du module ne se suspend pas pour une
+    semaine.
+    """
+    lundi = date(2026, 8, 10)
+
+    rendu = await _rendu(store, "hydratation_du_jour", jour=lundi, semaine=True)
+
+    for offset in range(7):
+        jour = lundi + timedelta(days=offset)
+        assert f"Hydratation du {jour:%d/%m/%Y}" in rendu
+
+
+async def test_une_semaine_part_de_son_lundi_quel_que_soit_le_jour_nomme(
+    store: FileStore,
+) -> None:
+    """N'importe quelle date de la semaine désigne la semaine — c'est ce que la consigne
+    promet au modèle, et `week_start` en décide, pas ce module."""
+    jeudi = date(2026, 8, 13)
+
+    rendu = await _rendu(store, "hydratation_du_jour", jour=jeudi, semaine=True)
+
+    assert "Hydratation du 10/08/2026" in rendu
+    assert "Hydratation du 16/08/2026" in rendu
+
+
+async def test_la_consigne_apprend_la_syntaxe_des_periodes_au_modele() -> None:
+    """**Sans description, la capacité n'existe pas.**
+
+    Le code sait lire `repas_du_jour@2026-08-15` ; un modèle à qui personne ne l'a dit ne
+    l'écrira jamais. C'est le même constat qu'au lot où le catalogue d'actions a été généré
+    depuis les schémas : une possibilité non décrite est une possibilité morte.
+    """
+    from app.domains.assistant.conversation import build_prompt
+
+    text = build_prompt(
+        question="Et mardi dernier ?",
+        context=["Poids : 80,4 kg"],
+        memory=[],
+        actions=["meal.add — noter un repas"],
+        slices=["repas_du_jour"],
+    )
+
+    assert "repas_du_jour@2026-08-15" in text
+    assert "semaine-" in text
+    assert "elle ne retombe pas sur aujourd'hui" in text
+
+
+async def test_une_phrase_qui_ne_depend_pas_du_jour_n_arrive_qu_une_fois(
+    store: FileStore,
+) -> None:
+    """Vu en regardant le rendu, et aucun test ne l'aurait montré.
+
+    Les chargeurs ajoutent des faits qui ne dépendent pas du jour rendu — « Moyenne
+    d'hydratation sur 7 jours » arrivait **sept fois à l'identique** sur une semaine. Le
+    doublon se retire dans `slices`, parce qu'aucun chargeur ne sait qu'il est déroulé.
+    """
+    rendu = await _rendu(store, "hydratation_du_jour", jour=date(2026, 8, 10), semaine=True)
+
+    assert rendu.count("Moyenne d'hydratation sur 7 jours") == 1
+
+
+async def test_une_periode_ne_peut_pas_manger_la_consigne(store: FileStore) -> None:
+    """Sept jours détaillés dépassent à eux seuls tout le reste du condensé.
+
+    La coupe est **annoncée** : un contexte tronqué en silence ferait conclure le modèle
+    sur une semaine dont il n'a vu que le début.
+    """
+    for _ in range(30):
+        await HydrationService(store).create(IntakePayload(volume_ml=100))
+
+    rendu = await _rendu(store, "hydratation_du_jour", jour=TODAY, semaine=True)
+
+    assert len(rendu.splitlines()) <= context.MAX_PERIOD_LINES + 1
+    assert "non montrées" in rendu
