@@ -467,6 +467,25 @@ function MemorySheet({ open, onClose }: { open: boolean; onClose: () => void }) 
     },
   });
 
+  /**
+   * Marque une note comme n'étant plus vraie, ou la réactive.
+   *
+   * **Ce n'est pas une suppression, donc pas deux appuis.** Le motif « armer puis
+   * confirmer » existe parce que le projet n'a aucune annulation ; ici l'inverse est vrai
+   * — le même bouton défait ce qu'il vient de faire. Le demander confirmerait un geste
+   * réversible, et finirait par faire ignorer la confirmation là où elle compte.
+   *
+   * La date vient du serveur. Un écran ne date aucune donnée.
+   */
+  const resolve = useMutation({
+    mutationFn: (entry: MemoryEntry) =>
+      assistantApi.update(entry.id, entry.token, entry.topic, entry.note, entry.resolved === null),
+    onSuccess: invalidate,
+    onError: (caught: unknown) => {
+      notify(caught instanceof ApiError ? caught.message : 'Changement impossible.', 'recover');
+    },
+  });
+
   const entries = data?.memories ?? [];
 
   return (
@@ -489,6 +508,11 @@ function MemorySheet({ open, onClose }: { open: boolean; onClose: () => void }) 
                 <div className={styles.meta}>
                   <span>{entry.topic}</span>
                   {entry.source === 'ai' && <Badge tone="signal">retenue seule</Badge>}
+                  {/* Une note résolue reste au carnet, et le dit. La retirer perdrait ce
+                      qu'elle apprend — ce qui a déjà lâché est ce qu'un coach surveille. */}
+                  {entry.resolved !== null && (
+                    <Badge tone="load">résolu le {shortDate(`${entry.resolved}T12:00:00`)}</Badge>
+                  )}
                   {entry.created !== null && <span>{shortDate(`${entry.created}T12:00:00`)}</span>}
                 </div>
                 <span>{entry.note}</span>
@@ -508,6 +532,20 @@ function MemorySheet({ open, onClose }: { open: boolean; onClose: () => void }) 
                   }}
                 >
                   Corriger
+                </Button>
+                <Button
+                  variant="quiet"
+                  busy={resolve.isPending}
+                  aria-label={
+                    entry.resolved === null
+                      ? `Marquer résolu : ${entry.note}`
+                      : `Réactiver : ${entry.note}`
+                  }
+                  onClick={() => {
+                    resolve.mutate(entry);
+                  }}
+                >
+                  {entry.resolved === null ? 'Résolu' : 'Réactiver'}
                 </Button>
                 {/* Deux appuis pour détruire : le projet n'a pas d'annulation. */}
                 <Button

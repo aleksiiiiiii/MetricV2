@@ -11,6 +11,7 @@ qui rend un objet là où la consigne demande une liste.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from datetime import timedelta
 from typing import Any
@@ -25,7 +26,7 @@ from tests.fake_webdav import FakeWebDav
 
 ASSISTANT = "/api/assistant"
 MEMORY_FILE = "Metric/insights/memory.csv"
-MEMORY_HEADER = "id,created,topic,note,source"
+MEMORY_HEADER = "id,created,topic,note,source,resolved"
 GOALS_FILE = "Metric/goals/goals.csv"
 GOALS_HEADER = "id,created,title,metric,target,unit,deadline,rationale,source,status,outcome"
 MEALS_FILE = "Metric/nutrition/meals.csv"
@@ -128,6 +129,55 @@ def test_a_note_already_in_the_notebook_is_not_proposed_twice() -> None:
     assert any("déjà noté" in reason for reason in dropped)
 
 
+def test_a_conjugated_or_pluralised_repeat_is_caught_too() -> None:
+    """La trouvaille du jalon 2 : « dort » ≠ « dors », « séances » ≠ « séance ».
+
+    La comparaison portait sur des formes exactes, donc une conjugaison et un pluriel
+    suffisaient à faire passer une redite — et le carnet se remplissait de variantes de la
+    même phrase, ce que `IA-10` voulait précisément éviter en le laissant s'écrire seul.
+    """
+    connu = "Dors mal les nuits qui suivent une séance après 20 h"
+    variante = "Dort mal les nuits qui suivent des séances après 20 h"
+    payload = json.loads(answer(remember=[{"topic": "sommeil", "note": variante}]))
+
+    _, remember, dropped = read_reply(payload, context=CONTEXT, known=[connu])
+
+    assert remember == []
+    assert any("déjà noté" in reason for reason in dropped)
+
+
+def test_a_genuine_note_survives_the_stemming() -> None:
+    """La sur-racinisation confond « base » et « bas ». Ce qui borne le risque est le test
+    appelant : **tous** les mots porteurs doivent se retrouver dans une même ligne, donc
+    une collision isolée n'écarte rien."""
+    connu = "Dors mal les nuits qui suivent une séance après 20 h"
+    nouvelle = "Dors mal les nuits de pleine lune"
+    payload = json.loads(answer(remember=[{"topic": "sommeil", "note": nouvelle}]))
+
+    _, remember, _ = read_reply(payload, context=CONTEXT, known=[connu])
+
+    assert len(remember) == 1
+
+
+def test_a_reformulation_still_gets_through_and_that_is_known() -> None:
+    """**Ce test documente une limite, il ne célèbre pas un succès.**
+
+    « Dort mal les soirs où l'entraînement a lieu tard » ne partage avec la note connue ni
+    « nuits »/« soirs » ni « séance »/« entraînement ». Aucune racinisation ne rapproche
+    ces deux phrases — il faudrait une comparaison sémantique, donc un lot à lui seul.
+
+    Écrit pour que la limite se voie dans la batterie plutôt que dans un journal, et pour
+    qu'elle **casse** le jour où quelqu'un la corrigera sans mettre le reste à jour.
+    """
+    connu = "Dors mal les nuits qui suivent une séance après 20 h"
+    reformule = "Dort mal les soirs où l'entraînement a lieu tard"
+    payload = json.loads(answer(remember=[{"topic": "sommeil", "note": reformule}]))
+
+    _, remember, _ = read_reply(payload, context=CONTEXT, known=[connu])
+
+    assert len(remember) == 1
+
+
 def test_a_note_too_short_to_mean_anything_is_dropped() -> None:
     """« ok », « le genou » : personne ne les comprendra dans six mois, et les allonger
     reviendrait à les écrire soi-même."""
@@ -198,6 +248,39 @@ def test_the_instruction_forbids_playing_doctor() -> None:
     assert "professionnel de santé" in INSTRUCTION
 
 
+def test_the_coach_pushes_for_performance_and_says_so() -> None:
+    """Le ton est un réglage choisi, pas une couleur de fond.
+
+    Un assistant neutre qui récite des chiffres est un tableau de bord qui parle. La
+    consigne demande explicitement le palier suivant et l'encouragement, sans quoi le
+    modèle retombe sur le registre plat de l'extraction dont il vient.
+    """
+    assert "coach" in INSTRUCTION
+    assert "performance" in INSTRUCTION
+    assert "prochain palier" in INSTRUCTION
+    assert "encourageant" in INSTRUCTION
+
+
+def test_the_encouragement_has_to_be_earned_by_a_real_number() -> None:
+    """« Belle progression » sur une semaine sans séance est une valeur inventée.
+
+    C'est la même faute qu'un zéro affiché pour une mesure absente, et elle coûte plus cher
+    ici : un compliment faux décrédibilise tous les vrais.
+    """
+    assert "jamais sur une formule toute faite" in INSTRUCTION
+    assert "compliment inventé" in INSTRUCTION
+
+
+def test_pushing_stops_dead_at_a_pain() -> None:
+    """Le seul endroit où encourager fait un dégât réel, donc la seule exception écrite.
+
+    `IA-12` est rappelé **après** l'exigence de performance et la contredit nommément : un
+    modèle ne rapproche pas deux règles distantes s'il n'y est pas invité.
+    """
+    assert "s'arrête" in INSTRUCTION
+    assert "tu ne pousses à rien" in INSTRUCTION
+
+
 def test_the_prompt_carries_the_context_the_memory_and_the_question() -> None:
     prompt = build_prompt(
         question="Pourquoi je stagne ?",
@@ -244,12 +327,56 @@ def test_the_notebook_is_put_into_sentences() -> None:
     """Le carnet est **dit**, le condensé est **mesuré** : deux natures d'information, deux
     rubriques. Les mélanger inviterait le modèle à traiter une phrase de mars comme un
     chiffre d'aujourd'hui."""
-    assert context.memory_lines([("blessure", "Genou droit")]) == ["blessure — Genou droit"]
+    note = context.MemoryNote("blessure", "Genou droit", dt.date(2026, 3, 12))
+
+    assert context.memory_lines([note]) == ["blessure — Genou droit (noté le 12/03/2026)"]
+
+
+def test_a_note_carries_the_day_it_was_written() -> None:
+    """Elle était lue du fichier et jetée avant d'arriver au modèle.
+
+    Une contrainte de mars pesait donc autant qu'une note d'hier, alors que c'est l'inverse
+    qui est vrai : plus une note est vieille, plus elle a pu cesser d'être vraie sans que
+    personne ne l'ait corrigée. Un carnet sans dates ne se périme pas.
+    """
+    vieille = context.MemoryNote("contrainte", "Travail de nuit", dt.date(2026, 1, 5))
+    fraiche = context.MemoryNote("contrainte", "Horaires fixes", dt.date(2026, 8, 14))
+
+    rendu = context.memory_lines([vieille, fraiche])
+
+    assert "05/01/2026" in rendu[0]
+    assert "14/08/2026" in rendu[1]
+
+
+def test_a_note_without_a_date_is_served_without_an_invented_one() -> None:
+    """Les lignes écrites avant la colonne n'en portent pas.
+
+    Écrire « noté le » sur l'une d'elles serait une valeur inventée dans la consigne — la
+    même faute qu'un zéro affiché pour une mesure absente, et elle s'attrape moins bien
+    parce que personne ne relit un prompt.
+    """
+    assert context.memory_lines([context.MemoryNote("autre", "Sans date")]) == ["autre — Sans date"]
+
+
+def test_a_resolved_note_stays_but_says_it_is_over() -> None:
+    """Résoudre n'est pas supprimer, et les deux erreurs opposées coûtent quelque chose.
+
+    Retirer la note perdrait ce qu'elle apprend — ce qui a déjà lâché est ce qu'un coach
+    surveille. L'envoyer sans statut ferait ménager une articulation qui va bien depuis un
+    an.
+    """
+    note = context.MemoryNote(
+        "blessure", "Épaule gauche", dt.date(2026, 2, 4), dt.date(2026, 5, 30)
+    )
+
+    rendu = context.memory_lines([note])
+
+    assert rendu == ["blessure — Épaule gauche (noté le 04/02/2026, résolu le 30/05/2026)"]
 
 
 def test_the_notebook_is_bounded_before_it_is_sent() -> None:
     """Le carnet part entier dans chaque question : c'est ce qui impose la borne."""
-    entries = [("autre", f"note {index}") for index in range(80)]
+    entries = [context.MemoryNote("autre", f"note {index}") for index in range(80)]
 
     assert len(context.memory_lines(entries)) == context.MAX_MEMORY_LINES
 

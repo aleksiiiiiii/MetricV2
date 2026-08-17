@@ -32,6 +32,7 @@ const MEMORY: AssistantView = {
       topic: 'blessure',
       note: 'Genou droit sensible depuis le 12 juillet',
       source: 'ai',
+      resolved: null,
     },
   ],
   topics: ['blessure', 'sommeil', 'autre'],
@@ -58,6 +59,7 @@ const REPLY: ChatReply = {
       topic: 'sommeil',
       note: 'Je dors mal les soirs de séance tardive',
       source: 'ai',
+      resolved: null,
     },
   ],
   context: [
@@ -793,6 +795,40 @@ describe('carnet', () => {
       const call = writes().find((item) => (item.init?.method ?? '') === 'PATCH');
       expect(call?.init?.headers).toMatchObject({ 'If-Match': 'jeton-note' });
     });
+  });
+
+  it('marque une note résolue sans demander confirmation', async () => {
+    // Résoudre n'est pas détruire : le même bouton défait ce qu'il vient de faire. Armer
+    // puis confirmer un geste réversible finirait par faire ignorer la confirmation là où
+    // elle compte — sur l'oubli, juste à côté, que rien ne rattrape.
+    const user = userEvent.setup();
+    stub();
+    renderScreen();
+    await openMemory();
+
+    await user.click(
+      await screen.findByRole('button', { name: `Marquer résolu : ${storedNote()}` }),
+    );
+
+    await waitFor(() => {
+      const call = writes().find((item) => (item.init?.method ?? '') === 'PATCH');
+      expect(JSON.parse(call?.init?.body as string)).toMatchObject({ resolved: true });
+      expect(call?.init?.headers).toMatchObject({ 'If-Match': 'jeton-note' });
+    });
+  });
+
+  it('affiche une note résolue au lieu de la faire disparaître', async () => {
+    // Une blessure guérie reste une information : elle dit ce qui a déjà lâché, donc ce
+    // qu'un coach surveille. La retirer du carnet perdrait exactement cela.
+    const first = MEMORY.memories[0];
+    if (!first) throw new Error('ce carnet de référence porte une note');
+    stub({ memory: { ...MEMORY, memories: [{ ...first, resolved: '2026-08-01' }] } });
+    renderScreen();
+    await openMemory();
+
+    expect(await screen.findByText(storedNote())).toBeInTheDocument();
+    expect(screen.getByText(/résolu le/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Réactiver : ${storedNote()}` })).toBeInTheDocument();
   });
 });
 

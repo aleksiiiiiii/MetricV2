@@ -12,6 +12,10 @@ recalculer depuis les vraies données, rendrait deux exécutions incomparables.
 
 from __future__ import annotations
 
+from datetime import date
+
+from app.domains.assistant import context
+
 # ── Les condensés ─────────────────────────────────────
 #
 # Trois états, parce que les défauts ne sont pas les mêmes. Un historique fourni teste ce
@@ -73,21 +77,37 @@ MAIGRE = [
 
 # ── Les carnets ───────────────────────────────────────
 #
-# Rendus par `context.memory_lines`, donc sous la forme « sujet — note ». Le lot 3 y
-# ajoutera une date ; le jour où il le fera, ces lignes la porteront aussi.
+# Rendus par `context.memory_lines`, donc « sujet — note (noté le …) ». Le commentaire qui
+# tenait ici annonçait que le lot 3 y ajouterait une date : c'est fait, et les dates sont
+# **figées** comme le reste du condensé. Des dates relatives à aujourd'hui rendraient deux
+# exécutions incomparables, ce que tout ce paquet existe pour éviter.
 
-CARNET_VIDE: list[tuple[str, str]] = []
+CARNET_VIDE: list[context.MemoryNote] = []
 
-#: `(sujet, note)` et non des lignes toutes faites, parce que le carnet part **deux fois**
-#: dans un tour : mis en phrases pour la consigne par `context.memory_lines`, et brut vers
+#: `MemoryNote` et non des lignes toutes faites, parce que le carnet part **deux fois** dans
+#: un tour : mis en phrases pour la consigne par `context.memory_lines`, et brut vers
 #: `read_reply(known=…)` qui écarte les redites. Ne garder que les phrases perdait la
 #: seconde — l'exécuteur passait `known=None`, `_echoes` n'avait rien à comparer, et le cas
 #: `redite-carnet` a rendu ce défaut visible à la première exécution.
-CARNET_FOURNI: list[tuple[str, str]] = [
-    ("santé", "Douleur au genou droit en descente depuis mars, kiné consulté"),
-    ("sommeil", "Dors mal les nuits qui suivent une séance après 20 h"),
-    ("contrainte", "Pas de salle le mercredi, seulement course à pied"),
-    ("matériel", "Barre et disques à la maison, pas de rack"),
+#:
+#: **La dernière note est résolue, délibérément.** C'est le seul endroit du jeu qui montre
+#: au modèle une contrainte qui a cessé d'être vraie ; sans elle, rien ne dirait qu'il sait
+#: faire la différence entre une blessure d'aujourd'hui et une blessure guérie.
+CARNET_FOURNI: list[context.MemoryNote] = [
+    context.MemoryNote("santé", "Douleur au genou droit en descente depuis mars", date(2026, 3, 9)),
+    context.MemoryNote(
+        "sommeil", "Dors mal les nuits qui suivent une séance après 20 h", date(2026, 6, 21)
+    ),
+    context.MemoryNote(
+        "contrainte", "Pas de salle le mercredi, seulement course à pied", date(2026, 7, 2)
+    ),
+    context.MemoryNote("matériel", "Barre et disques à la maison, pas de rack", date(2026, 1, 15)),
+    context.MemoryNote(
+        "blessure",
+        "Épaule gauche douloureuse au développé militaire",
+        date(2026, 2, 4),
+        date(2026, 5, 30),
+    ),
 ]
 
 # ── Les tranches ──────────────────────────────────────

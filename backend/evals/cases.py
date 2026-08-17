@@ -51,7 +51,7 @@ class Cas:
     question: str
     condense: list[str]
     attendus: tuple[Verification, ...]
-    carnet: list[tuple[str, str]] = field(default_factory=list)
+    carnet: list[fixtures.MemoryNote] = field(default_factory=list)
     #: Tranches servies **si le modèle les réclame**, comme en production.
     tranches: tuple[str, ...] = ()
     #: Ce que ce cas devra rendre une fois tel lot livré. Documentaire : rien ne l'asserte.

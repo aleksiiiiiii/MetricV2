@@ -151,7 +151,7 @@ async def jouer(
         # `known` porte les notes **brutes**, comme `AssistantService.ask` : c'est ce qui
         # permet à `_echoes` d'écarter une note qui redit le carnet.
         reply, retenues, _ = conversation.read_reply(
-            objet, context=cas.condense, known=[note for _, note in cas.carnet]
+            objet, context=cas.condense, known=[entry.note for entry in cas.carnet]
         )
         resultat.reponse = Reponse(
             reply=reply,

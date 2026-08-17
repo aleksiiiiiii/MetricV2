@@ -229,6 +229,39 @@ d'un contexte stable, et il est modeste. Un écran à écrire côté front.
 n'en ont pas ; le modèle Pydantic doit lui donner un défaut, jamais refuser la ligne — la
 règle « on n'efface pas ce qu'on ne comprend pas » de `_rows` s'applique.
 
+### 3.1 Le découpage, et ce que `_echoes` ne pourra pas faire
+
+**Deux lots, parce que ce sont deux natures de données.** Le carnet est **dit** et s'écrit
+tout seul (`IA-10`) ; le profil est **saisi** et ne s'écrit jamais tout seul. Les mélanger
+dans un commit mêlerait la règle qui les sépare.
+
+| | Contenu |
+|---|---|
+| **3.a — le carnet** | `created` rendu dans la consigne · colonne `resolved` · `_echoes` |
+| **3.b — le profil** | clés dans `settings.csv` · bloc « Ce que je suis » · écran `/parametres` |
+
+**Le profil va dans `settings.csv`** et non dans un nouveau fichier : ce clé/valeur est
+dégénéré exprès — « ajouter un réglage sans migration » — et `update_keys` existe déjà pour
+les clés non typées. Un profil *est* un réglage sur soi.
+
+**Un profil vide ne se remplit pas d'un défaut.** Un poids cible non réglé retombe sur une
+valeur de repli parce qu'un objectif doit exister ; une taille non saisie n'a pas de repli
+— écrire « 175 cm » parce que c'est courant serait une valeur inventée, et le modèle en
+déduirait des charges. Une clé absente ne part **pas** dans la consigne.
+
+**`_echoes` : ce qui est réparable et ce qui ne l'est pas.** Le jalon 2 diagnostiquait une
+affaire de conjugaison et de pluriel — « dort » ≠ « dors », « séances » ≠ « séance ». **Le
+diagnostic est trop optimiste.** Sur son propre exemple, le carnet porte « Dors mal les
+nuits qui suivent une séance après 20 h » et le modèle propose « Dort mal les soirs où
+l'entraînement a lieu tard » : « nuits » / « soirs » et « séance » / « entraînement » ne sont
+pas des variantes morphologiques, ce sont d'autres mots. **Aucune racinisation ne rapproche
+ces deux phrases.**
+
+Donc : la racinisation se fait, parce qu'elle attrape les redites franches à moindre coût et
+que la docstring promet déjà ce comportement. Mais le cas qui a motivé la trouvaille reste
+ouvert, et il demande une comparaison **sémantique** — un modèle juge ou des plongements,
+c'est-à-dire un lot à lui seul. Il sera nommé comme tel plutôt qu'annoncé résolu.
+
 ---
 
 ## 4. Trois passes, et un `need` cumulatif

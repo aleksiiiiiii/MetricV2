@@ -1,6 +1,6 @@
 """Modèle CSV de la mémoire de santé (`IA-10`, `IA-11`).
 
-`insights/memory.csv` : id, created, topic, note, source
+`insights/memory.csv` : id, created, topic, note, source, resolved
 
 **Un carnet, pas une mesure.** Ce fichier appartient à la famille *planning* du §2 de
 `docs/etat-du-projet.md` : toutes ses colonnes portent un défaut, et une ligne abîmée dans
@@ -78,6 +78,20 @@ class MemoryRow(CsvModel):
     #: elle a été écrite à la main. L'origine reste lisible jusque dans le fichier, comme
     #: pour un repas ou une séance (`IMP-05`).
     source: str = "manual"
+    #: Date à laquelle la note a cessé d'être vraie. Vide tant qu'elle l'est encore.
+    #:
+    #: **Une date et non un booléen**, pour la raison qui vaut partout ici : « genou remis
+    #: le 12/05 » explique une reprise de volume en mai, « genou : réglé » n'explique rien
+    #: et se relit mal dans un tableur dans dix ans.
+    #:
+    #: **Résoudre n'est pas supprimer**, et c'est tout l'intérêt. Une blessure guérie reste
+    #: une information — elle dit ce qui a déjà lâché, donc ce qu'un coach doit surveiller.
+    #: L'effacer priverait l'assistant de ce qu'elle apprend ; la garder sans statut lui
+    #: ferait ménager un genou qui va bien depuis un an.
+    #:
+    #: Défaut vide : les lignes écrites avant cette colonne n'en ont pas, et la règle « on
+    #: n'efface pas ce qu'on ne comprend pas » de `_rows` exige qu'elles restent lisibles.
+    resolved: CsvDate = None
 
 
 # ── Les fils de discussion ────────────────────────────

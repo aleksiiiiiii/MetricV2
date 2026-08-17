@@ -109,6 +109,13 @@ export interface MemoryEntry {
   note: string;
   /** `ai` ou `manual` — d'où vient la note, pas ce qu'elle vaut. */
   source: string;
+  /**
+   * Le jour où la note a cessé d'être vraie. `null` tant qu'elle l'est encore.
+   *
+   * Une date et non un booléen : « résolu le 30/05 » situe une reprise de volume, et une
+   * blessure guérie reste une information — elle dit ce qui a déjà lâché.
+   */
+  resolved: string | null;
 }
 
 export interface AssistantView {
@@ -265,10 +272,17 @@ export const assistantApi = {
   remember: (topic: string, note: string) =>
     request<MemoryEntry>('/api/assistant/memory', { method: 'POST', body: { topic, note } }),
 
-  update: (id: number, token: string, topic: string, note: string) =>
+  /**
+   * Corrige une note, et optionnellement son statut.
+   *
+   * `resolved` omis ne touche à rien — corriger une faute de frappe ne doit pas réveiller
+   * une blessure guérie. La **date** de résolution est décidée par le serveur : un écran
+   * ne date aucune donnée.
+   */
+  update: (id: number, token: string, topic: string, note: string, resolved?: boolean) =>
     request<MemoryEntry>(`/api/assistant/memory/${String(id)}`, {
       method: 'PATCH',
-      body: { topic, note },
+      body: resolved === undefined ? { topic, note } : { topic, note, resolved },
       headers: ifMatch(token),
     }),
 

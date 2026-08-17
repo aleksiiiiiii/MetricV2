@@ -167,6 +167,7 @@ class AssistantService:
             topic=normalise_topic(model.topic),
             note=model.note,
             source=model.source or "manual",
+            resolved=model.resolved,
         )
 
     async def _rows(self, *, fresh: bool = False) -> list[Row[MemoryRow]]:
@@ -204,38 +205,59 @@ class AssistantService:
         )
         return self._to_schema(row)
 
-    async def update(self, index: int, token: str, payload: MemoryPayload) -> MemoryEntry:
+    async def update(
+        self, index: int, token: str, payload: MemoryPayload, *, today: date | None = None
+    ) -> MemoryEntry:
         """Corrige une note, sous garde anti-conflit (`STO-05`).
 
         L'identifiant et la provenance survivent à la correction : préciser « genou droit »
         ne transforme pas une note proposée par l'assistant en note écrite de toutes
         pièces. C'est la même règle qu'au L13 pour une séance déplacée, et qu'au L12 pour
         une estimation retouchée.
+
+        **`resolved` absent ne touche à rien**, et ce n'est pas une commodité : corriger
+        une faute de frappe dans « épaule gauche » ne doit pas réveiller une blessure
+        guérie il y a trois mois. Seul un `True` ou un `False` explicite change le statut,
+        et la date de résolution vient du serveur — un client ne date aucune donnée.
         """
         rows = await self._repo.read_all(fresh=True)
         if not 0 <= index < len(rows):
             raise StorageNotFoundError("Cette note n'existe pas.")
         existing = rows[index].model
 
-        row = await self._repo.replace_by_token(
-            index,
-            token,
-            existing.model_copy(
-                update={
-                    "topic": normalise_topic(payload.topic),
-                    "note": payload.note.strip(),
-                }
-            ),
-        )
+        changes: dict[str, object] = {
+            "topic": normalise_topic(payload.topic),
+            "note": payload.note.strip(),
+        }
+        if payload.resolved is True:
+            # Résoudre deux fois ne repousse pas la date : c'est le jour où ça a cessé
+            # d'être vrai qui compte, pas le jour du dernier appui sur le bouton.
+            changes["resolved"] = existing.resolved or (today or today_local())
+        elif payload.resolved is False:
+            changes["resolved"] = None
+
+        row = await self._repo.replace_by_token(index, token, existing.model_copy(update=changes))
         return self._to_schema(row)
 
     async def forget(self, index: int, token: str) -> None:
         """Retire une note, sous garde anti-conflit (`STO-05`)."""
         await self._repo.delete_by_token(index, token)
 
-    async def _known(self) -> list[tuple[str, str]]:
-        """Le carnet sous la forme que la consigne attend."""
-        return [(normalise_topic(row.model.topic), row.model.note) for row in await self._rows()]
+    async def _known(self) -> list[context.MemoryNote]:
+        """Le carnet sous la forme que la consigne attend, **dates comprises**.
+
+        Elles étaient lues du fichier et jetées ici. Une contrainte notée en mars pesait donc
+        autant qu'une note d'hier dans ce que le modèle en déduisait.
+        """
+        return [
+            context.MemoryNote(
+                topic=normalise_topic(row.model.topic),
+                note=row.model.note,
+                created=row.model.created,
+                resolved=row.model.resolved,
+            )
+            for row in await self._rows()
+        ]
 
     # ── Les fils (`IA-13`) ────────────────────────────
 
@@ -681,7 +703,9 @@ class AssistantService:
             # La relecture écarte ce que le condensé disait déjà : une note qui figerait un
             # chiffre recalculé serait fausse le mois suivant.
             context=facts,
-            known=[note for _, note in known],
+            # Les notes seules : `_echoes` compare des phrases, pas des dates. Une note
+            # résolue reste dans la comparaison — la reproposer serait encore une redite.
+            known=[entry.note for entry in known],
         )
 
         if not reply:

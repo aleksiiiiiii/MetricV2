@@ -23,7 +23,7 @@ from tests.fake_webdav import FakeWebDav
 
 ASSISTANT = "/api/assistant"
 MEMORY_FILE = "Metric/insights/memory.csv"
-MEMORY_HEADER = "id,created,topic,note,source"
+MEMORY_HEADER = "id,created,topic,note,source,resolved"
 
 TODAY = today_local()
 
@@ -59,7 +59,9 @@ def test_a_note_is_written_with_the_annex_columns(
     assert header == MEMORY_HEADER
     assert dav.files[MEMORY_FILE].content.startswith(b"\xef\xbb\xbf")
     assert "Genou droit sensible" in line
-    assert line.endswith(",manual")
+    # `resolved` vide en dernière colonne : une note naît active, et une cellule vide est
+    # ce que le fichier doit porter — pas une date d'aujourd'hui qui la dirait déjà finie.
+    assert line.endswith(",manual,")
 
 
 def test_a_note_written_by_the_assistant_reads_back_as_such(

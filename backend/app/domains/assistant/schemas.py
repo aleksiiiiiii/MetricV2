@@ -191,6 +191,13 @@ class MemoryPayload(BaseModel):
 
     topic: str = Field(default="autre", max_length=MAX_TOPIC)
     note: str = Field(min_length=1, max_length=MAX_NOTE)
+    #: Marque la note comme n'étant plus vraie, ou la réactive.
+    #:
+    #: **Trois états et non deux**, d'où le `bool | None` : absent ne touche à rien — une
+    #: correction de texte ne doit pas réveiller une blessure guérie —, `True` résout à la
+    #: date du jour, `False` réactive. Un booléen simple aurait fait de chaque correction
+    #: de faute de frappe une réactivation silencieuse.
+    resolved: bool | None = None
 
 
 class MemoryEntry(BaseModel):
@@ -204,6 +211,11 @@ class MemoryEntry(BaseModel):
     note: str
     #: `ai` ou `manual` — d'où vient la ligne, pas ce qu'elle vaut.
     source: str
+    #: Le jour où la note a cessé d'être vraie. `None` tant qu'elle l'est encore.
+    #:
+    #: Servie plutôt que réduite à un booléen : « résolu le 30/05 » situe une reprise, et
+    #: c'est ce que l'écran affiche comme ce que le modèle lit.
+    resolved: dt.date | None = None
 
 
 class AssistantView(BaseModel):

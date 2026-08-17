@@ -68,14 +68,40 @@ MAX_REPLY = MAX_CONTENT
 #: « ok », « le genou », ou un fragment que personne ne comprendra dans six mois.
 MIN_NOTE = 10
 
+#: La consigne système, envoyée à chaque appel.
+#:
+#: **Le ton est un réglage, et il a été choisi.** Un assistant neutre qui récite des
+#: chiffres est un tableau de bord qui parle ; ce qu'on veut est un coach qui pousse. D'où
+#: l'encouragement et l'exigence de performance, explicites plutôt qu'espérés.
+#:
+#: Deux bornes tiennent ce ton, et elles ne sont pas décoratives :
+#:
+#: **L'encouragement s'appuie sur un chiffre servi, jamais sur une formule.** « Belle
+#: progression » sur une semaine sans séance est une valeur inventée — la même faute qu'un
+#: zéro affiché pour une mesure absente, et elle coûte plus cher ici parce qu'un compliment
+#: faux décrédibilise les vrais.
+#:
+#: **L'exigence s'arrête net devant une douleur.** C'est le seul endroit où pousser fait un
+#: dégât réel, et c'est exactement ce que `IA-12` existe pour empêcher. La règle est donc
+#: rappelée *après* l'exigence, et elle la contredit explicitement.
 INSTRUCTION = (
-    "Tu es l'assistant d'entraînement de cette application de suivi sportif. "
+    "Tu es le coach personnel de cette application de suivi sportif — pas un tableau de "
+    "bord qui parle, un coach qui pousse. "
     "Tu réponds uniquement par un objet JSON, sans phrase avant ni après, sans bloc de "
     "code. "
+    "Tu vises la performance : tu donnes le prochain palier, tu demandes mieux que la "
+    "dernière fois, et tu dis franchement quand quelque chose stagne. "
+    "Tu es chaleureux et encourageant : tu nommes ce qui a été accompli avant de dire ce "
+    "qui vient, tu traites une séance manquée comme une information et jamais comme une "
+    "faute, et tu finis sur ce qui est à portée. "
+    "Mais ton encouragement s'appuie toujours sur un chiffre qui t'a été donné, jamais sur "
+    "une formule toute faite : félicite pour un progrès réel et cite-le, ou tais-toi. Un "
+    "compliment inventé décrédibilise tous les autres. "
     "Tu n'es pas médecin : tu ne poses aucun diagnostic, tu ne recommandes aucun "
     "traitement, tu n'interprètes aucun symptôme. Devant une douleur, une blessure ou un "
-    "trouble, tu le dis franchement et tu renvoies vers un professionnel de santé — puis "
-    "tu t'en tiens à ce que les données montrent."
+    "trouble, **tout ce qui précède sur la performance s'arrête** : tu le dis franchement, "
+    "tu renvoies vers un professionnel de santé, et tu ne pousses à rien — puis tu t'en "
+    "tiens à ce que les données montrent."
 )
 
 _TEMPLATE = """Réponds à la question en t'appuyant sur ce qui suit, et sur rien d'autre.
@@ -254,17 +280,72 @@ def _text(raw: object) -> str:
     return "" if text.lower() in {"", "null", "none", "n/a", "na", "-", "—", "--"} else text
 
 
+#: Terminaisons françaises retirées avant de comparer deux notes, des plus longues aux
+#: plus courtes — sans quoi « séances » perdrait son `s` et garderait son `e`.
+#:
+#: Une liste courte et assumée plutôt qu'un vrai raciniseur : les cas visés sont le pluriel
+#: et la conjugaison d'un verbe recopié, pas l'analyse morphologique du français. Une
+#: dépendance de racinisation coûterait un paquet de plus pour attraper les mêmes redites.
+_ENDINGS = (
+    "ements",
+    "ement",
+    "aient",
+    "ions",
+    "ants",
+    "ent",
+    "ait",
+    "ons",
+    "ers",
+    "es",
+    "s",
+    "t",
+    "e",
+)
+
+#: Longueur en deçà de laquelle on ne coupe plus. Trois lettres suffisent à distinguer deux
+#: mots ; en dessous, on rapprocherait n'importe quoi.
+_MIN_STEM = 3
+
+
+def _stem(word: str) -> str:
+    """Racine grossière d'un mot : « dors » et « dort » → « dor », « séances » → « séanc ».
+
+    **Appliquée jusqu'à point fixe, et c'est la correction qui compte.** Une passe unique
+    n'est pas idempotente : « nuits » perdrait son `s` et rendrait « nuit », que le même
+    raciniseur réduirait pourtant à « nui » s'il le rencontrait au singulier. Les deux
+    formes ne se seraient donc **pas** reconnues — soit exactement le défaut qu'on répare.
+
+    La sur-racinisation est assumée : « base » et « bas » se confondent. Le risque qu'elle
+    fait courir est borné par la nature du test appelant, qui exige que **tous** les mots
+    porteurs d'une note se retrouvent dans une même ligne. Une collision isolée ne suffit
+    donc pas à écarter une note ; il faudrait qu'elles collisionnent toutes.
+    """
+    current = word
+    while True:
+        for ending in _ENDINGS:
+            if current.endswith(ending) and len(current) - len(ending) >= _MIN_STEM:
+                current = current[: -len(ending)]
+                break
+        else:
+            return current
+
+
 def _significant(text: str) -> set[str]:
-    """Mots porteurs de sens d'une phrase, accents et ponctuation retirés.
+    """Mots porteurs de sens d'une phrase, accents, ponctuation et terminaisons retirés.
 
     Les mots courts partent avec la ponctuation : « de », « la », « par » se retrouvent
     dans n'importe quelle paire de phrases françaises et rendraient toute comparaison
     positive. Les nombres aussi — c'est le vocabulaire qui distingue « douleur au genou »
     d'une ligne de statistiques, pas les chiffres.
+
+    **La racinisation a été ajoutée sur constat.** La comparaison portait sur des formes
+    exactes : « dort » ≠ « dors », « séances » ≠ « séance ». Une conjugaison et un pluriel
+    suffisaient à faire passer une redite, et le carnet se remplissait de variantes de la
+    même phrase — ce que `IA-10` voulait précisément éviter en le laissant s'écrire seul.
     """
     folded = unicodedata.normalize("NFKD", text.lower())
     stripped = "".join(char if char.isalnum() else " " for char in folded if not _is_accent(char))
-    return {word for word in stripped.split() if len(word) >= 4 and not word.isdigit()}
+    return {_stem(word) for word in stripped.split() if len(word) >= 4 and not word.isdigit()}
 
 
 def _is_accent(char: str) -> bool:
@@ -281,6 +362,20 @@ def _echoes(note: str, lines: list[str]) -> bool:
     « douleur » et « genou » ne figurent dans aucune statistique.
 
     Une note sans aucun mot porteur est écartée aussi : elle ne dirait rien.
+
+    ## Ce que ce test **ne** sait pas faire, et il faut le savoir en le lisant
+
+    Il compare du vocabulaire, racines comprises depuis le jalon 6. Il attrape donc la
+    redite franche et sa variante conjuguée. Il ne rapproche **pas** deux phrases qui disent
+    la même chose avec d'autres mots : « Dors mal les nuits qui suivent une séance après
+    20 h » et « Dort mal les soirs où l'entraînement a lieu tard » ne partagent ni
+    « nuits »/« soirs » ni « séance »/« entraînement », et aucune racinisation ne les
+    rapprochera.
+
+    C'est le cas qui a motivé la trouvaille du jalon 2, et il reste **ouvert**. Le fermer
+    demande une comparaison sémantique — un modèle juge ou des plongements —, donc un lot à
+    lui seul. Mieux vaut un test qui dit ce qu'il couvre qu'un test dont on croit qu'il
+    couvre tout.
     """
     words = _significant(note)
     if not words:

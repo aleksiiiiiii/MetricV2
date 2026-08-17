@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from app.core.dates import today_local
 from app.domains.aggregates.service import DashboardService
@@ -41,6 +41,21 @@ RECENT_INSIGHTS = 2
 MAX_MEMORY_LINES = 40
 
 _WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
+
+
+class MemoryNote(NamedTuple):
+    """Une note du carnet, telle que la consigne a besoin de la lire.
+
+    Un tuple nommé plutôt qu'un `(sujet, note)` élargi : ce module recevait déjà une paire,
+    et lui en passer une de quatre éléments rendrait chaque appel illisible au premier coup
+    d'œil. C'est aussi ce qui a permis d'ajouter la date sans toucher aux appelants qui
+    n'en veulent pas — `read_reply` ne lit toujours que les notes.
+    """
+
+    topic: str
+    note: str
+    created: date | None = None
+    resolved: date | None = None
 
 
 async def build(
@@ -104,15 +119,45 @@ async def build(
     return lines
 
 
-def memory_lines(entries: list[tuple[str, str]]) -> list[str]:
-    """Le carnet, mis en phrases. `(sujet, note)` → « sujet — note ».
+def memory_lines(entries: list[MemoryNote]) -> list[str]:
+    """Le carnet, mis en phrases. « sujet — note (noté le 12/03/2026) ».
 
     Séparé du condensé de données, et pas seulement pour la mise en page : ce sont deux
     natures d'information. Le condensé est **mesuré** et recalculé à chaque question ; le
     carnet est **dit** et ne change que lorsqu'on le corrige. Les mélanger inviterait le
     modèle à traiter une phrase de mars comme un chiffre d'aujourd'hui.
+
+    ## La date, et pourquoi elle vaut une ligne de code
+
+    Elle était **perdue** : la colonne existait dans le fichier et n'arrivait pas au modèle.
+    Une contrainte notée en mars pesait donc autant qu'une note d'hier, alors que c'est
+    exactement l'inverse qui est vrai — plus une note est vieille, plus elle a pu cesser
+    d'être vraie sans que personne ne l'ait corrigée. Un carnet sans dates est un carnet
+    dont on ne peut rien périmer.
+
+    **Une note sans date reste servie, sans parenthèse.** Inventer « noté le » sur une ligne
+    qui n'en porte pas serait une valeur inventée dans la consigne — la même faute qu'un
+    zéro affiché pour une mesure absente, et elle s'attrape moins bien parce que personne ne
+    regarde un prompt.
+
+    ## Ce qui est résolu le reste
+
+    Une note résolue part avec sa date de résolution. Elle n'est ni retirée ni reléguée :
+    « genou droit sensible, résolu le 12/05 » dit à un coach ce qui a déjà lâché — donc quoi
+    surveiller — sans lui faire ménager une articulation qui va bien depuis un an. La
+    retirer perdrait le premier ; l'envoyer sans statut causerait le second.
     """
-    return [f"{topic} — {note}" for topic, note in entries[:MAX_MEMORY_LINES]]
+    lines: list[str] = []
+    for note in entries[:MAX_MEMORY_LINES]:
+        suffix = ""
+        if note.resolved is not None:
+            suffix = f" (noté le {note.created:%d/%m/%Y}, résolu le {note.resolved:%d/%m/%Y})"
+            if note.created is None:
+                suffix = f" (résolu le {note.resolved:%d/%m/%Y})"
+        elif note.created is not None:
+            suffix = f" (noté le {note.created:%d/%m/%Y})"
+        lines.append(f"{note.topic} — {note.note}{suffix}")
+    return lines
 
 
 # ── Les tranches demandées à la volée (`IA-16`) ───────
