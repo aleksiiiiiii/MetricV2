@@ -1011,6 +1011,140 @@ n'a de sens que tant que le champ est vide — c'est la définition d'un `placeh
 
 ---
 
+## 12. Le catalogue complet et daté
+
+**La demande, telle qu'elle a été formulée** : « donner toutes les routes possibles à l'IA
+pour avoir accès à toutes les données », les données du jour servies d'office, la
+possibilité de demander n'importe quel jour et n'importe quelle semaine, et savoir quel
+jour on est pour comprendre « demain ».
+
+**Deux points sont déjà acquis, et il faut le dire avant de coder.** Le jour *est* donné —
+`build` ouvre le condensé par « Nous sommes le lundi 17/08/2026 ». Et les tranches savent
+déjà lire une autre date : `_meals_today(store, today: date)` prend une date en paramètre,
+c'est l'appelant qui la fige à aujourd'hui. Le morceau B est donc petit.
+
+### 12.0 Pourquoi pas « toutes les routes », et ce qu'on fait à la place
+
+L'objectif — *l'assistant ne doit être aveugle sur rien* — est juste. Le mécanisme proposé
+casse quatre choses, et aucune n'est une précaution de principe :
+
+1. **`read_need` filtre sur une liste fermée de noms.** C'est la garantie de `IA-09` :
+   « le modèle choisit dans une liste, il ne nomme pas un fichier ». Des routes ouvertes la
+   suppriment — et c'est la seule chose qui empêche un nom inventé de devenir une lecture.
+2. **Les tranches portent les identifiants et les jetons.** C'est ce qui referme la boucle
+   de `STO-05` : le modèle ne peut supprimer qu'une ligne qu'on lui a servie. Une route
+   brute casse cet appariement, et rouvre la suppression à l'aveugle.
+3. **Une route rend du JSON taillé pour un écran** ; une tranche rend des phrases taillées
+   pour un modèle. Le même fait coûte trois à cinq fois plus de jetons en JSON, pour une
+   lisibilité moindre.
+4. **Plus de contexte n'est pas une meilleure réponse.** Noyer les charges de lundi sous
+   trente routes dilue l'attention sur les lignes qui comptent. C'est la raison d'être de
+   `IA-09`, écrite en tête de `context.py` : « rassembler en une trentaine de lignes tout ce
+   qui permet de répondre — et rien de plus ».
+
+**Ce qu'on fait à la place, et qui atteint le même but** : un catalogue de tranches
+**complet et daté**. Mêmes garanties, aucune nouvelle surface d'écriture, et l'assistant
+atteint tout ce qui existe.
+
+### 12.A — « Aujourd'hui » servi d'office
+
+Les chiffres du jour — eau, protéines, calories, sucres ajoutés, séance, suppléments,
+pesée — sont aujourd'hui des **tranches à la demande**. Une question aussi banale que
+« j'ai assez bu ? » coûte donc une seconde passe, c'est-à-dire **un appel modèle entier**.
+
+Ils passent dans le condensé de base, en quelques lignes compactes.
+
+**Ce que ça coûte, et pourquoi c'est un gain net.** ~100 jetons à chaque question, contre
+un appel complet économisé sur les questions les plus fréquentes. La latence baisse là où
+elle se voit le plus.
+
+**Les tranches du jour ne disparaissent pas pour autant**, et la raison est structurelle :
+le condensé porte les **chiffres**, les tranches portent les **identifiants et les jetons**.
+Supprimer le repas de midi continue d'exiger la tranche — c'est `STO-05`, et rien ne
+l'assouplit.
+
+**Ce qui peut casser.** Un jour vide doit dire « rien de noté » et **jamais un zéro** : le
+plan le signalait déjà au lot 2, et la règle vaut pour le prompt autant que pour l'écran.
+À surveiller aussi : `_echoes` écarte une note qui redit le condensé, et un condensé plus
+gros écarte donc davantage. Le risque est faible — le test exige que *tous* les mots
+porteurs se retrouvent — mais il augmente.
+
+**Et « demain » se nomme.** La date seule oblige le modèle à dériver le lendemain, ce qu'on
+lui évite partout ailleurs. Une ligne.
+
+### 12.B — Les tranches datées
+
+`need: ["repas_du_jour@2026-08-15"]`, et une forme semaine pour les cadences. Les fonctions
+de chargement prennent déjà une date ; le travail est dans `read_need` — analyser le
+suffixe, valider la date, refuser ce qui n'en est pas une — et dans la description du
+catalogue.
+
+**La garantie ne bouge pas** : le nom reste choisi dans la liste fermée, seule la date est
+libre. Une date illisible vaut une absence de tranche, jamais une lecture inattendue.
+
+**Ce qui peut casser.** Une date lointaine sur un fichier volumineux ; borner l'antériorité.
+Et une tranche datée demandée cinq fois d'affilée multiplie les lectures de stockage — le
+plafond de `MAX_NEED` s'applique déjà, il faut vérifier qu'il suffit.
+
+### 12.C — Combler les trous du catalogue
+
+Ce qu'aucune tranche n'atteint aujourd'hui, par ordre d'utilité :
+
+| Manque | Ce que ça débloque |
+|---|---|
+| Série temporelle d'une métrique (`aggregates/series`) | « compare ma progression au développé couché avec mon sommeil » — le cas qui justifie Opus 5 |
+| Assiduité détaillée (`heatmap`) | quels jours ont réellement été relevés, et non le seul compteur |
+| Bilans hebdomadaires au-delà de deux | une tendance sur un trimestre |
+| Calendrier du mois (`planning/month`) | ce qui est prévu, pas seulement les 28 jours à venir |
+| Historique de poids complet | dix pesées seulement aujourd'hui |
+
+**Ordre d'exécution retenu** : A, puis B, puis C — chacun pris pour lui-même. A est le seul
+qui améliore la latence en plus de la couverture.
+
+### 12.A — réalisé le 2026-08-17
+
+**Livré.** Un bloc « Aujourd'hui — … » à la fin du condensé de base : hydratation (volume,
+cible, restant), nutrition (protéines, restant, calories, sucres ajoutés), suppléments pris
+et restants, séance du jour avec son effort perçu, exercices avec leurs charges, course, et
+la pesée si elle a eu lieu. Et **demain est nommé** dans la ligne de date.
+
+**Le rendu, sur un jour où l'on a bu et soulevé :**
+
+```
+- Nous sommes le lundi 17/08/2026 — demain sera le mardi 18/08/2026
+  …
+- Aujourd'hui — hydratation : 1100 ml sur une cible de 2000 ml, il reste 900 ml à boire
+- Aujourd'hui — nutrition : aucun repas noté, cibles 150 g de protéines et 30 g de sucres
+  ajoutés au plus
+- Aujourd'hui — séance : muscu, 60 min, effort perçu 7/10
+- Aujourd'hui — exercices : Développé couché 3×7 à 65 kg
+```
+
+**Deux décisions valent d'être retenues.**
+
+Les séries du jour sont rendues **par le même code que `detail_seances`** —
+`ExerciseService.entry_to_schema` et `_charge`. Deux formulations de la même chose auraient
+divergé, et un coach aurait lu deux charges différentes selon la rubrique regardée.
+`_charge` porte `ACT-07` : « 0 » est le poids du corps, jamais une absence.
+
+Un jour vide dit **ce qui est visé** et pas seulement qu'il est vide — « aucun repas noté,
+cibles 150 g de protéines… ». C'est la règle de l'état vide d'un écran, appliquée au
+prompt : dire ce que coûte le prochain geste plutôt que constater l'absence.
+
+**Trouvé et non corrigé.** Deux lignes au-dessus du nouveau bloc, `goals.summary_lines`
+rend « Protéines : 0 g (moyenne des 7 derniers jours révolus) » et « Hydratation : 0 ml »
+quand rien n'a été relevé sur la fenêtre — **des zéros pour une absence**, soit exactement
+ce que le bloc « aujourd'hui » évite deux lignes plus bas. Le service sait pourtant écrire
+« jamais relevé », puisque `fixtures.VIDE` du jeu d'évaluation le montre. C'est antérieur à
+ce lot et cela touche aussi la proposition d'objectif, qui partage ces lignes — donc un
+correctif à prendre pour lui-même, pas en passant.
+
+**Mesure.** `make check` vert : 1 305 tests backend, 383 écran. Neuf cas nouveaux, dont le
+jour vide, la séance d'hier qui ne passe pas pour celle du jour, et la vérification que les
+tranches restent seules à porter les jetons.
+
+---
+
 ## Ce qui n'est pas dans ce plan
 
 Nommé plutôt que passé sous silence.

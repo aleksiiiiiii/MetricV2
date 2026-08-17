@@ -31,9 +31,14 @@ from app.domains.assistant.actions import Level, catalogue
 from app.domains.hydration.schemas import IntakePayload
 from app.domains.hydration.service import HydrationService
 from app.domains.nutrition.service import NutritionService
+from app.domains.planning.schemas import AdherenceView
 from app.storage.files import FileStore
 
 TODAY = today_local()
+
+#: Un écart plan/réalisé vide. `build` le reçoit **fourni** et ne le recalcule jamais
+#: (`PLAN-06`), donc les tests d'ici n'ont pas de planning à monter.
+_AUCUN_PLAN = AdherenceView(weeks=[], planned=0, honoured=0, rate=None)
 HIER = TODAY - timedelta(days=1)
 AVANT_HIER = TODAY - timedelta(days=2)
 
@@ -253,3 +258,126 @@ def test_une_suppression_lit_la_tranche_qui_porte_les_jetons() -> None:
     for nom, spec in catalogue().items():
         if spec.level is Level.CHANGE:
             assert LECTURE_PAR_ECRITURE[nom] in context.SLICES
+
+
+# ── Le bloc « aujourd'hui », servi d'office (lot 12.A) ──
+#
+# Il était une tranche à la demande : « j'ai assez bu ? » coûtait une seconde passe, donc
+# un appel modèle entier, sur la question la plus banale de l'application.
+
+
+async def _aujourdhui(store: FileStore) -> str:
+    return "\n".join(await context.today_lines(store, TODAY))
+
+
+async def test_un_jour_vide_ne_rend_aucun_zero_qui_passerait_pour_une_mesure(
+    store: FileStore,
+) -> None:
+    """L'invariant du dépôt, appliqué au prompt.
+
+    Un zéro affiché pour une mesure absente est ce que « aucune valeur inventée » interdit,
+    et il s'attrape **moins bien** ici qu'à l'écran : personne ne relit une consigne.
+    """
+    rendu = await _aujourdhui(store)
+
+    assert "rien de noté" in rendu
+    assert "aucun repas noté" in rendu
+    assert "0 ml sur une cible" not in rendu
+    assert "0 g de protéines sur" not in rendu
+
+
+async def test_un_jour_vide_rappelle_quand_meme_les_cibles(store: FileStore) -> None:
+    """Dire « rien de noté » sans dire ce qui est visé n'aide pas un coach à conseiller.
+
+    C'est la même règle que l'état vide d'un écran : il dit ce que coûte le prochain
+    geste, il ne se contente pas d'annoncer l'absence.
+    """
+    rendu = await _aujourdhui(store)
+
+    assert "cible" in rendu
+    assert "cibles" in rendu
+
+
+async def test_l_eau_du_jour_part_sans_qu_on_la_demande(store: FileStore) -> None:
+    await HydrationService(store).create(IntakePayload(volume_ml=600))
+
+    rendu = await _aujourdhui(store)
+
+    assert "hydratation : 600 ml" in rendu
+    assert "il reste" in rendu
+
+
+async def test_les_exercices_du_jour_partent_avec_leurs_charges(store: FileStore) -> None:
+    """« Les exos » de la demande, et rendus **exactement** comme `detail_seances` les rend.
+
+    Deux formulations pour la même chose finiraient par diverger, et un coach lirait deux
+    charges différentes selon la rubrique qu'il regarde.
+    """
+    exercise_id = await _exercice(store, "Développé couché")
+    await _seance(store, TODAY, exercise_id, charge=65, series=3, reps=7)
+
+    rendu = await _aujourdhui(store)
+
+    assert "séance : muscu" in rendu
+    assert "Développé couché 3×7 à 65 kg" in rendu
+
+
+async def test_une_seance_d_hier_ne_passe_pas_pour_celle_du_jour(store: FileStore) -> None:
+    """Sans le filtre par date, le bloc dirait « aujourd'hui » sur la séance d'avant-hier —
+    et un coach conseillerait du repos à quelqu'un qui n'a rien fait."""
+    exercise_id = await _exercice(store, "Squat", "jambes")
+    await _seance(store, HIER, exercise_id, charge=90, series=4, reps=6)
+
+    rendu = await _aujourdhui(store)
+
+    assert "Squat" not in rendu
+
+
+async def test_le_poids_du_corps_reste_le_poids_du_corps(store: FileStore) -> None:
+    """`ACT-07` : « 0 » n'est pas une charge nulle. Rendre « 0 kg » inviterait le modèle à
+    conseiller d'augmenter une charge qui n'existe pas."""
+    exercise_id = await _exercice(store, "Tractions", "dos")
+    await _seance(store, TODAY, exercise_id, charge=0, series=4, reps=8)
+
+    rendu = await _aujourdhui(store)
+
+    assert "Tractions 4×8 à poids du corps" in rendu
+    assert "0 kg" not in rendu
+
+
+async def test_le_condense_nomme_demain(store: FileStore) -> None:
+    """La date seule obligeait le modèle à dériver le lendemain.
+
+    « Je charge combien demain ? » est une des questions les plus fréquentes, et ce qui se
+    dérive se sert — c'est la règle appliquée partout ailleurs dans ce module.
+    """
+    lines = await context.build(store, adherence=_AUCUN_PLAN, today=date(2026, 8, 17))
+
+    assert "lundi 17/08/2026" in lines[0]
+    assert "demain sera le mardi 18/08/2026" in lines[0]
+
+
+async def test_les_chiffres_du_jour_sont_dans_le_condense_de_base(store: FileStore) -> None:
+    """Le cœur du lot : plus aucune seconde passe pour « j'ai assez bu ? »."""
+    await HydrationService(store).create(IntakePayload(volume_ml=750))
+
+    lines = await context.build(store, adherence=_AUCUN_PLAN, today=TODAY)
+
+    assert any("Aujourd'hui — hydratation : 750 ml" in line for line in lines)
+
+
+async def test_les_tranches_du_jour_survivent_car_elles_seules_portent_les_jetons(
+    store: FileStore,
+) -> None:
+    """Le condensé sert les **chiffres**, la tranche sert les **identifiants et jetons**.
+
+    Supprimer le repas de midi continue d'exiger la tranche — c'est `STO-05`, et le bloc
+    « aujourd'hui » ne l'assouplit pas. Deux rubriques, deux usages.
+    """
+    await HydrationService(store).create(IntakePayload(volume_ml=500))
+
+    base = await _aujourdhui(store)
+    tranche = await _rendu(store, "hydratation_du_jour")
+
+    assert "token=" not in base
+    assert "token=" in tranche

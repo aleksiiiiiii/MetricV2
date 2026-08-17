@@ -17,7 +17,7 @@ promesse vérifiable à l'écran plutôt que déclarative dans un commentaire.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import date
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, NamedTuple
 
 from app.core.dates import today_local
@@ -70,7 +70,14 @@ async def build(
     current = today or today_local()
     goals = GoalService(store)
 
-    lines: list[str] = [f"Nous sommes le {_WEEKDAYS[current.weekday()]} {current:%d/%m/%Y}"]
+    # **Demain est nommé, pas laissé à dériver.** La date seule obligeait le modèle à
+    # calculer le lendemain — et « je charge combien demain ? » est une des questions les
+    # plus fréquentes. C'est la même règle que partout : ce qui se dérive se sert.
+    tomorrow = current + timedelta(days=1)
+    lines: list[str] = [
+        f"Nous sommes le {_WEEKDAYS[current.weekday()]} {current:%d/%m/%Y} — "
+        f"demain sera le {_WEEKDAYS[tomorrow.weekday()]} {tomorrow:%d/%m/%Y}"
+    ]
 
     view = await goals.view(today=current)
     if view.active is not None:
@@ -115,6 +122,134 @@ async def build(
             for item in view.history[:3]
         )
         lines.append(f"Objectifs passés : {outcomes}")
+
+    lines.extend(await today_lines(store, current))
+
+    return lines
+
+
+async def today_lines(store: FileStore, today: date) -> list[str]:
+    """Les chiffres du jour — eau, nutrition, séance, suppléments, pesée (lot 12.A).
+
+    ## Pourquoi ils sont ici et non dans une tranche
+
+    Ils l'étaient. « J'ai assez bu ? » réclamait `hydratation_du_jour`, donc une seconde
+    passe, donc **un appel modèle entier** — sur ce qui est la question la plus banale de
+    l'application. Les servir d'office coûte une centaine de jetons et économise un appel
+    complet sur les questions les plus fréquentes : c'est un gain de latence autant que de
+    couverture, et c'est ce qui distingue ce lot des autres élargissements du condensé.
+
+    ## Ce que ces lignes ne remplacent pas
+
+    **Les tranches du jour restent**, et la raison est structurelle : ici on sert les
+    **chiffres**, là-bas les **identifiants et les jetons**. Supprimer le repas de midi
+    continue d'exiger `repas_du_jour` — c'est `STO-05`, et rien ne l'assouplit. Deux
+    rubriques, deux usages, et le modèle n'obtient pas ici de quoi écrire.
+
+    ## Aucun zéro pour une absence
+
+    Un jour sans repas rend « aucun repas noté » et non « 0 g de protéines ». Le plan le
+    signalait au lot 2 : un zéro qui passerait pour une mesure est exactement ce que
+    l'invariant interdit, et il s'applique au prompt autant qu'à l'écran — avec moins de
+    chances d'être vu, puisque personne ne relit une consigne.
+
+    Rien n'est calculé ici : chaque chiffre vient du service qui détient sa règle, comme
+    partout dans ce module.
+    """
+    from app.domains.body.service import WeightService
+    from app.domains.hydration.service import HydrationService
+    from app.domains.nutrition.service import NutritionService
+    from app.domains.supplements.service import SupplementService
+
+    lines: list[str] = []
+
+    stats = (await HydrationService(store).view(today)).stats
+    if stats.today_ml:
+        lines.append(
+            f"Aujourd'hui — hydratation : {stats.today_ml} ml sur une cible de "
+            f"{stats.target_ml} ml, il reste {stats.remaining_ml} ml à boire"
+        )
+    else:
+        lines.append(f"Aujourd'hui — hydratation : rien de noté, cible {stats.target_ml} ml")
+
+    totals = await NutritionService(store).totals(today)
+    if totals.meals:
+        lines.append(
+            f"Aujourd'hui — nutrition : {fr(totals.protein_g)} g de protéines sur "
+            f"{fr(totals.protein_target_g)} g visés (il reste "
+            f"{fr(totals.protein_remaining_g)} g), {totals.calories} kcal, sucres ajoutés "
+            f"{fr(totals.added_sugar_g)} g sur un plafond de {fr(totals.added_sugar_max_g)} g, "
+            f"{totals.meals} repas noté(s)"
+        )
+    else:
+        lines.append(
+            f"Aujourd'hui — nutrition : aucun repas noté, cibles {fr(totals.protein_target_g)} g "
+            f"de protéines et {fr(totals.added_sugar_max_g)} g de sucres ajoutés au plus"
+        )
+
+    checklist = await SupplementService(store).checklist(today)
+    if checklist.items:
+        taken = [item.name for item in checklist.items if item.taken]
+        left = [item.name for item in checklist.items if not item.taken]
+        lines.append(
+            f"Aujourd'hui — suppléments : {', '.join(taken) or 'aucun'} pris, "
+            f"{', '.join(left) or 'aucun'} restant(s)"
+        )
+
+    lines.extend(await _training_today(store, today))
+
+    weighed = await WeightService(store).view(limit=1, offset=0)
+    first = weighed.entries[0] if weighed.entries else None
+    if first is not None and first.date == today:
+        lines.append(f"Aujourd'hui — pesée : {first.weight_kg:g} kg")
+
+    return lines
+
+
+async def _training_today(store: FileStore, today: date) -> list[str]:
+    """Ce qui a été fait aujourd'hui — séances, courses, et les charges soulevées.
+
+    Séparé pour une raison pratique : c'est la seule partie du bloc qui lit trois fichiers,
+    et la seule qui rende plusieurs lignes. Une séance du jour porte ses exercices, parce
+    que c'est la question suivante — « j'ai fait combien au développé ? » ne doit pas
+    coûter une seconde passe le jour même.
+    """
+    from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+
+    lines: list[str] = []
+
+    for row in await WorkoutService(store).all():
+        seance = row.model
+        if seance.date != today:
+            continue
+        details = [f"{fr(seance.duration_min)} min"]
+        if seance.rpe is not None:
+            details.append(f"effort perçu {seance.rpe}/10")
+        lines.append(f"Aujourd'hui — séance : {seance.type}, {', '.join(details)}")
+
+    # Les séries du jour, rendues **exactement** comme `detail_seances` les rend : deux
+    # formulations pour la même chose finiraient par diverger, et un coach lirait deux
+    # charges différentes selon la rubrique qu'il regarde. `_charge` porte `ACT-07` — « 0 »
+    # est le poids du corps, jamais une absence.
+    entries = [
+        ExerciseService.entry_to_schema(row) for row in await ExerciseService(store).log_entries()
+    ]
+    du_jour = [entry for entry in entries if entry.date == today]
+    if du_jour:
+        rendu = " · ".join(
+            f"{entry.exercise_name} {entry.sets}×{entry.reps} à {_charge(entry.weight_kg)}"
+            for entry in sorted(du_jour, key=lambda e: e.id)
+        )
+        lines.append(f"Aujourd'hui — exercices : {rendu}")
+
+    for sortie in await RunService(store).all():
+        run = RunService.to_schema(sortie)
+        if run.date != today:
+            continue
+        details = [f"{fr(run.distance_km)} km", f"{fr(run.duration_min)} min"]
+        if run.pace_min_km is not None:
+            details.append(f"allure {fr(run.pace_min_km)} min/km")
+        lines.append(f"Aujourd'hui — course : {', '.join(details)}")
 
     return lines
 
