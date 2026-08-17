@@ -553,7 +553,7 @@ L'ordre n'est pas celui des numéros. Il suit les dépendances et le rapport bé
 | 1 | ~~**§0.2 — le défaut `temperature`**~~ | ✅ **Fait le 2026-08-16.** Le défaut n'existe pas ; voir §11. |
 | 2 | ~~**§10 — le jeu d'évaluation**~~ | ✅ **Fait le 2026-08-16.** 25 cas, `make eval`, mesure d'origine posée ; voir §11. |
 | 3 | **§0.1 — passer à Opus 5** | Une ligne de `.env`, plus `MAX_TOKENS` par prudence. Le jeu dit maintenant ce que ça change. |
-| 4 | **§1 + §2 — le contexte** | ✅ **Fait le 2026-08-17.** Les tranches de coaching sont servies ; voir §11. §3 (le profil) reste à faire. |
+| 4 | **§1 + §2 + §3 — le contexte** | ✅ **Fait le 2026-08-17.** Tranches de coaching, carnet daté, profil ; voir les jalons 3 et 6 du §11. |
 | 5 | **§7 — les réglages hérités** | ✅ **Fait le 2026-08-17**, streaming compris (§7.1). Voir les jalons 4 et 5 du §11. |
 | 6 | **§9 — le rebouclage sur échec** | Petit, isolé, corrige un mensonge visible. |
 | 7 | **§4 — trois passes** | Utile seulement une fois que les tranches du lot 4 existent. |
@@ -945,6 +945,69 @@ réseau ne change rien au texte rendu.
 - **`«  1 lignes »`** — accord au pluriel manqué sous la réponse, vu en capture. Antérieur à
   ce lot, pas corrigé ici pour ne pas élargir le périmètre en silence.
 - **`_echoes`**, cinquième jalon d'affilée.
+
+### Jalon 6 — §3, la mémoire du coach · 2026-08-17 · **il sait enfin qui tu es**
+
+Trois jalons de contexte avaient appris à l'assistant ce que disent les chiffres. Il ne
+savait toujours rien de **toi**. Deux commits, parce que ce sont deux natures de données :
+le carnet est **dit** et s'écrit tout seul (`IA-10`), le profil est **saisi** et ne s'écrit
+jamais tout seul.
+
+**Le carnet** (`f581536`). La date était lue du fichier et jetée avant le modèle — une
+contrainte de mars pesait autant qu'une note d'hier, alors que c'est l'inverse qui est vrai.
+Une colonne `resolved`, portant une **date** et non un booléen : « épaule gauche, résolu le
+30/05 » situe une reprise de volume. Le geste n'est pas armé, contrairement à une
+suppression — le même bouton défait ce qu'il vient de faire, et confirmer un geste
+réversible finit par faire ignorer la confirmation là où elle compte.
+
+**Le profil** (ce commit). Cinq clés dans `settings.csv` — taille, année de naissance,
+jours d'entraînement, matériel, préférences —, un bloc « Ce que je suis » en tête de la
+consigne, et une section dans `/reglages`. `update_keys` existait déjà pour les clés que
+l'API ne type pas ; le domaine Notifications s'en sert pour ses créneaux.
+
+**Ce qui distingue le profil d'un objectif, et qui a décidé de trois détails.** Un poids
+cible non réglé retombe sur 70 kg parce qu'un objectif doit exister pour qu'un écran ait
+quelque chose à montrer. Une taille non saisie n'a **pas** de repli : « 175 cm » parce que
+c'est courant serait une valeur inventée, et le modèle en déduirait des charges. D'où trois
+conséquences — aucune clé absente ne part dans la consigne, le bloc entier disparaît quand
+rien n'est saisi, et l'écriture est un `PUT` et non un `PATCH` pour que vider un champ reste
+possible.
+
+**Le ton de la consigne système a changé**, sur demande en cours de lot : l'assistant était
+neutre, il est maintenant un coach qui pousse. Deux bornes le tiennent — l'encouragement
+s'appuie sur un chiffre servi et jamais sur une formule, et l'exigence s'arrête net devant
+une douleur, `IA-12` étant rappelé après elle et la contredisant nommément.
+
+**Trois choses trouvées en écrivant.**
+
+**1. Le diagnostic du jalon 2 sur `_echoes` était trop optimiste.** Il attribuait la redite
+à la conjugaison et au pluriel. La racinisation les attrape désormais — appliquée **jusqu'à
+point fixe**, une passe unique n'étant pas idempotente : « nuits » rendrait « nuit » que le
+même raciniseur réduirait pourtant à « nui ». Mais sur l'exemple qui a motivé la trouvaille,
+« nuits »/« soirs » et « séance »/« entraînement » sont d'autres mots, et **aucune
+racinisation ne les rapprochera**. Le cas reste ouvert ; un test le dit dans la batterie.
+
+**2. Deux boutons « Enregistrer » sur le même écran.** Trouvé par un test qui a cessé de
+savoir lequel viser — mais c'est d'abord un défaut d'accessibilité : deux noms identiques ne
+se distinguent pas à la synthèse vocale. Nommé « Enregistrer le profil », comme
+« Enregistrer les rappels » le faisait déjà juste au-dessous.
+
+**3. L'indice répétait la valeur.** Le champ affichait « lundi, mercredi, samedi » et
+l'indice, dessous, « lundi, mercredi, samedi ». Un `hint` s'affiche **toujours** ; un exemple
+n'a de sens que tant que le champ est vide — c'est la définition d'un `placeholder`.
+**Aucun test ne l'aurait montré**, et il a fallu regarder la capture.
+
+**Mesure.** `make check` vert : **1 296 tests backend, 383 écran**. Section regardée à
+**402, 390 et 360 px** : aucune cible sous 44 px, aucun débordement horizontal, et la carte
+« Ce qui part à l'assistant » montre les lignes exactes envoyées au modèle.
+
+**Ce qui reste ouvert.**
+
+- **Toujours aucun appel payant** — le réordonnancement du contrat (jalon 5) reste non
+  mesuré, et le profil ajoute désormais 100 à 200 jetons à chaque question.
+- **`_echoes` sémantique**, nommé ci-dessus. Cinquième jalon.
+- **Le carnet n'est toujours pas hiérarchisé.** Il est daté, ce qui permettrait de le
+  trier ; il part encore entier, plafonné à 40 notes.
 
 ---
 

@@ -16,6 +16,7 @@ import { CROSS_CUTTING, keys } from '@/lib/query';
 import { useTheme, type ThemeMode } from '@/lib/theme';
 import { useToast } from '@/lib/toast';
 
+import { Profile } from './settings/Profile';
 import { Reminders } from './settings/Reminders';
 import { Tracks } from './settings/Tracks';
 
@@ -348,6 +349,8 @@ export function Settings() {
       </form>
 
       <Tracks />
+
+      <Profile />
 
       <Reminders />
 

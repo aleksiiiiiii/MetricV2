@@ -133,7 +133,7 @@ export function onSessionExpired(listener: ExpiryListener): () => void {
 // ── Requête ───────────────────────────────────────────
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
   /** Requête de connexion : un `401` y est un refus d'identifiants, pas une expiration. */

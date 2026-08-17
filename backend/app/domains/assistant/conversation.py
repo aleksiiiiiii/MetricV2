@@ -106,7 +106,7 @@ INSTRUCTION = (
 
 _TEMPLATE = """Réponds à la question en t'appuyant sur ce qui suit, et sur rien d'autre.
 
-## Ce que disent les données
+{profile}## Ce que disent les données
 
 {context}
 
@@ -193,6 +193,7 @@ def build_prompt(
     question: str,
     context: list[str],
     memory: list[str],
+    profile: list[str] | None = None,
     history: list[tuple[str, str]] | None = None,
     actions: list[str] | None = None,
     slices: list[str] | None = None,
@@ -221,7 +222,18 @@ def build_prompt(
     **L'ordre des champs est porteur** et non cosmétique : `need` et `actions` d'abord, la
     réponse ensuite. Voir la note qui précède `_NEED_FIELD` — c'est ce qui rend la
     diffusion au fil de l'eau possible sans effacement.
+
+    `profile` est **en tête**, avant les chiffres : ce sont les constantes qui décident de
+    ce qu'on peut conseiller — un plan qui suppose un rack quand il n'y en a pas ne vaut
+    rien, quels que soient les chiffres qui le précèdent. Vide, la rubrique **disparaît**
+    au lieu d'annoncer qu'elle est vide : un titre suivi de rien apprend qu'il n'y a rien à
+    savoir, ce qui est faux — il n'y a rien de *saisi*.
     """
+    who = ""
+    if profile:
+        listed = "\n".join(f"- {line}" for line in profile)
+        who = f"## Ce que je suis\n\n{listed}\n\n"
+
     turns = ""
     if history:
         lines = "\n".join(
@@ -258,6 +270,7 @@ def build_prompt(
         _TEMPLATE.format(
             context="\n".join(f"- {line}" for line in context) or "- Aucune donnée relevée.",
             memory="\n".join(f"- {line}" for line in memory) or "- Rien de noté pour l'instant.",
+            profile=who,
             history=turns,
             actions=catalogue,
             question=question.strip(),

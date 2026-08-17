@@ -21,6 +21,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.assistant.models import MAX_CONTENT, MAX_NOTE, MAX_TITLE, MAX_TOPIC
+from app.domains.assistant.profile import (
+    MAX_FREE,
+    MAX_HEIGHT_CM,
+    MIN_BIRTH_YEAR,
+    MIN_HEIGHT_CM,
+)
 
 #: Longueur d'une question. Généreuse — on décrit parfois une situation en un paragraphe —
 #: mais bornée : au-delà, ce n'est plus une question, et le coût de l'appel suit.
@@ -216,6 +222,44 @@ class MemoryEntry(BaseModel):
     #: Servie plutôt que réduite à un booléen : « résolu le 30/05 » situe une reprise, et
     #: c'est ce que l'écran affiche comme ce que le modèle lit.
     resolved: dt.date | None = None
+
+
+class ProfilePayload(BaseModel):
+    """Le profil, écrit en entier (`IA-10` a contrario — il est **saisi**, jamais proposé).
+
+    **Remplacement complet et non modification partielle**, contrairement aux réglages.
+    Un profil est un petit formulaire qu'on voit en entier : vider un champ y est un geste
+    normal — « je n'ai plus de rack » — et une sémantique « absent = inchangé » rendrait
+    l'effacement impossible depuis l'écran qui le montre.
+
+    `None` veut donc dire **vide**, et la clé est écrite vide dans le fichier. C'est le
+    même parti pris que les créneaux de rappel de `NOT-03`, où la cellule vide *est* la
+    donnée.
+    """
+
+    height_cm: int | None = Field(default=None, ge=MIN_HEIGHT_CM, le=MAX_HEIGHT_CM)
+    birth_year: int | None = Field(default=None, ge=MIN_BIRTH_YEAR, le=2200)
+    training_days: str | None = Field(default=None, max_length=MAX_FREE)
+    equipment: str | None = Field(default=None, max_length=MAX_FREE)
+    preferences: str | None = Field(default=None, max_length=MAX_FREE)
+
+
+class ProfileView(BaseModel):
+    """Le profil tel que l'écran le reçoit."""
+
+    height_cm: int | None = None
+    birth_year: int | None = None
+    training_days: str = ""
+    equipment: str = ""
+    preferences: str = ""
+    #: L'âge, **calculé par le serveur** à partir de l'année. Un âge stocké est faux au
+    #: premier anniversaire ; un âge dérivé à l'écran serait un calcul métier côté client.
+    age: int | None = None
+    #: Les lignes exactes envoyées au modèle. Publiées pour la même raison que le condensé
+    #: l'est avec la réponse : la promesse se vérifie à l'écran au lieu de se déclarer.
+    lines: list[str] = Field(default_factory=list)
+    #: Garde anti-conflit du fichier de réglages (`STO-05`).
+    token: str = ""
 
 
 class AssistantView(BaseModel):

@@ -38,6 +38,8 @@ from app.domains.assistant.schemas import (
     ConfirmRequest,
     MemoryEntry,
     MemoryPayload,
+    ProfilePayload,
+    ProfileView,
     RenamePayload,
     ThreadDetail,
     ThreadList,
@@ -94,6 +96,37 @@ async def remember(payload: MemoryPayload, store: StoreDep) -> MemoryEntry:
     saisie à la main, qui n'a jamais eu besoin d'une clé API (`IA-11`).
     """
     return await AssistantService(store).remember(payload)
+
+
+# ── Le profil (`IA-10` a contrario) ───────────────────
+
+
+@router.get("/profile", response_model=ProfileView, summary="Ce que je suis")
+async def read_profile(store: StoreDep) -> ProfileView:
+    """Les constantes que l'assistant reçoit avant les chiffres.
+
+    **Sans dépendance à l'IA**, comme le carnet : ce sont des réglages sur soi, et une
+    panne de modèle n'a aucune raison d'en fermer l'accès (`IA-07`).
+    """
+    return await AssistantService(store).profile()
+
+
+@router.put("/profile", response_model=ProfileView, summary="Régler son profil")
+async def write_profile(
+    payload: ProfilePayload, store: StoreDep, if_match: IfMatch = None
+) -> ProfileView:
+    """Remplace le profil **en entier**, sous garde anti-conflit (`STO-05`).
+
+    `PUT` et non `PATCH`, et la différence porte le sens : c'est un petit formulaire qu'on
+    voit en entier, où vider un champ — « je n'ai plus de rack » — est un geste normal. Une
+    sémantique « absent = inchangé » rendrait l'effacement impossible depuis l'écran même
+    qui montre le champ.
+
+    **Le modèle n'écrit jamais ici.** `IA-10` l'autorise à remplir le carnet parce qu'une
+    note fausse ne casse aucun chiffre ; une taille fausse change toutes les charges qu'on
+    en déduit. Aucune action du catalogue ne touche à ces clés, et c'est délibéré.
+    """
+    return await AssistantService(store).set_profile(payload, _token(if_match))
 
 
 @router.patch("/memory/{row_id}", response_model=MemoryEntry, summary="Corriger une note")

@@ -85,6 +85,9 @@ export const keys = {
     /** Le carnet de mémoire (`IA-11`). Le fil de conversation, lui, n'est jamais mis en
      *  cache : il n'existe pas côté serveur. */
     memory: () => ['assistant', 'memory'] as const,
+    /** Le profil (« Ce que je suis »). Il vit dans `settings.csv`, d'où l'invalidation
+     *  croisée avec `settings` à l'écriture — les deux se partagent un jeton de fichier. */
+    profile: () => ['assistant', 'profile'] as const,
   },
   goals: {
     all: () => ['goals'] as const,

@@ -22,6 +22,18 @@ function json(status: number, body: unknown): Response {
   return { ok: status < 400, status, json: () => Promise.resolve(body) } as Response;
 }
 
+/** Le profil, vide : cet écran-ci ne le teste pas, il doit seulement pouvoir le rendre. */
+const PROFILE = {
+  height_cm: null,
+  birth_year: null,
+  training_days: '',
+  equipment: '',
+  preferences: '',
+  age: null,
+  lines: [],
+  token: 'jeton-reglages',
+};
+
 function stub(custom?: (url: string, init?: RequestInit) => Response | undefined) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = input as string;
@@ -30,11 +42,12 @@ function stub(custom?: (url: string, init?: RequestInit) => Response | undefined
     const override = custom?.(url, init);
     if (override) return Promise.resolve(override);
 
-    // L'écran porte trois sections servies par le réseau : les objectifs, les pistes
-    // d'assiduité (L11) et les rappels (L15). Un stub qui répondrait les réglages à tout
-    // ferait planter les deux autres sur un champ absent — et le test dirait « écran
-    // cassé » sans que l'écran le soit.
+    // L'écran porte **quatre** sections servies par le réseau : les objectifs, les pistes
+    // d'assiduité (L11), le profil et les rappels (L15). Un stub qui répondrait les
+    // réglages à tout ferait planter les trois autres sur un champ absent — et le test
+    // dirait « écran cassé » sans que l'écran le soit.
     if (url.includes('/api/heatmap/tracks')) return Promise.resolve(json(200, TRACKS));
+    if (url.includes('/api/assistant/profile')) return Promise.resolve(json(200, PROFILE));
     if (url.includes('/api/notifications')) return Promise.resolve(json(200, NOTIFICATIONS));
     return Promise.resolve(json(200, SETTINGS));
   });

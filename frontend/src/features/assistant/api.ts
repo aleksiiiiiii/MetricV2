@@ -118,6 +118,27 @@ export interface MemoryEntry {
   resolved: string | null;
 }
 
+export interface ProfileView {
+  height_cm: number | null;
+  birth_year: number | null;
+  training_days: string;
+  equipment: string;
+  preferences: string;
+  /** L'âge, **calculé par le serveur**. Un âge rangé est faux au premier anniversaire. */
+  age: number | null;
+  /** Les lignes exactes envoyées au modèle — la promesse se vérifie à l'écran. */
+  lines: string[];
+  token: string;
+}
+
+export interface ProfilePayload {
+  height_cm: number | null;
+  birth_year: number | null;
+  training_days: string;
+  equipment: string;
+  preferences: string;
+}
+
 export interface AssistantView {
   memories: MemoryEntry[];
   /** Sujets les plus fréquents, servis par le serveur. La colonne reste libre. */
@@ -132,6 +153,22 @@ function ifMatch(token: string): Record<string, string> {
 
 export const assistantApi = {
   memory: () => request<AssistantView>('/api/assistant/memory'),
+
+  profile: () => request<ProfileView>('/api/assistant/profile'),
+
+  /**
+   * Remplace le profil **en entier**.
+   *
+   * `PUT` et non `PATCH` : vider un champ — « je n'ai plus de rack » — est un geste normal
+   * sur un formulaire qu'on voit en entier, et « absent = inchangé » le rendrait
+   * impossible depuis l'écran même qui montre le champ.
+   */
+  setProfile: (payload: ProfilePayload, token: string) =>
+    request<ProfileView>('/api/assistant/profile', {
+      method: 'PUT',
+      body: payload,
+      headers: ifMatch(token),
+    }),
 
   /** Pose une question. Sans `threadId`, le serveur ouvre un fil et rend son identifiant. */
   ask: (question: string, threadId: string | null) =>

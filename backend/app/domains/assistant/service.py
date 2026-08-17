@@ -44,8 +44,9 @@ from typing import TYPE_CHECKING, Any
 from app.core.dates import local_moment, now_local, today_local
 from app.core.exceptions import AiUnreadableError, MetricError, ValidationFailedError
 from app.domains.ai.service import AiService, DeltaReporter
+from app.domains.app_settings.service import SettingsService
 from app.domains.assistant import actions as catalogue
-from app.domains.assistant import context, conversation
+from app.domains.assistant import context, conversation, profile
 from app.domains.assistant.models import (
     MAX_CONTENT,
     MAX_TITLE,
@@ -64,6 +65,8 @@ from app.domains.assistant.schemas import (
     ConfirmRequest,
     MemoryEntry,
     MemoryPayload,
+    ProfilePayload,
+    ProfileView,
     ProposedAction,
     ThreadDetail,
     ThreadList,
@@ -134,6 +137,14 @@ def _title_from(question: str) -> str:
         return cleaned
     coupe = cleaned[:MAX_TITLE].rsplit(" ", 1)[0]
     return f"{coupe or cleaned[:MAX_TITLE]}…"
+
+
+def _int_or_none(raw: str) -> int | None:
+    """Année brute telle qu'elle est rangée. Illisible vaut absente, jamais une erreur."""
+    try:
+        return int(float(raw.strip()))
+    except ValueError:
+        return None
 
 
 def new_id() -> str:
@@ -242,6 +253,46 @@ class AssistantService:
     async def forget(self, index: int, token: str) -> None:
         """Retire une note, sous garde anti-conflit (`STO-05`)."""
         await self._repo.delete_by_token(index, token)
+
+    # ── Le profil (`IA-10` a contrario : saisi, jamais proposé) ──
+
+    async def profile(self, *, today: date | None = None) -> ProfileView:
+        """Le profil, tel que l'écran le reçoit — âge et lignes de consigne compris."""
+        settings = SettingsService(self._store)
+        stored = await settings.all()
+        return ProfileView(
+            height_cm=profile.height_cm(stored.get(profile.HEIGHT, "")),
+            birth_year=_int_or_none(stored.get(profile.BIRTH_YEAR, "")),
+            training_days=stored.get(profile.TRAINING_DAYS, ""),
+            equipment=stored.get(profile.EQUIPMENT, ""),
+            preferences=stored.get(profile.PREFERENCES, ""),
+            age=profile.age(stored.get(profile.BIRTH_YEAR, ""), today=today),
+            # Publiées avec le profil pour la même raison que le condensé l'est avec la
+            # réponse : ce qui part au modèle se vérifie à l'écran, il ne se déclare pas.
+            lines=profile.lines(stored, today=today),
+            token=await settings.token(),
+        )
+
+    async def set_profile(
+        self, payload: ProfilePayload, token: str, *, today: date | None = None
+    ) -> ProfileView:
+        """Remplace le profil en entier, sous garde anti-conflit (`STO-05`).
+
+        Remplacement et non fusion : vider un champ est un geste normal sur un formulaire
+        qu'on voit en entier, et `update_keys` écrit les valeurs vides au lieu de les
+        ignorer — c'est exactement pourquoi il existe.
+        """
+        await SettingsService(self._store).update_keys(
+            {
+                profile.HEIGHT: "" if payload.height_cm is None else str(payload.height_cm),
+                profile.BIRTH_YEAR: "" if payload.birth_year is None else str(payload.birth_year),
+                profile.TRAINING_DAYS: (payload.training_days or "").strip(),
+                profile.EQUIPMENT: (payload.equipment or "").strip(),
+                profile.PREFERENCES: (payload.preferences or "").strip(),
+            },
+            token,
+        )
+        return await self.profile(today=today)
 
     async def _known(self) -> list[context.MemoryNote]:
         """Le carnet sous la forme que la consigne attend, **dates comprises**.
@@ -610,6 +661,9 @@ class AssistantService:
         known = await self._known()
         facts = await context.build(self._store, adherence=adherence, today=current)
         memory = context.memory_lines(known)
+        # Les constantes, avant les chiffres : un plan qui suppose un rack quand il n'y en
+        # a pas ne vaut rien, quels que soient les chiffres qui le précèdent.
+        who = profile.lines(await SettingsService(self._store).all(), today=current)
 
         available = list(context.SLICES)
 
@@ -618,6 +672,7 @@ class AssistantService:
                 question=request.question,
                 context=facts + extra,
                 memory=memory,
+                profile=who,
                 history=history,
                 actions=catalogue.describe_catalogue(),
                 slices=available,

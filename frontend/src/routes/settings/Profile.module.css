@@ -1,0 +1,45 @@
+/* Section « Ce que je suis » de l'écran Réglages.
+   Les classes reprennent celles de `Reminders.module.css`, qui reprenaient elles-mêmes
+   celles de `Settings.module.css` : les trois sections vivent sur le même écran et doivent
+   se ressembler trait pour trait. Redéclarées plutôt qu'importées — un module CSS ne
+   s'hérite pas, et un `composes` vers un autre écran créerait une dépendance invisible. */
+
+.name {
+  color: var(--ink);
+  font-size: var(--t-sub);
+  font-weight: 500;
+}
+
+.row {
+  margin-top: var(--s3);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+
+.note {
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  line-height: 1.6;
+}
+
+.noteSpaced {
+  margin-top: var(--s3);
+}
+
+/* Ce qui part au modèle, rendu comme une citation et non comme une saisie : ce sont des
+   lignes construites par le serveur, pas des champs qu'on éditerait ici. */
+.lines {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding-left: var(--s5);
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  line-height: 1.6;
+  list-style: disc;
+}
