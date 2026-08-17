@@ -339,6 +339,9 @@ et elle suffit pour du repli. Ce lot ne la touche pas.
 
 ## 7. Défaire trois réglages hérités de l'extraction
 
+> **Jalon 4 — deux tiers faits le 2026-08-17.** La température et la longueur sont réglées ;
+> le streaming reste entier. Le détail, et ce que la mesure ne dit pas encore, sont en §11.
+
 Trois valeurs viennent du premier usage de l'IA — lire une photo de repas — et n'ont jamais
 été rediscutées quand une conversation est apparue.
 
@@ -471,7 +474,7 @@ L'ordre n'est pas celui des numéros. Il suit les dépendances et le rapport bé
 | 2 | ~~**§10 — le jeu d'évaluation**~~ | ✅ **Fait le 2026-08-16.** 25 cas, `make eval`, mesure d'origine posée ; voir §11. |
 | 3 | **§0.1 — passer à Opus 5** | Une ligne de `.env`, plus `MAX_TOKENS` par prudence. Le jeu dit maintenant ce que ça change. |
 | 4 | **§1 + §2 — le contexte** | ✅ **Fait le 2026-08-17.** Les tranches de coaching sont servies ; voir §11. §3 (le profil) reste à faire. |
-| 5 | **§7 — les réglages hérités** | Longueur et température d'abord (peu de code) ; le streaming ensuite, séparément. |
+| 5 | **§7 — les réglages hérités** | ✅ **À moitié fait le 2026-08-17.** Longueur, température et bornes ; voir §11. **Le streaming reste entier**, et il passe devant l'étape 3 seulement s'il devient gênant. |
 | 6 | **§9 — le rebouclage sur échec** | Petit, isolé, corrige un mensonge visible. |
 | 7 | **§4 — trois passes** | Utile seulement une fois que les tranches du lot 4 existent. |
 | 8 | **§5 — tool calling natif** | Le plus lourd. À prendre pour lui-même, avec le lot 10 pour dire s'il a servi. |
@@ -709,6 +712,87 @@ tient la table des paires écriture → lecture. Une action ajoutée sans sa tra
 **Prochain arbitrage.** L'A/B Opus 5 peut maintenant se rejouer sur des cas qui exercent
 vraiment le raisonnement — `charge-lundi` en est un désormais. C'est le bon moment pour
 l'étape 3.
+
+### Jalon 4 — §7, les réglages hérités de l'extraction · 2026-08-17 · **l'assistant a le droit de conclure**
+
+**L'ordre a encore changé, et pour la raison qui a fait passer le lot 1 devant.** L'étape 3
+restait « passer à Opus 5 ». Mais la consigne disait toujours « quatre phrases au plus » :
+mesurer Opus 5 sous ce plafond, c'est mesurer un modèle bâillonné — le raisonnement
+supplémentaire qu'on paie n'a nulle part où s'écrire. Le lot 7 passe donc avant l'arbitrage,
+exactement comme le lot 1 y était passé.
+
+**Trois réglages venaient du premier usage de l'IA — lire une photo de repas — et n'avaient
+jamais été rediscutés quand une conversation est apparue.** Deux partent ; le troisième est
+nommé et laissé.
+
+| | |
+|---|---|
+| `temperature: 0.1` | **retiré de la route assistant.** `build_body`, `complete` et `ask_json` prennent un `temperature: float \| None`, défaut `EXTRACTION_TEMPERATURE` ; `None` **retire le champ** au lieu de l'envoyer à zéro, ce qui est l'inverse. |
+| « quatre phrases au plus » | **remplacé** par une longueur qui suit l'intention, et par une règle qui autorise à conclure. |
+| `MAX_REPLY` 2 000 → 4 000, `MAX_TOKENS` 1 600 → 3 000 | conséquence de la précédente, pas de la prudence — voir plus bas. |
+| Le streaming | **pas fait**, et c'est l'ordre d'exécution qui le dit : « la longueur et la température d'abord, le streaming ensuite, séparément ». Il touche le front, `complete` doit rendre un flux, et il mérite son propre lot. |
+
+**Le retrait de `temperature` est un réglage, pas une suppression.** Le champ reste sur les
+routes d'extraction, où la raison d'origine tient toujours : la même photo ne doit pas rendre
+32 g de protéines puis 41 g. Le nommer dans la signature plutôt que le conditionner à une
+famille de modèles est ce que le jalon 1 avait conclu — et c'est ce que la docstring de
+`build_body` recommandait déjà d'elle-même : « un réglage qui deviendrait permanent se nomme
+dans la signature, comme `max_tokens` ».
+
+**Écarté : lui donner une autre valeur.** `0,7` aurait l'air plus délibéré que l'absence.
+Mais sur la famille Claude 5 le champ est filtré par OpenRouter (jalon 1), donc ce `0,7` ne
+serait envoyé nulle part qui l'écoute ; sur la cascade gratuite, il remplacerait le défaut du
+fournisseur par un nombre que personne n'a mesuré. L'absence est plus honnête que la fiction.
+
+**`MAX_REPLY` n'est plus un nombre choisi à vue.** Il vaut `MAX_CONTENT`, la capacité d'un
+message stocké. Au-dessus, `_append_messages` couperait la réponse une seconde fois et le
+fil rejouerait, trois semaines plus tard, un texte que personne n'a lu — une valeur inventée
+par troncature. Un test tient l'inégalité.
+
+**Et `MAX_TOKENS` devait suivre, sous peine de transformer le lot en régression.** Tant que
+la consigne comptait quatre phrases, une réponse utile tenait sous 400 jetons et 1 600 était
+une marge pour le raisonnement. Une réponse de 4 000 caractères en demande près de 1 300 pour
+le seul `reply`, avant `remember`, `actions`, `need` et `title`. Laisser 1 600 aurait fait
+couper le modèle en plein JSON **exactement sur les réponses que le lot cherche à obtenir** —
+et une réponse coupée là ne rend pas un texte tronqué, elle ne rend rien.
+
+**Le garde-fou médical, et pourquoi il a fallu l'écrire dans la nouvelle règle.** « Réponds
+par ce qu'il faut faire » rouvre `IA-12` par la porte du coaching : « quoi faire » sur une
+douleur au genou est précisément ce que le garde-fou interdit. Les deux règles étaient
+distantes de dix lignes dans la consigne, et un modèle ne les rapproche pas tout seul.
+L'exception est donc nommée **dans la règle elle-même**, et les trois emplacements de `IA-12`
+sont intacts : la consigne système, la règle de base, la règle d'action.
+
+**Ce que la batterie vérifie maintenant, et qu'elle ne vérifiait pas.** `Call` du faux
+OpenRouter journalise le **corps entier** de la requête et non plus le seul texte. C'est ce
+qui rend vérifiable une promesse d'**absence** : « la route assistant n'envoie pas
+`temperature` » ne se lisait jusqu'ici que dans le code, c'est-à-dire nulle part. Deux tests
+la tiennent des deux côtés — l'assistant sans le champ, l'estimation de repas avec.
+
+**Mesure.** `make check` vert : **1 263 tests backend, 374 écran**. Consigne rendue relue à
+l'œil, ce qui reste la seule façon de voir qu'une règle en contredit une autre.
+
+**Ce qui n'a pas été fait, et pourquoi.**
+
+- **Aucun appel payant. L'A/B Opus 5 n'a pas été rejoué**, sur décision de budget prise en
+  début de session. C'est la limite qui compte pour ce jalon : le lot 7 est un changement de
+  consigne, et **rien ici ne prouve qu'il améliore les réponses** — seulement qu'il ne casse
+  ni le contrat, ni les bornes, ni `IA-12`. Le jeu d'évaluation existe précisément pour
+  trancher ça, et il reste à lancer :
+
+  ```bash
+  make eval ARGS="--sortie reference.json"                       # ~0,23 $ sur sonnet-5
+  make eval ARGS="--model anthropic/claude-opus-5 --comparer reference.json"   # ~0,63 $
+  ```
+
+  Deux choses sont à regarder en particulier, et aucune n'est un cas du jeu : que
+  `charge-lundi` rende bien **une charge recommandée** et non l'historique qui la précède,
+  et qu'aucune réponse n'ait été coupée — `finish_reason` autre que `stop` signalerait que
+  3 000 jetons ne suffisent pas.
+
+- **Le streaming**, nommé plus haut. Le lot 7 est donc à moitié fait, et c'est délibéré.
+- **`_echoes` reste défait par une reformulation.** Quatrième jalon consécutif où c'est vrai.
+  Aucun lot ne le couvre toujours, et le carnet se remplit pendant ce temps-là.
 
 ---
 

@@ -33,6 +33,29 @@ import httpx2
 #: `IA-07` promet que l'IA n'immobilise jamais l'application.
 READ_TIMEOUT = 60.0
 
+#: Tirage d'une **extraction** : lire une photo d'assiette, une capture d'import, une note
+#: de séance. La même photo ne doit pas rendre 32 g de protéines puis 41 g selon l'humeur du
+#: tirage, et c'est le défaut par lequel ce champ est arrivé dans le corps de la requête.
+#:
+#: **Ce n'est pas le réglage d'une conversation**, et c'est pourquoi il se nomme. Un
+#: assistant à `0,1` rend dix réponses quasi identiques à dix questions voisines ; la route
+#: assistant passe donc `temperature=None`, qui retire le champ (lot 7 du plan de coaching).
+#:
+#: **La garantie ne vaut que pour les modèles qui acceptent le champ.** Anthropic a retiré
+#: `temperature`, `top_p` et `top_k` de son API sur la famille Claude 5 : une requête qui les
+#: porte y est refusée en `400`. OpenRouter les filtre avant de router — mesuré le
+#: 2026-08-16 sur `claude-opus-5` et `claude-sonnet-5`, avec et sans le champ, quatre
+#: réponses normales. Le réglage est donc **sans effet** sur le modèle configuré aujourd'hui,
+#: et la reproductibilité d'une extraction y repose sur la consigne seule. Il reste envoyé
+#: parce qu'il sert la cascade gratuite, qui l'accepte.
+#:
+#: Mais `openrouter_base_url` est un réglage : le pointer sur l'API Anthropic ferait tomber
+#: chaque appel en `400`, que `_read` traduirait en `ModelUnusableError` — donc en descente
+#: silencieuse vers un modèle gratuit, sans rien afficher. Le jour où ce chemin s'ouvre, ce
+#: champ se conditionne au modèle, et `supported_parameters` du catalogue le dit sans
+#: qu'on ait à deviner les noms des modèles à venir.
+EXTRACTION_TEMPERATURE = 0.1
+
 #: Formes de « taille » lisibles dans un identifiant de modèle : `…-70b-…`, `…-27b`, `8x7b`.
 _PARAMS = re.compile(r"(?<![a-z0-9.])(\d+(?:\.\d+)?)\s*b(?![a-z0-9])", re.IGNORECASE)
 
@@ -224,6 +247,7 @@ class OpenRouterClient:
         prompt: str,
         image_url: str | None = None,
         max_tokens: int = 900,
+        temperature: float | None = EXTRACTION_TEMPERATURE,
         extra: dict[str, Any] | None = None,
     ) -> str:
         """Interroge un modèle et rend son texte brut.
@@ -238,6 +262,7 @@ class OpenRouterClient:
             prompt=prompt,
             image_url=image_url,
             max_tokens=max_tokens,
+            temperature=temperature,
             extra=extra,
         )
 
@@ -255,9 +280,15 @@ class OpenRouterClient:
         prompt: str,
         image_url: str | None = None,
         max_tokens: int = 900,
+        temperature: float | None = EXTRACTION_TEMPERATURE,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Le corps de la requête, séparé pour être vérifiable sans réseau.
+
+        `temperature` à `None` **retire le champ** du corps au lieu de l'envoyer à zéro —
+        ce qui n'est pas la même chose, et c'est toute la raison du paramètre : `0` demande
+        le tirage le plus déterministe possible, l'absence laisse au modèle le sien. Voir la
+        constante `EXTRACTION_TEMPERATURE` pour ce que chaque appelant a à décider.
 
         `extra` est fusionné **par-dessus** le corps rendu. Il existe pour les champs qui
         dépendent du fournisseur et non de la fonction appelante — `reasoning` chez
@@ -265,10 +296,10 @@ class OpenRouterClient:
         d'Anthropic. Aucun appel du dépôt ne s'en sert : c'est le jeu d'évaluation qui
         compare deux réglages du même modèle sans que le client ait à connaître lequel.
 
-        Il écrase ce qu'il recouvre, délibérément — c'est ce qui permet de *retirer* un
-        champ (`{"temperature": None}` ne le retire pas, mais `extra` peut le remplacer par
-        la valeur qu'un modèle accepte). Un réglage qui deviendrait permanent n'a rien à
-        faire ici : il se nomme dans la signature, comme `max_tokens`.
+        Il écrase ce qu'il recouvre, délibérément. Il ne sait toujours pas *retirer* un
+        champ (`{"temperature": None}` l'enverrait à `null`) — c'est précisément pourquoi
+        le réglage devenu permanent est passé dans la signature, comme le disait déjà cette
+        page.
         """
         content: list[dict[str, Any]] | str = prompt
         if image_url is not None:
@@ -283,23 +314,6 @@ class OpenRouterClient:
                 {"role": "system", "content": instruction},
                 {"role": "user", "content": content},
             ],
-            # Une estimation doit être reproductible : la même photo ne doit pas rendre
-            # 32 g de protéines puis 41 g selon l'humeur du tirage.
-            #
-            # **La garantie ne vaut que pour les modèles qui acceptent le champ.** Anthropic
-            # a retiré `temperature`, `top_p` et `top_k` de son API sur la famille Claude 5 :
-            # une requête qui les porte y est refusée en `400`. OpenRouter les filtre avant
-            # de router — mesuré le 2026-08-16 sur `claude-opus-5` et `claude-sonnet-5`, avec
-            # et sans le champ, quatre réponses normales. Le réglage est donc **sans effet**
-            # sur le modèle configuré aujourd'hui, et la reproductibilité y repose sur la
-            # consigne seule.
-            #
-            # Il reste envoyé parce qu'il sert la cascade gratuite, qui l'accepte. Mais
-            # `openrouter_base_url` est un réglage : le pointer sur l'API Anthropic ferait
-            # tomber chaque appel en `400`, que `_read` traduirait en `ModelUnusableError` —
-            # donc en descente silencieuse vers un modèle gratuit, sans rien afficher. Le
-            # jour où ce chemin s'ouvre, ce champ se conditionne au modèle.
-            "temperature": 0.1,
             "max_tokens": max_tokens,
             # **Le mode JSON du fournisseur**, et il a été ajouté sur constat.
             #
@@ -316,6 +330,11 @@ class OpenRouterClient:
             # cinq répondus, aucun refus — le sixième était au quota, pas en erreur.
             "response_format": {"type": "json_object"},
         }
+        if temperature is not None:
+            # Absent quand l'appelant n'en veut pas. Le champ n'est pas neutre : envoyé à
+            # `0.1` sur une conversation, il rend dix réponses quasi identiques à dix
+            # questions voisines.
+            body["temperature"] = temperature
         return body | (extra or {})
 
     @staticmethod

@@ -30,6 +30,7 @@ from typing import Any
 from app.config import Settings
 from app.core.exceptions import AiQuotaError, AiUnavailableError
 from app.domains.ai.client import (
+    EXTRACTION_TEMPERATURE,
     ModelInfo,
     ModelQuotaError,
     ModelUnusableError,
@@ -150,6 +151,7 @@ class AiService:
         prompt: str,
         image_url: str | None = None,
         max_tokens: int = 900,
+        temperature: float | None = EXTRACTION_TEMPERATURE,
     ) -> dict[str, Any]:
         """Rend le premier objet JSON exploitable obtenu, ou lève (`IA-03`).
 
@@ -157,6 +159,11 @@ class AiService:
         résout en attendant. `AiUnavailableError` sinon : attendre n'y changera rien. Les
         deux portent un code distinct (`API-07`), et l'écran n'a pas le même conseil à
         donner.
+
+        `temperature` vaut le tirage d'une extraction, qui est ce que fait la plupart des
+        appels du dépôt. La route assistant passe `None` : une conversation n'est pas une
+        extraction, et le champ y coûte la variété des réponses. Le défaut est ici et non
+        chez l'appelant pour que le passage à `None` reste une décision qui se lit.
         """
         models = await self.candidates(vision=image_url is not None)
         if not models:
@@ -177,6 +184,7 @@ class AiService:
                     prompt=prompt,
                     image_url=image_url,
                     max_tokens=max_tokens,
+                    temperature=temperature,
                 )
             except ModelQuotaError:
                 continue

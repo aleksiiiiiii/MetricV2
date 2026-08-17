@@ -152,6 +152,25 @@ def test_the_photo_reaches_the_model_reduced_and_in_jpeg(
     assert openrouter.calls[0].image_url.startswith("data:image/jpeg;base64,")
 
 
+def test_an_estimate_keeps_the_temperature_the_assistant_dropped(
+    ai_app_client: TestClient, openrouter: FakeOpenRouter, auth: dict[str, str]
+) -> None:
+    """La contrepartie du lot 7, et c'est elle qui en fait un réglage plutôt qu'un retrait.
+
+    La même photo ne doit pas rendre 32 g de protéines puis 41 g selon l'humeur du tirage.
+    L'assistant, lui, ne veut surtout pas de cette reproductibilité-là. Sans ce test, un
+    retrait par mégarde sur cette route ne se verrait qu'en réestimant deux fois la même
+    assiette — c'est-à-dire jamais.
+    """
+    from app.domains.ai.client import EXTRACTION_TEMPERATURE
+
+    openrouter.say('{"protein_g": 20}')
+
+    analyze(ai_app_client, auth)
+
+    assert openrouter.calls[0].body["temperature"] == EXTRACTION_TEMPERATURE
+
+
 def test_a_saturated_quota_is_told_apart_from_a_failure(
     ai_app_client: TestClient, openrouter: FakeOpenRouter, auth: dict[str, str]
 ) -> None:

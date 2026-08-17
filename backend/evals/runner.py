@@ -125,6 +125,12 @@ async def jouer(
                 instruction=conversation.INSTRUCTION,
                 prompt=prompt,
                 max_tokens=MAX_TOKENS,
+                # Comme la route assistant, et pour la même raison qu'elle : le jeu doit
+                # envoyer ce que la production envoie, sinon il mesure autre chose. Depuis
+                # le lot 7, ni l'une ni l'autre ne porte `temperature` — ce qui rend aussi
+                # les exécutions un peu moins reproductibles entre elles, et c'est le prix
+                # assumé d'une mesure fidèle. Les deux cas instables l'étaient déjà avant.
+                temperature=None,
                 extra=extra,
             )
             objet, usage = await _poster(http, corps)

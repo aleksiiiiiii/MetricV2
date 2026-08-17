@@ -78,6 +78,10 @@ class Call:
     #: `GOAL-02` exige un condensé factuel et jamais les fichiers entiers. Sans cette
     #: trace, cette exigence ne se vérifierait qu'en relisant le code — c'est-à-dire pas.
     prompt: str = ""
+    #: Le corps entier de la requête, pour la même raison que `prompt` et étendue aux
+    #: réglages : depuis le lot 7, la route assistant tient à **ne pas** envoyer
+    #: `temperature`, et une promesse d'absence ne se vérifie que sur ce qui est parti.
+    body: dict[str, Any] = field(default_factory=dict)
 
 
 def free_model(
@@ -146,6 +150,7 @@ class FakeOpenRouter:
                 with_image=image_url is not None,
                 image_url=image_url,
                 prompt=_prompt_of(request),
+                body=request,
             )
         )
 

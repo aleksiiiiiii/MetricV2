@@ -250,14 +250,94 @@ def test_the_provider_is_asked_for_json_not_only_the_model() -> None:
 def test_the_assistant_leaves_room_for_a_model_that_thinks_aloud() -> None:
     """900 jetons suffisaient à `{reply, remember}` ; le contrat en porte cinq.
 
-    Une réponse utile occupe moins de 400 caractères — la marge n'est pas pour elle, elle
-    est pour le raisonnement qui la précède parfois. Tronquée en plein milieu, la réponse
-    ne rend aucun JSON, donc rien du tout.
+    La marge n'est pas pour la réponse, elle est pour le raisonnement qui la précède
+    parfois. Tronquée en plein milieu, la réponse ne rend aucun JSON, donc rien du tout.
+
+    **Depuis le lot 7, elle est aussi pour la réponse.** `MAX_REPLY` autorise un plan
+    d'entraînement, et un plafond de jetons calculé pour « quatre phrases au plus »
+    couperait exactement les réponses que ce lot cherche à obtenir. Le plancher est donc
+    lié à `MAX_REPLY` et non à un nombre choisi une fois : trois caractères de français par
+    jeton, et de la place pour les quatre autres champs du contrat.
     """
     from app.domains.ai.service import MAX_ATTEMPTS
+    from app.domains.assistant.conversation import MAX_REPLY
     from app.domains.assistant.service import MAX_TOKENS
 
-    assert MAX_TOKENS >= 1600
+    assert MAX_TOKENS >= MAX_REPLY / 3
     # Et le budget de tentatives tient compte du quota : les modèles gratuits y tombent
     # souvent, et trois essais partaient parfois entièrement en quotas.
     assert MAX_ATTEMPTS >= 5
+
+
+# ── 6. Le lot 7 : ce dont la consigne s'est défaite ───
+
+
+def test_the_reply_length_follows_the_question_not_a_fixed_count() -> None:
+    """« Quatre phrases au plus » venait de l'extraction et n'a jamais été rediscuté.
+
+    C'est ce qui produisait un assistant qui rapporte : aucun plan d'entraînement ne tient
+    en quatre phrases, donc il n'en proposait pas. La borne subsiste dans `MAX_REPLY`, où
+    elle est vérifiable ; la consigne, elle, ne compte plus les phrases.
+    """
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "quatre phrases" not in text
+    assert "longueur suit ce que je demande" in text
+
+
+def test_the_prompt_asks_for_a_recommendation_not_a_recap() -> None:
+    """Le défaut laissé ouvert par le jalon 3 : la donnée est là, l'autorisation manquait.
+
+    Sur « je charge combien lundi ? », l'assistant ouvrait par « je n'ai pas de charge
+    prescrite pour lundi » avant de réciter un historique qu'on ne lui demandait pas.
+    """
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "réponds par ce qu'il faut faire" in text
+    assert "Rappeler l'historique puis me laisser conclure" in text
+
+
+def test_the_medical_guard_outranks_the_call_to_conclude() -> None:
+    """La seule exception, et elle est **écrite dans la règle** plutôt que sous-entendue.
+
+    Inviter à conclure sans nommer l'exception rouvrirait `IA-12` par la porte du coaching :
+    « quoi faire » sur une douleur au genou est exactement ce que le garde-fou interdit. Un
+    modèle ne rapproche pas deux règles distantes de dix lignes ; celle-ci renvoie à l'autre.
+    """
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "Cette règle ne vaut pas pour une douleur" in text
+    assert "Aucune action à la suite d'une douleur" in text
+
+
+def test_a_reply_never_outgrows_what_a_stored_message_holds() -> None:
+    """Sinon le fil rejouerait un texte que personne n'a lu.
+
+    `_append_messages` coupe à `MAX_CONTENT`. Une réponse plus longue serait affichée
+    entière puis stockée amputée, et sa relecture trois semaines plus tard rendrait un
+    autre texte — une valeur inventée par troncature, ce que le dépôt interdit ailleurs.
+    """
+    from app.domains.assistant.conversation import MAX_REPLY
+    from app.domains.assistant.models import MAX_CONTENT
+
+    assert MAX_REPLY <= MAX_CONTENT
+
+
+def test_an_extraction_keeps_its_temperature_and_a_conversation_drops_it() -> None:
+    """`None` **retire** le champ ; il ne l'envoie pas à zéro, ce qui serait l'inverse.
+
+    Le réglage est arrivé pour qu'une photo d'assiette ne rende pas 32 g puis 41 g de
+    protéines, et il tient toujours pour la cascade gratuite qui l'accepte. Appliqué à une
+    conversation, il rend dix réponses quasi identiques à dix questions voisines.
+    """
+    from app.domains.ai.client import EXTRACTION_TEMPERATURE, OpenRouterClient
+
+    client = OpenRouterClient(api_key="x", base_url="https://exemple.test")
+
+    extraction = client.build_body("un-modele", instruction="i", prompt="p")
+    assert extraction["temperature"] == EXTRACTION_TEMPERATURE
+
+    conversation_body = client.build_body(
+        "un-modele", instruction="i", prompt="p", temperature=None
+    )
+    assert "temperature" not in conversation_body

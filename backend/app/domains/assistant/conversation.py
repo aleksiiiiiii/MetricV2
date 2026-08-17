@@ -11,6 +11,19 @@ Le modèle **répond** et **repère** ; le serveur relit. Ce qu'on lui demande d
 précis : ce que l'utilisateur vient de dire sur lui-même et qu'aucun fichier ne porte. Pas
 de résumé de la conversation, pas de reformulation des chiffres qu'on vient de lui donner.
 
+## Rapporter ne suffit pas (lot 7)
+
+La consigne a longtemps demandé « quatre phrases au plus », héritage du premier usage de
+l'IA — lire une photo de repas — et jamais rediscuté quand une conversation est apparue.
+Elle produisait un assistant qui **rapporte** : sur « je charge combien lundi ? », il
+ouvrait par « je n'ai pas de charge prescrite pour lundi » avant de réciter l'historique.
+La donnée était là depuis le lot 1 ; ce qui manquait était l'autorisation de conclure.
+
+La longueur suit donc l'intention, et une demande de conseil appelle un conseil. Deux
+choses **ne** bougent pas avec ça : on n'invente aucun chiffre, et le garde-fou ci-dessous
+prime sur l'invitation à conclure — la consigne le dit dans la règle elle-même, parce
+qu'une exception laissée implicite est une exception qu'un modèle ne voit pas.
+
 ## Le garde-fou médical (`IA-12`)
 
 L'assistant n'est pas médecin, et la consigne le lui interdit explicitement — pas de
@@ -29,7 +42,7 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
-from app.domains.assistant.models import MAX_NOTE, MAX_TITLE, normalise_topic
+from app.domains.assistant.models import MAX_CONTENT, MAX_NOTE, MAX_TITLE, normalise_topic
 from app.domains.assistant.schemas import (
     MAX_ACTION_NAME,
     MAX_ACTIONS,
@@ -40,8 +53,16 @@ from app.domains.assistant.schemas import (
 )
 
 #: Longueur de la réponse rendue. Une réponse plus longue n'a pas été tronquée par le
-#: modèle : elle a été coupée ici, parce qu'un mur de texte ne se lit pas sur un téléphone.
-MAX_REPLY = 2000
+#: modèle : elle a été coupée ici.
+#:
+#: **Montée de 2 000 au lot 7**, en même temps que « quatre phrases au plus » quittait la
+#: consigne. Les deux disaient la même chose de deux façons, et aucun plan d'entraînement
+#: n'y tenait. La borne reste — un mur de texte ne se lit pas sur un téléphone — mais elle
+#: est désormais posée sur `MAX_CONTENT`, la capacité d'un message stocké, plutôt que sur
+#: un nombre choisi à vue. C'est ce qui garantit qu'une réponse affichée est **exactement**
+#: la réponse relue trois semaines plus tard : au-dessus, `_append_messages` la couperait
+#: une seconde fois et le fil rejouerait un texte que personne n'a lu.
+MAX_REPLY = MAX_CONTENT
 
 #: Longueur minimale d'une note retenue. En dessous, ce n'est pas un fait durable — c'est
 #: « ok », « le genou », ou un fragment que personne ne comprendra dans six mois.
@@ -75,13 +96,20 @@ _TEMPLATE = """Réponds à la question en t'appuyant sur ce qui suit, et sur rie
 
 {{"reply": "…", "remember": [{{"topic": "…", "note": "…"}}]{extra}}}
 
-- "reply" : ta réponse, en français, quatre phrases au plus. Cite les chiffres ci-dessus
-  quand ils répondent ; dis que tu ne sais pas quand ils ne disent rien là-dessus.
+- "reply" : ta réponse, en français. **Sa longueur suit ce que je demande** — un chiffre se
+  rend en une phrase, un plan ou une analyse se développe autant qu'il le faut. Cite les
+  chiffres ci-dessus quand ils répondent ; dis que tu ne sais pas quand ils ne disent rien
+  là-dessus.
 - "remember" : ce que **je viens de t'apprendre sur moi** et qui vaudra encore dans six
   mois — une blessure, un sommeil, un traitement, une contrainte. Liste vide le plus
   souvent, et c'est le cas normal.
 {fields}
 Règles :
+- **Quand je demande quoi faire, réponds par ce qu'il faut faire.** Tu es mon coach : une
+  charge, un nombre de séries, un rythme, appuyés sur les chiffres ci-dessus et annoncés
+  comme ta recommandation. Rappeler l'historique puis me laisser conclure ne répond pas à
+  la question. Cette règle ne vaut pas pour une douleur, une blessure ou un symptôme : là,
+  tu notes, tu renvoies vers un professionnel, et tu t'en tiens là.
 - N'invente aucun chiffre. Si la réponse demande une donnée absente ci-dessus, dis-le.
 - Ne mets **jamais** dans "remember" ce que les données ci-dessus disent déjà : elles sont
   recalculées à chaque question, une copie figée deviendrait fausse.

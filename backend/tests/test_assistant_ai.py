@@ -312,6 +312,29 @@ def test_the_reply_publishes_the_context_it_sent(
     assert any("Assiduité de suivi" in line for line in body["context"])
 
 
+def test_a_conversation_is_not_an_extraction_and_carries_no_temperature(
+    ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter
+) -> None:
+    """Lot 7, vérifié sur ce qui **part** et non sur ce que le code a l'air de faire.
+
+    `temperature: 0.1` est arrivé pour qu'une photo d'assiette rende deux fois le même
+    chiffre. Sur une conversation, il rend dix réponses quasi identiques à dix questions
+    voisines. Le champ n'est pas déplacé vers une autre valeur : il est **retiré**, parce
+    que sur la famille Claude 5 il est filtré de toute façon et qu'inventer un `0,7` que
+    personne n'a mesuré vaudrait moins que le défaut du fournisseur.
+
+    Le reste du corps ne bouge pas — `response_format` protège toujours des modèles qui
+    raisonnent à voix haute, et c'est ce qui distingue ce retrait d'une régression.
+    """
+    openrouter.say(answer())
+
+    ask(ai_app_client, auth)
+
+    envoye = openrouter.calls[0].body
+    assert "temperature" not in envoye
+    assert envoye["response_format"] == {"type": "json_object"}
+
+
 def test_the_whole_files_never_reach_the_model(
     ai_app_client: TestClient, auth: dict[str, str], openrouter: FakeOpenRouter, dav: FakeWebDav
 ) -> None:

@@ -83,9 +83,16 @@ if TYPE_CHECKING:  # pragma: no cover - import de typage seulement
 #:
 #: 900 suffisaient à `{reply, remember}`. Le contrat en porte cinq champs depuis le L18, et
 #: la moitié des modèles gratuits raisonnent à voix haute avant de répondre — une réponse
-#: tronquée en plein raisonnement ne rend aucun JSON, donc rien du tout. La marge est là
-#: pour ce cas ; une réponse utile en occupe toujours moins de 400.
-MAX_TOKENS = 1600
+#: tronquée en plein raisonnement ne rend aucun JSON, donc rien du tout.
+#:
+#: **Monté de 1 600 au lot 7, et ce n'est pas de la prudence.** Tant que la consigne disait
+#: « quatre phrases au plus », une réponse utile tenait sous 400 jetons et 1 600 était une
+#: marge pour le raisonnement. La consigne autorise désormais un plan à se développer, et
+#: `MAX_REPLY` va jusqu'à 4 000 caractères — soit près de 1 300 jetons pour le seul `reply`,
+#: avant `remember`, `actions`, `need` et `title`. Laisser 1 600 aurait fait couper le
+#: modèle en plein JSON exactement sur les réponses que le lot cherche à obtenir, et une
+#: réponse coupée là ne rend pas un texte tronqué : elle ne rend **rien**.
+MAX_TOKENS = 3000
 
 
 #: Ce qu'un appelant fournit pour être tenu au courant : une coroutine par étape.
@@ -588,6 +595,13 @@ class AssistantService:
             instruction=conversation.INSTRUCTION,
             prompt=prompt_for([]),
             max_tokens=MAX_TOKENS,
+            # **Pas le tirage d'une extraction.** `0,1` est arrivé pour qu'une photo
+            # d'assiette rende deux fois le même chiffre ; appliqué à une conversation, il
+            # rend dix réponses quasi identiques à dix questions voisines. Le champ part
+            # d'ici plutôt que de prendre une autre valeur : sur la famille Claude 5 il est
+            # filtré de toute façon (voir `EXTRACTION_TEMPERATURE`), et inventer un `0,7`
+            # que personne n'a mesuré vaudrait moins que le défaut du fournisseur.
+            temperature=None,
         )
 
         # ── La seconde passe, et il n'y en a jamais de troisième (`IA-16`)
@@ -610,6 +624,7 @@ class AssistantService:
                 instruction=conversation.INSTRUCTION,
                 prompt=prompt_for(await context.slices(self._store, need, today=current)),
                 max_tokens=MAX_TOKENS,
+                temperature=None,
             )
 
         wanted = conversation.read_actions(payload)
