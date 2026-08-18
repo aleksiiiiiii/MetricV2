@@ -117,7 +117,7 @@ async def jouer(
                 context=condense,
                 memory=context.memory_lines(cas.carnet),
                 actions=lignes_actions,
-                slices=disponibles,
+                slices=context.describe_slices(),
                 naming=True,
             )
             corps = client.build_body(

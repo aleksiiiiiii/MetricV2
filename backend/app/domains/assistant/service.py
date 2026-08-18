@@ -675,7 +675,7 @@ class AssistantService:
                 profile=who,
                 history=history,
                 actions=catalogue.describe_catalogue(),
-                slices=available,
+                slices=context.describe_slices(),
                 naming=opening,
             )
 

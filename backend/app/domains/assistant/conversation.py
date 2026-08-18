@@ -272,10 +272,10 @@ def build_prompt(
 
     if actions:
         listed = "\n".join(f"- {line}" for line in actions)
-        available = ", ".join(slices or []) or "aucune"
+        available = "\n".join(f"- {line}" for line in slices or []) or "- aucune"
         catalogue = (
             f"## Ce que tu peux faire dans mes données\n\n{listed}\n\n"
-            f"Tranches de contexte disponibles à la demande : {available}.\n\n"
+            f"## Ce que tu peux me demander de te montrer\n\n{available}\n\n"
             f"{_PERIODS}\n\n"
         )
         shape += ['"need": []', '"actions": []']

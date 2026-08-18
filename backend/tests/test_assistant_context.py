@@ -613,3 +613,28 @@ async def test_le_passe_lointain_reste_servi_car_il_dit_vrai(store: FileStore) -
 
     assert "04/03/2019" in rendu
     assert "n'a pas encore eu lieu" not in rendu
+
+
+def test_toute_tranche_dit_au_modele_ce_qu_elle_rend() -> None:
+    """**Une possibilité non décrite est une possibilité morte.**
+
+    Les tranches étaient listées en noms nus, quand les actions portaient leurs arguments
+    depuis longtemps — l'asymétrie n'avait aucune raison d'être. Personne ne devine ce que
+    `jours_suivis` contient, ni ce qui distingue `progression_charges` de `detail_seances`.
+
+    Structurel plutôt que déclaratif : une tranche ajoutée sans description fait échouer la
+    batterie au lieu d'arriver muette chez le modèle.
+    """
+    muettes = [nom for nom, tranche in context.SLICES.items() if not tranche.describes.strip()]
+
+    assert not muettes, f"tranches sans description : {muettes}"
+
+
+def test_les_descriptions_partent_dans_la_consigne_avec_leur_nom() -> None:
+    """Rendues depuis `SLICES` et non recopiées à côté : deux listes divergeraient au
+    premier ajout, et c'est la règle que le catalogue d'actions suit déjà."""
+    rendu = context.describe_slices()
+
+    assert len(rendu) == len(context.SLICES)
+    for nom in context.SLICES:
+        assert any(ligne.startswith(f"{nom} — ") for ligne in rendu)

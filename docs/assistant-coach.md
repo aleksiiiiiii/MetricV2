@@ -1326,3 +1326,42 @@ candidate partage une racine avec une note du même sujet : rare, donc peu coût
 prendre plutôt qu'un correctif à glisser.
 
 **Mesure.** `make check` vert : 1 331 tests backend, 383 écran.
+
+---
+
+## 14. Ce que le modèle savait pouvoir faire — 2026-08-18
+
+**La question posée était la bonne, et la réponse était « à moitié ».** Le §12 avait ajouté
+trois tranches, une syntaxe de périodes et un bloc profil ; restait à savoir si le modèle
+était au courant.
+
+| Capacité | Le modèle en était-il informé ? |
+|---|---|
+| Les treize actions et leurs arguments | **Oui** — générés depuis les schémas Pydantic |
+| La syntaxe des périodes (`@date`, `@semaine-`) | **Oui** — décrite au lot 12.B |
+| Les douze tranches | **Leur nom seulement** |
+| Ce que chaque tranche rend | **Non** |
+
+Le catalogue d'actions est généré depuis les schémas **après un défaut qui a coûté cinq
+échecs d'affilée** sur un `kind` décrit « texte » alors qu'il n'acceptait que trois valeurs.
+La leçon n'avait jamais été appliquée à l'autre moitié du contrat : les tranches arrivaient
+en liste de noms nus, et personne ne devine ce que `jours_suivis` contient, ni ce qui
+distingue `progression_charges` de `detail_seances` de `activites_recentes`.
+
+**Ce qui change.** `SLICES` devient une table de `Slice(load, describes)` : le chargeur et
+sa description vivent ensemble, parce qu'ils divergeraient séparés. `describe_slices()`
+rend les lignes, `build_prompt` les insère sans connaître un seul nom — exactement comme il
+le fait déjà pour les actions. Un test structurel refuse une tranche sans description.
+
+**Les descriptions disent aussi à quoi servir la tranche**, pas seulement ce qu'elle
+contient : « à demander avant d'ajouter une série », « à demander pour comparer deux
+métriques », « à demander pour savoir si un trou est une absence de suivi ou une absence
+d'activité ». C'est la différence entre un inventaire et un mode d'emploi.
+
+**Un défaut de conception révélé au passage.** Le fichier de tests confondait deux choses
+que ce lot sépare : les lignes **rendues** que reçoit la consigne, et les **noms** que
+filtre `read_need`. Ça marchait tant que les deux se ressemblaient. Les tests portent
+désormais `SLICES` et `SLICE_NAMES`, ce qui dit lequel est lequel.
+
+**Mesure.** `make check` vert : 1 333 tests backend, 383 écran. Consigne rendue relue à
+l'œil.

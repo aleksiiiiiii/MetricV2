@@ -705,20 +705,95 @@ async def _tracking_days(store: FileStore, today: date) -> list[str]:
 
 
 #: Les tranches, par nom. **La liste des clés est ce que le modèle a le droit de demander.**
-SLICES: dict[str, Callable[[FileStore, date], Awaitable[list[str]]]] = {
-    "exercices": _exercises,
-    "progression_charges": _lift_progress,
-    "detail_seances": _session_detail,
-    "repas_du_jour": _meals_today,
-    "hydratation_du_jour": _hydration_today,
-    "pesees_recentes": _weights_recent,
-    "supplements_du_jour": _supplements_today,
-    "planning_a_venir": _plan_ahead,
-    "activites_recentes": _activity_recent,
-    "tendances": _trends,
-    "bilans_hebdomadaires": _weekly_reviews,
-    "jours_suivis": _tracking_days,
+class Slice(NamedTuple):
+    """Une tranche : ce qu'elle charge, et **ce qu'elle promet au modèle**.
+
+    Les deux vivent ensemble parce qu'ils divergeraient séparés. C'est la leçon du
+    catalogue d'actions, qui est généré depuis les schémas Pydantic après cinq échecs
+    d'affilée sur un `kind` décrit « texte » alors qu'il n'acceptait que trois valeurs :
+    une description tenue à la main à côté du code qu'elle décrit finit par mentir.
+    """
+
+    load: Callable[[FileStore, date], Awaitable[list[str]]]
+    #: Une ligne, à la première personne du serveur — « je te donne … ». Elle part telle
+    #: quelle dans la consigne, c'est donc elle que le modèle lit pour choisir.
+    describes: str
+
+
+#: Les tranches, par nom. **La liste des clés est ce que le modèle a le droit de demander,
+#: et les descriptions sont ce qui lui permet de choisir.**
+#:
+#: Elles étaient listées en noms nus. Les actions, elles, portent leurs arguments depuis
+#: longtemps — l'asymétrie n'avait aucune raison d'être, et personne ne devine ce que
+#: `jours_suivis` contient. Une possibilité non décrite est une possibilité morte.
+SLICES: dict[str, Slice] = {
+    "exercices": Slice(
+        _exercises,
+        "le catalogue des exercices, avec leur groupe musculaire et leur identifiant "
+        "— à demander avant d'ajouter une série",
+    ),
+    "progression_charges": Slice(
+        _lift_progress,
+        "par exercice : dernière charge, écart avec la fois d'avant, record, 1RM estimé "
+        "et les charges des dernières séances",
+    ),
+    "detail_seances": Slice(
+        _session_detail,
+        "ce que les dernières séances ont réellement contenu, exercice par exercice : "
+        "séries, répétitions, charge et volume",
+    ),
+    "repas_du_jour": Slice(
+        _meals_today,
+        "les repas d'une journée et leurs totaux — protéines, calories, sucres ajoutés, "
+        "restant — avec les jetons pour en supprimer un",
+    ),
+    "hydratation_du_jour": Slice(
+        _hydration_today,
+        "ce qui a été bu dans la journée, la cible, le restant, et chaque prise avec son jeton",
+    ),
+    "pesees_recentes": Slice(
+        _weights_recent, "les dix dernières pesées, avec les jetons pour en supprimer une"
+    ),
+    "supplements_du_jour": Slice(
+        _supplements_today,
+        "les suppléments prévus ce jour-là, pris ou non, avec l'identifiant pour les cocher",
+    ),
+    "planning_a_venir": Slice(
+        _plan_ahead,
+        "les séances prévues sur les quatre semaines qui suivent, avec les jetons pour en "
+        "retirer une",
+    ),
+    "activites_recentes": Slice(
+        _activity_recent,
+        "les cinq dernières courses et séances : distance, durée, allure, fréquence "
+        "cardiaque, dénivelé, effort perçu",
+    ),
+    "tendances": Slice(
+        _trends,
+        "pour chaque métrique suivie et sur trois mois : dernier relevé, moyenne, minimum, "
+        "maximum et variation — à demander pour comparer deux métriques",
+    ),
+    "bilans_hebdomadaires": Slice(
+        _weekly_reviews,
+        "les bilans de semaine déjà écrits, au-delà des deux que tu as reçus",
+    ),
+    "jours_suivis": Slice(
+        _tracking_days,
+        "quels jours du dernier mois ont été relevés, source par source — à demander pour "
+        "savoir si un trou est une absence de suivi ou une absence d'activité",
+    ),
 }
+
+
+def describe_slices() -> list[str]:
+    """Les tranches et ce qu'elles rendent, une ligne chacune, pour la consigne.
+
+    Rendu depuis `SLICES` et non recopié à côté : c'est la règle du catalogue d'actions,
+    dont `conversation.py` insère les lignes sans connaître un seul nom. Une tranche
+    ajoutée sans description ferait échouer la batterie plutôt que d'arriver muette chez le
+    modèle.
+    """
+    return [f"{nom} — {tranche.describes}" for nom, tranche in SLICES.items()]
 
 
 async def slices(store: FileStore, wanted: list[Need], *, today: date | None = None) -> list[str]:
@@ -742,8 +817,8 @@ async def slices(store: FileStore, wanted: list[Need], *, today: date | None = N
     current = today or today_local()
     lines: list[str] = []
     for need in wanted:
-        loader = SLICES.get(need.name)
-        if loader is None:  # pragma: no cover - `read_need` a déjà filtré
+        tranche = SLICES.get(need.name)
+        if tranche is None:  # pragma: no cover - `read_need` a déjà filtré
             continue
 
         rendu: list[str] = []
@@ -763,7 +838,7 @@ async def slices(store: FileStore, wanted: list[Need], *, today: date | None = N
                     vues.add(ligne)
                     rendu.append(ligne)
                 continue
-            for line in await loader(store, day):
+            for line in await tranche.load(store, day):
                 # **Une même phrase deux fois n'apprend rien**, et sur une semaine ça se
                 # voit : les tranches ajoutent des faits qui ne dépendent pas du jour rendu
                 # — « Moyenne d'hydratation sur 7 jours » arrivait sept fois à l'identique.
@@ -809,7 +884,9 @@ __all__ = [
     "MAX_TRACKING_DAYS",
     "RECENT_INSIGHTS",
     "SLICES",
+    "Slice",
     "build",
+    "describe_slices",
     "memory_lines",
     "slices",
 ]
