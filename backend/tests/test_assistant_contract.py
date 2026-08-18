@@ -512,3 +512,20 @@ def test_one_question_at_a_time_and_no_nagging() -> None:
 
     assert "Une seule question à la fin, jamais trois" in text
     assert "répété on cesse de l'entendre" in text
+
+
+def test_the_model_may_not_declare_data_absent_from_the_app() -> None:
+    """**Le défaut le plus grave relevé en usage, et il est pire qu'un tour perdu.**
+
+    « Cette course n'apparaît pas encore dans ton suivi » — elle y était. Le modèle n'a pas
+    seulement omis de réclamer la tranche : il a affirmé une absence sur des données qu'il
+    n'avait pas regardées. C'est une phrase fausse sur les données de quelqu'un, et
+    l'utilisateur n'a aucun moyen de savoir qu'elle est fausse.
+
+    Le condensé est **ce qu'on lui a montré**, pas tout ce que l'application garde. La
+    distinction n'était écrite nulle part.
+    """
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "Ne déclare jamais qu'une donnée n'est pas enregistrée" in text
+    assert "pas tout ce que je garde" in text

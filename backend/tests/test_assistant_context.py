@@ -638,3 +638,53 @@ def test_les_descriptions_partent_dans_la_consigne_avec_leur_nom() -> None:
     assert len(rendu) == len(context.SLICES)
     for nom in context.SLICES:
         assert any(ligne.startswith(f"{nom} — ") for ligne in rendu)
+
+
+async def test_la_semaine_ecoulee_part_sans_qu_on_la_demande(store: FileStore) -> None:
+    """**Le défaut le plus grave relevé en usage.**
+
+    Sur « j'ai des courbatures de ma course d'hier », l'assistant a répondu « cette course
+    n'apparaît pas encore dans ton suivi ». Elle y était. Relancé deux fois, il n'a jamais
+    réclamé `activites_recentes`. La consigne peut inviter à demander ; elle ne peut pas
+    garantir qu'il le fasse. Ce qu'on ne peut pas obliger un modèle à chercher, on le lui
+    donne.
+    """
+    # Sans allure dans la charge utile : le service dérive la distance de durée × allure
+    # quand les deux sont données, et le test mesurerait alors cette dérivation plutôt que
+    # ce qu'il vise.
+    await RunService(store).create(RunPayload(date=HIER, distance_km=6.1, duration_min=29))
+
+    lignes = await context.week_lines(store, TODAY)
+
+    assert any(f"Course du {HIER:%d/%m}" in ligne for ligne in lignes)
+    assert any("6,1 km" in ligne for ligne in lignes)
+
+
+async def test_aujourd_hui_n_est_pas_compte_deux_fois(store: FileStore) -> None:
+    """`today_lines` porte déjà le jour, avec ses exercices en prime. Le répéter ferait
+    lire deux fois la même séance à un coach qui compte le volume."""
+    await RunService(store).create(RunPayload(date=TODAY, distance_km=5, duration_min=25))
+
+    semaine = await context.week_lines(store, TODAY)
+
+    assert not any(f"Course du {TODAY:%d/%m}" in ligne for ligne in semaine)
+
+
+async def test_une_semaine_creuse_le_dit_sans_conclure(store: FileStore) -> None:
+    """« Rien depuis sept jours » est vrai et utile. « Tu ne t'entraînes pas » serait une
+    conclusion qui n'est pas la nôtre à tirer."""
+    lignes = await context.week_lines(store, TODAY)
+
+    assert lignes == ["Les sept jours précédents : aucune séance ni course notée"]
+
+
+async def test_une_course_d_il_y_a_trois_semaines_ne_passe_pas_pour_recente(
+    store: FileStore,
+) -> None:
+    await RunService(store).create(
+        RunPayload(date=TODAY - timedelta(days=21), distance_km=9, duration_min=50)
+    )
+
+    lignes = await context.week_lines(store, TODAY)
+
+    assert lignes == ["Les sept jours précédents : aucune séance ni course notée"]

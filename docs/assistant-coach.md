@@ -1437,3 +1437,40 @@ celui qui vérifie que les deux règles sur la donnée manquante pointent dans l
 
 **Ce qui n'est toujours pas mesuré.** Rien de tout cela n'est passé au jeu d'évaluation. Le
 dialogue relu vaut mieux qu'une impression, mais il ne vaut pas les vingt-cinq cas.
+
+### 15.1 Le second dialogue — la consigne ne suffisait pas
+
+Relu après les correctifs du §15. **Le bonjour est réglé** : « Salut ! … tu es à 5 jours
+d'affilée, ton record — pas rien. Comment tu te sens ? » Court, une seule question, pas de
+récitation de dossier.
+
+**Mais le correctif du `need` n'a pas pris, et le défaut est pire qu'un tour perdu.**
+
+> — j'ai des courbatures par rapport à ma course d'hier
+>
+> — *Cette course **n'apparaît pas encore dans ton suivi** : tu veux que je la note ?*
+
+Elle y était. Relancé deux fois — « regarde bien », « vérifie car tu l'as » — le modèle n'a
+jamais rempli `need` : les quatre tours affichent « 16 lignes », donc jamais de seconde
+passe. Et il a **affirmé une absence sans avoir regardé**, ce qui n'est plus une maladresse
+mais une phrase fausse sur les données de quelqu'un — que l'utilisateur n'a aucun moyen de
+contredire.
+
+**La leçon vaut au-delà de ce cas.** Une consigne peut inviter un modèle à chercher ; elle
+ne peut pas garantir qu'il le fasse. Ce qu'on ne peut pas obliger un modèle à aller
+chercher, on le lui donne.
+
+**Deux correctifs, de nature différente.**
+
+`week_lines` sert d'office les séances et courses des **sept derniers jours**, aujourd'hui
+exclu — `today_lines` le porte déjà. Sept jours parce que c'est la fenêtre dont on parle :
+« hier », « avant-hier », « cette semaine » couvrent l'essentiel des références à une
+séance passée. Le condensé citait des **moyennes** hebdomadaires ; elles disent la cadence,
+jamais ce qui a été fait mardi.
+
+Et une règle interdit désormais de déclarer une donnée absente : *« ce qui est au-dessus
+est ce que je t'ai montré, pas tout ce que je garde ».* La distinction n'était écrite nulle
+part, et rien n'empêchait le modèle de conclure de son condensé à l'inventaire complet.
+
+**Mesure.** `make check` vert : 1 345 tests backend, 385 écran. Condensé rendu relu — la
+course d'hier y figure désormais avec sa distance, sa durée, son allure et sa FC.

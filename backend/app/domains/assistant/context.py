@@ -56,6 +56,12 @@ MAX_REVIEWS = 13
 #: source ; trois mois en feraient un mur de chiffres que personne ne lit, modèle compris.
 MAX_TRACKING_DAYS = 30
 
+#: Jours d'activité servis d'office avant aujourd'hui. Sept couvrent « hier »,
+#: « avant-hier » et « cette semaine » — l'écrasante majorité des références à une séance
+#: passée. Au-delà, la question devient « ma progression », et une liste la sert moins bien
+#: que `progression_charges` ou `tendances`.
+WEEK_BACK = 7
+
 #: Les sept sources de l'assiduité (`AGG-03`), en français. Leurs clés sont techniques et
 #: anglaises ; la consigne, elle, est en français de bout en bout.
 _SOURCES = {
@@ -159,7 +165,67 @@ async def build(
         lines.append(f"Objectifs passés : {outcomes}")
 
     lines.extend(await today_lines(store, current))
+    lines.extend(await week_lines(store, current))
 
+    return lines
+
+
+async def week_lines(store: FileStore, today: date) -> list[str]:
+    """Les séances et courses des sept derniers jours, **servies d'office**.
+
+    ## Le défaut que ce bloc répare, et il était grave
+
+    Sur « j'ai des courbatures de ma course d'hier », l'assistant a répondu « cette course
+    n'apparaît pas encore dans ton suivi ». Elle y était. Il n'a pas seulement omis de
+    réclamer `activites_recentes` — **il a affirmé une absence sans avoir regardé**, ce qui
+    est pire qu'un tour perdu : c'est une phrase fausse sur les données de quelqu'un.
+    Relancé deux fois — « regarde bien », « vérifie car tu l'as » — il n'a toujours pas
+    demandé.
+
+    La consigne peut inviter à demander, elle ne peut pas garantir qu'il le fasse. Servir
+    la semaine d'office retire la question : ce qu'on ne peut pas obliger un modèle à
+    chercher, on le lui donne.
+
+    ## Pourquoi la semaine, et pas plus
+
+    C'est la fenêtre dont on parle. « Hier », « avant-hier », « cette semaine » couvrent
+    l'écrasante majorité des références à une séance passée ; au-delà, la question devient
+    « ma progression », et `progression_charges` ou `tendances` la servent mieux qu'une
+    liste. Le condensé de `build` cite déjà des **moyennes** hebdomadaires — elles disent
+    la cadence, jamais ce qui a été fait mardi.
+
+    Aujourd'hui est exclu : `today_lines` le porte déjà, avec ses exercices en prime.
+    """
+    from app.domains.activity.service import RunService, WorkoutService
+
+    debut = today - timedelta(days=WEEK_BACK)
+    lines: list[str] = []
+
+    for row in await WorkoutService(store).all():
+        seance = row.model
+        if not debut <= seance.date < today:
+            continue
+        details = [f"{fr(seance.duration_min)} min"]
+        if seance.rpe is not None:
+            details.append(f"effort perçu {seance.rpe}/10")
+        lines.append(f"Séance du {seance.date:%d/%m} : {seance.type}, {', '.join(details)}")
+
+    for sortie in await RunService(store).all():
+        run = RunService.to_schema(sortie)
+        if not debut <= run.date < today:
+            continue
+        details = [f"{fr(run.distance_km)} km", f"{fr(run.duration_min)} min"]
+        if run.pace_min_km is not None:
+            details.append(f"allure {fr(run.pace_min_km)} min/km")
+        if run.avg_hr is not None:
+            details.append(f"FC moyenne {run.avg_hr}")
+        lines.append(f"Course du {run.date:%d/%m} : {', '.join(details)}")
+
+    if not lines:
+        # L'absence se dit, mais **bornée à la fenêtre** : « rien depuis sept jours » est
+        # vrai et utile, « tu ne t'entraînes pas » serait une conclusion qui n'est pas la
+        # nôtre à tirer.
+        return ["Les sept jours précédents : aucune séance ni course notée"]
     return lines
 
 
@@ -884,9 +950,11 @@ __all__ = [
     "MAX_TRACKING_DAYS",
     "RECENT_INSIGHTS",
     "SLICES",
+    "WEEK_BACK",
     "Slice",
     "build",
     "describe_slices",
     "memory_lines",
     "slices",
+    "week_lines",
 ]
