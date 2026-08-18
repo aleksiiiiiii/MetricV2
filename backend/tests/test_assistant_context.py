@@ -487,10 +487,13 @@ async def test_une_periode_ne_peut_pas_manger_la_consigne(store: FileStore) -> N
     La coupe est **annoncée** : un contexte tronqué en silence ferait conclure le modèle
     sur une semaine dont il n'a vu que le début.
     """
-    for _ in range(30):
+    # Sur **un seul jour**, et non une semaine : depuis la garde sur les dates futures,
+    # une semaine entamée rend une ligne courte par jour à venir et n'atteint plus le
+    # plafond. C'est le bon comportement, mais ce n'est plus ce que ce test mesure.
+    for _ in range(45):
         await HydrationService(store).create(IntakePayload(volume_ml=100))
 
-    rendu = await _rendu(store, "hydratation_du_jour", jour=TODAY, semaine=True)
+    rendu = await _rendu(store, "hydratation_du_jour", jour=TODAY)
 
     assert len(rendu.splitlines()) <= context.MAX_PERIOD_LINES + 1
     assert "non montrées" in rendu
@@ -570,3 +573,43 @@ async def test_les_bilans_hebdomadaires_vont_au_dela_des_deux_du_condense(
 
     assert "aucun enregistré" in rendu
     assert context.MAX_REVIEWS > context.RECENT_INSIGHTS
+
+
+# ── Ce que la séance de débogage a corrigé ────────────
+
+
+async def test_un_jour_futur_ne_rend_pas_un_deficit_invente(store: FileStore) -> None:
+    """**Trouvé en sondant des dates aberrantes, pas par un test.**
+
+    `hydratation_du_jour@2030-01-01` rendait « 0 ml sur une cible de 2000 ml, il reste
+    2000 ml à boire » — un déficit annoncé sur une journée qui n'a pas eu lieu, qu'un
+    modèle lit comme un retard. Un jour à venir n'a pas de relevé, et le dire est la seule
+    réponse juste.
+    """
+    demain = TODAY + timedelta(days=1)
+
+    rendu = await _rendu(store, "hydratation_du_jour", jour=demain)
+
+    assert "n'a pas encore eu lieu" in rendu
+    assert "il reste" not in rendu
+
+
+async def test_le_planning_regarde_devant_et_garde_le_droit_au_futur(
+    store: FileStore,
+) -> None:
+    """Le défaut inverse serait aussi grave : une séance prévue jeudi prochain **est** une
+    donnée, et la refuser priverait le coach de ce qui vient."""
+    demain = TODAY + timedelta(days=1)
+
+    rendu = await _rendu(store, "planning_a_venir", jour=demain)
+
+    assert "n'a pas encore eu lieu" not in rendu
+
+
+async def test_le_passe_lointain_reste_servi_car_il_dit_vrai(store: FileStore) -> None:
+    """L'antériorité **n'est pas** bornée, et la sonde a montré pourquoi elle n'a pas à
+    l'être : « aucune prise le 04/03/2019 » est exact, pas coûteux, et informatif."""
+    rendu = await _rendu(store, "hydratation_du_jour", jour=date(2019, 3, 4))
+
+    assert "04/03/2019" in rendu
+    assert "n'a pas encore eu lieu" not in rendu

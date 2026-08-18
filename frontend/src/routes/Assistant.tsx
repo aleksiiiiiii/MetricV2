@@ -55,7 +55,7 @@ import {
 } from '@/features/assistant/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { shortDate } from '@/lib/format';
+import { plural, shortDate } from '@/lib/format';
 import { keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
@@ -1000,7 +1000,10 @@ export function Assistant() {
                 s'appuyait. `IA-09` rendu vérifiable plutôt que déclaratif. */}
             {turn.context.length > 0 && (
               <details className={styles.facts}>
-                <summary>Ce qui a été envoyé ({turn.context.length} lignes, aucun fichier)</summary>
+                <summary>
+                  Ce qui a été envoyé ({turn.context.length} {plural(turn.context.length, 'ligne')},
+                  aucun fichier)
+                </summary>
                 <ul>
                   {turn.context.map((line) => (
                     <li key={line}>{line}</li>

@@ -872,3 +872,20 @@ def test_the_stream_is_not_buffered_by_a_proxy(
 
     assert response.headers["x-accel-buffering"] == "no"
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_the_prompt_asks_the_model_not_to_reword_an_existing_note() -> None:
+    """**La seule parade au cas que `_echoes` ne peut pas fermer.**
+
+    Mesuré : aucun seuil lexical ne sépare une reformulation d'une note voisine mais
+    distincte — « genou droit en descente » et « genou gauche en flexion » partagent deux
+    racines et sont deux notes, tandis que la reformulation n'en partage qu'une. Le signal
+    est sémantique.
+
+    Le modèle, lui, a le carnet **et** sa note candidate sous les yeux. On lui demande donc
+    de faire le tri à la source, là où le filtre en aval ne peut pas.
+    """
+    text = build_prompt(question="Q ?", context=CONTEXT, memory=["sommeil — Dors mal"])
+
+    assert "Relis « Ce que tu sais de moi »" in text
+    assert "en d'autres mots" in text

@@ -68,6 +68,13 @@ _SOURCES = {
     "supplements": "des suppléments",
 }
 
+#: Les tranches qui regardent **devant** et acceptent donc une date future.
+#:
+#: Toutes les autres rapportent ce qui a eu lieu : leur servir un jour à venir produirait
+#: un relevé sur une journée qui n'existe pas encore. Une seule tranche fait exception, et
+#: c'est celle dont c'est le métier — un entraînement prévu jeudi prochain est une donnée.
+FORWARD_LOOKING = frozenset({"planning_a_venir", "exercices"})
+
 _WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
@@ -742,6 +749,20 @@ async def slices(store: FileStore, wanted: list[Need], *, today: date | None = N
         rendu: list[str] = []
         vues: set[str] = set()
         for day in _days_of(need, current):
+            if day > current and need.name not in FORWARD_LOOKING:
+                # **Un jour qui n'a pas eu lieu n'a pas de relevé, et le dire est la seule
+                # réponse juste.** Sans cette garde, `hydratation_du_jour@2030-01-01` rendait
+                # « 0 ml sur une cible de 2000 ml, il reste 2000 ml à boire » — un déficit
+                # annoncé sur une journée future, que le modèle lit comme un retard. Trouvé
+                # en sondant des dates aberrantes, pas par un test.
+                #
+                # Le planning, lui, regarde devant : une séance prévue jeudi prochain est
+                # une donnée réelle, et la refuser serait le défaut inverse.
+                ligne = f"Le {day:%d/%m/%Y} n'a pas encore eu lieu : rien n'y est relevé."
+                if ligne not in vues:
+                    vues.add(ligne)
+                    rendu.append(ligne)
+                continue
             for line in await loader(store, day):
                 # **Une même phrase deux fois n'apprend rien**, et sur une semaine ça se
                 # voit : les tranches ajoutent des faits qui ne dépendent pas du jour rendu
@@ -778,6 +799,7 @@ def _days_of(need: Need, current: date) -> list[date]:
 
 
 __all__ = [
+    "FORWARD_LOOKING",
     "MAX_MEMORY_LINES",
     "MAX_PERIOD_LINES",
     "MAX_PROGRESS",

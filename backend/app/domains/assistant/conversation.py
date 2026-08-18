@@ -136,6 +136,10 @@ Règles :
   recalculées à chaque question, une copie figée deviendrait fausse.
 - Ne mets pas dans "remember" ce que tu viens de répondre. On y retient ce que je dis, pas
   ce que tu dis.
+- **Relis « Ce que tu sais de moi » avant d'y ajouter quoi que ce soit.** Si une note y dit
+  déjà la même chose *en d'autres mots*, n'en propose pas une seconde — le carnet se
+  remplirait de variantes d'une même phrase. Une note ne s'ajoute que si elle apprend
+  quelque chose qu'aucune ligne existante ne dit.
 - Une douleur, une blessure ou un symptôme se note dans "remember" et se renvoie à un
   professionnel dans "reply". Les deux, pas l'un ou l'autre.
 """
@@ -404,10 +408,22 @@ def _echoes(note: str, lines: list[str]) -> bool:
     « nuits »/« soirs » ni « séance »/« entraînement », et aucune racinisation ne les
     rapprochera.
 
-    C'est le cas qui a motivé la trouvaille du jalon 2, et il reste **ouvert**. Le fermer
-    demande une comparaison sémantique — un modèle juge ou des plongements —, donc un lot à
-    lui seul. Mieux vaut un test qui dit ce qu'il couvre qu'un test dont on croit qu'il
-    couvre tout.
+    C'est le cas qui a motivé la trouvaille du jalon 2. **Mesuré depuis, et le verdict est
+    qu'aucun seuil lexical ne le fermera** : « genou droit en descente » et « genou gauche
+    en flexion » partagent deux racines et sont deux notes distinctes, tandis que la
+    reformulation qui nous intéresse n'en partage qu'une. Le signal qui les sépare est le
+    *contraste* — droit contre gauche — et il est sémantique. Baisser le seuil écarterait
+    de vraies notes ; le monter laisserait passer la redite.
+
+    **Ce qui a été fait à la place, c'est de s'attaquer à la source.** Le modèle a le carnet
+    *et* sa note candidate sous les yeux ; la consigne lui demande donc explicitement de ne
+    pas redire en d'autres mots ce qu'une ligne existante dit déjà. Ce filtre-ci reste ce
+    qu'il a toujours été — un filet lexical qui attrape la recopie franche — et ne prétend
+    plus à autre chose.
+
+    Si la règle de consigne ne suffit pas, le recours est un modèle juge appelé **seulement**
+    quand une note candidate partage une racine avec une note existante du même sujet : rare,
+    donc peu coûteux. Le cas `redite-carnet` du jeu d'évaluation le dira.
     """
     words = _significant(note)
     if not words:

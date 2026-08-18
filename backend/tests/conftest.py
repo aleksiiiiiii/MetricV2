@@ -1,4 +1,8 @@
-"""Fixtures partagées."""
+"""Fixtures partagées.
+
+**L'horloge de la session est figée**, et le pourquoi tient dans `tests/_clock.py` — ce
+module est importé ici pour son effet de bord, avant la collecte des fichiers de test.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +23,10 @@ from app.storage.cache import FileCache
 from app.storage.files import FileStore
 from app.storage.provider import StorageProvider
 from app.storage.webdav import WebDavClient
+
+# **Importé pour son effet de bord** : il fige l'horloge de la session, et doit le
+# faire avant que les fichiers de test ne calculent leur « TODAY » à l'import.
+from tests import _clock  # noqa: F401
 from tests.fake_openrouter import FakeOpenRouter, free_model
 from tests.fake_webdav import FakeWebDav
 from tests.fake_webpush import FakeWebPush

@@ -1258,3 +1258,71 @@ ajoute la *lecture* de l'hydratation et ne prend pas cette décision non plus.
 **Aucun de ces lots n'a été éprouvé sur un vrai téléphone.** Le lot 7 (streaming) et le lot
 8 (notification proactive) sont les deux qui se comportent différemment sur un appareil réel
 — latence, réveil de l'onglet, notification système. L'émulation ne les reproduit pas.
+
+---
+
+## 13. Séance de débogage — 2026-08-17
+
+Les défauts nommés au fil des lots s'accumulaient sans être repris. Cette séance les ferme,
+ou dit pourquoi ils ne se ferment pas. **Deux des cinq n'étaient pas ce que je croyais**, et
+c'est le résultat le plus utile de la séance.
+
+| Défaut | Verdict |
+|---|---|
+| Accord « 1 lignes » | **Corrigé.** Un helper `plural` existait déjà et n'était pas employé |
+| Antériorité des tranches datées non bornée | **Pas un défaut** — mais la sonde en a révélé un autre, réel |
+| Fragilité de la batterie à minuit | **Corrigé**, et un test protège le correctif |
+| Zéros de `goals.summary_lines` | **Pas un défaut**, décision documentée (voir §12.A) |
+| `_echoes` défait par une reformulation | **Ne se ferme pas lexicalement** — mesuré, et traité autrement |
+
+### Ce que la sonde a trouvé à la place de l'antériorité
+
+J'avais noté « une date de 2019 lit le fichier entier sans rien trouver ». Sondé : c'est
+inoffensif — « aucune prise le 04/03/2019 » est exact, peu coûteux et informatif.
+
+**Le vrai défaut était le futur.** `hydratation_du_jour@2030-01-01` rendait :
+
+```
+Hydratation du 01/01/2030 : 0 ml sur une cible de 2000 ml, il reste 2000 ml à boire
+```
+
+Un déficit annoncé sur une journée qui n'a pas eu lieu, qu'un modèle lit comme un retard.
+Les tranches rétrospectives refusent désormais une date future en le disant ;
+`planning_a_venir` garde le droit au futur, parce qu'une séance prévue jeudi prochain
+**est** une donnée et que la refuser serait le défaut inverse.
+
+### L'horloge de la batterie
+
+La cause exacte des dix-huit échecs : chaque fichier calcule son `TODAY = today_local()`
+**à l'import**, l'application relit l'horloge à chaque appel. Passé 00:00, les deux ne
+parlent plus du même jour, et le rouge se lit comme une régression qu'il n'est pas.
+
+`tests/_clock.py` fige l'instant au démarrage, en remplaçant le nom `datetime` **dans**
+`app.core.dates` — les modules qui ont importé `today_local` gardent leur propre référence
+à la fonction, mais celle-ci relit `datetime` dans ses globales à chaque appel. C'est le
+seul point de passage qui les couvre tous.
+
+**L'heure réelle du démarrage, pas une date en dur** : une date figée changerait le jour de
+la semaine et la saison, et ferait passer ou échouer des cas pour des raisons sans rapport.
+On ne retire que la dérive. `tests/test_harness.py` tient le correctif, faute de quoi il
+disparaîtrait dans un déplacement de fixture sans que rien ne le signale.
+
+### `_echoes` : pourquoi ça ne se ferme pas, et ce qui a été fait
+
+Mesuré sur six paires réelles. La reformulation qui nous intéresse partage **une** racine
+avec la note d'origine ; deux notes voisines mais **distinctes** — « genou droit en
+descente » et « genou gauche en flexion » — en partagent **deux**. Le signal qui les sépare
+est le *contraste*, pas le recouvrement : baisser le seuil écarterait de vraies notes, le
+monter laisserait passer la redite. **Aucun seuil lexical ne tranche.**
+
+Le filtre reste donc ce qu'il est — un filet qui attrape la recopie franche et sa variante
+conjuguée — et ne prétend plus à autre chose. **Ce qui a changé est la source** : le modèle
+a le carnet *et* sa note candidate sous les yeux, et la consigne lui demande maintenant de
+ne pas redire en d'autres mots ce qu'une ligne existante dit déjà.
+
+Si ça ne suffit pas, le recours est un modèle juge appelé **seulement** quand une note
+candidate partage une racine avec une note du même sujet : rare, donc peu coûteux. Le cas
+`redite-carnet` du jeu d'évaluation le dira — et c'est un appel payant, donc une décision à
+prendre plutôt qu'un correctif à glisser.
+
+**Mesure.** `make check` vert : 1 331 tests backend, 383 écran.
