@@ -753,3 +753,65 @@ async def test_le_condense_ne_donne_pas_les_jetons_du_planning(store: FileStore)
 
     assert "token=" not in base
     assert "token=" in tranche
+
+
+async def test_une_seance_dit_les_groupes_musculaires_travailles(store: FileStore) -> None:
+    """« muscu, 45 min » ne dit pas si les jambes ont été touchées cette semaine — or
+    c'est exactement ce qu'un coach doit savoir avant de proposer la suivante.
+
+    C'est une **lecture** : `muscle_group` est une colonne d'`exercise_log`, recopiée du
+    catalogue à l'écriture. Les lister ne dérive rien.
+    """
+    pec = await _exercice(store, "Développé couché", "pectoraux")
+    tri = await _exercice(store, "Extensions", "triceps")
+    await WorkoutService(store).create(
+        WorkoutPayload(
+            date=HIER,
+            type="muscu",
+            duration_min=45,
+            rpe=7,
+            exercises=[
+                ExerciseEntryPayload(exercise_id=pec, weight_kg=65, sets=3, reps=7),
+                ExerciseEntryPayload(exercise_id=tri, weight_kg=25, sets=3, reps=12),
+            ],
+        )
+    )
+
+    lignes = await context.week_lines(store, TODAY)
+
+    assert any("pectoraux, triceps" in ligne for ligne in lignes)
+
+
+async def test_les_groupes_suivent_l_ordre_de_la_seance(store: FileStore) -> None:
+    """L'ordre d'apparition plutôt que l'alphabétique : « pectoraux, triceps » dit qu'on a
+    poussé avant de finir sur les bras, et un coach lit ça."""
+    jambes = await _exercice(store, "Squat", "jambes")
+    dos = await _exercice(store, "Tractions", "dos")
+    await WorkoutService(store).create(
+        WorkoutPayload(
+            date=HIER,
+            type="muscu",
+            duration_min=50,
+            exercises=[
+                ExerciseEntryPayload(exercise_id=jambes, weight_kg=90, sets=4, reps=6),
+                ExerciseEntryPayload(exercise_id=dos, weight_kg=0, sets=4, reps=8),
+            ],
+        )
+    )
+
+    lignes = await context.week_lines(store, TODAY)
+
+    assert any("jambes, dos" in ligne for ligne in lignes)
+
+
+async def test_une_seance_sans_serie_ne_recoit_pas_un_tiret_vide(store: FileStore) -> None:
+    """Une séance typée sans exercice est une possibilité normale — un footing noté
+    « autre ». Lui coller un « — » suivi de rien serait une ponctuation qui ment."""
+    await WorkoutService(store).create(
+        WorkoutPayload(date=HIER, type="autre", duration_min=30, exercises=[])
+    )
+
+    lignes = await context.week_lines(store, TODAY)
+
+    assert any("autre, 30 min" in ligne for ligne in lignes)
+    assert not any(ligne.rstrip().endswith("—") for ligne in lignes)

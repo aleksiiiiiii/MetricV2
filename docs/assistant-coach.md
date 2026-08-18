@@ -1514,3 +1514,37 @@ Seize lignes. Ce qui a été fait, ce qui vient, et ce qui manque au jour — sa
 seconde passe soit nécessaire.
 
 **Mesure.** `make check` vert : 1 350 tests backend, 385 écran.
+
+### 15.3 Le type de séance **et** les groupes musculaires
+
+« muscu, 45 min » ne dit pas si les jambes ont été touchées cette semaine — or c'est
+exactement ce qu'un coach doit savoir avant de proposer la suivante. Les séances portent
+désormais leurs groupes, dans les trois endroits qui les rendent : le bloc du jour, la
+semaine écoulée, et la tranche `activites_recentes`. Trois rubriques qui décriraient la
+même séance différemment feraient douter de la bonne.
+
+```
+Séance du 17/08 : musculation, 41 min, effort perçu 7/10 — pectoraux, triceps, abdos
+```
+
+**C'est une lecture, pas un calcul.** `muscle_group` est une colonne d'`exercise_log`,
+recopiée du catalogue à l'écriture — trois lecteurs du domaine Activité s'en servent déjà
+plutôt que de remonter au catalogue. Les lister ne dérive rien, et l'invariant « le serveur
+calcule » n'est pas mis en cause. Le vocabulaire est **fermé** (neuf valeurs, `MuscleGroup`),
+ce qui les rend fiables dans une consigne : le modèle ne verra jamais un groupe inventé.
+
+L'ordre est celui de la séance et non l'alphabétique : « pectoraux, triceps » dit qu'on a
+poussé avant de finir sur les bras.
+
+**Et la limite, qui n'est pas dans le code.** Une séance enregistrée sans ses exercices n'a
+**aucun** groupe musculaire — la donnée n'existe pas :
+
+```
+Séance du 15/08 : musculation, 75 min
+```
+
+C'est exactement ce qu'un usage réel a fait remonter. Lui coller un groupe déduit du type
+ou de l'habitude serait une valeur inventée, et de la pire espèce : plausible. La ligne
+reste donc courte, et ce qui la remplit est en amont — saisir les exercices de la séance.
+
+**Mesure.** `make check` vert : 1 353 tests backend, 385 écran.

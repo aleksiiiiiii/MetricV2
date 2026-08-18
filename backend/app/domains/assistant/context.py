@@ -236,10 +236,13 @@ async def week_lines(store: FileStore, today: date) -> list[str]:
 
     Aujourd'hui est exclu : `today_lines` le porte déjà, avec ses exercices en prime.
     """
-    from app.domains.activity.service import RunService, WorkoutService
+    from app.domains.activity.service import ExerciseService, RunService, WorkoutService
 
     debut = today - timedelta(days=WEEK_BACK)
     lines: list[str] = []
+    entries = [
+        ExerciseService.entry_to_schema(row) for row in await ExerciseService(store).log_entries()
+    ]
 
     for row in await WorkoutService(store).all():
         seance = row.model
@@ -248,7 +251,14 @@ async def week_lines(store: FileStore, today: date) -> list[str]:
         details = [f"{fr(seance.duration_min)} min"]
         if seance.rpe is not None:
             details.append(f"effort perçu {seance.rpe}/10")
-        lines.append(f"Séance du {seance.date:%d/%m} : {seance.type}, {', '.join(details)}")
+        # **Ce qu'une séance a travaillé, pas seulement qu'elle a eu lieu.** « muscu,
+        # 45 min » ne dit pas si les jambes ont été touchées cette semaine — or c'est
+        # exactement ce qu'un coach doit savoir avant de proposer la suivante.
+        groupes = _muscles(list(entries), seance.id)
+        travail = f" — {groupes}" if groupes else ""
+        lines.append(
+            f"Séance du {seance.date:%d/%m} : {seance.type}, {', '.join(details)}{travail}"
+        )
 
     for sortie in await RunService(store).all():
         run = RunService.to_schema(sortie)
@@ -359,6 +369,10 @@ async def _training_today(store: FileStore, today: date) -> list[str]:
 
     lines: list[str] = []
 
+    entries = [
+        ExerciseService.entry_to_schema(row) for row in await ExerciseService(store).log_entries()
+    ]
+
     for row in await WorkoutService(store).all():
         seance = row.model
         if seance.date != today:
@@ -366,15 +380,14 @@ async def _training_today(store: FileStore, today: date) -> list[str]:
         details = [f"{fr(seance.duration_min)} min"]
         if seance.rpe is not None:
             details.append(f"effort perçu {seance.rpe}/10")
-        lines.append(f"Aujourd'hui — séance : {seance.type}, {', '.join(details)}")
+        groupes = _muscles(list(entries), seance.id)
+        travail = f" — {groupes}" if groupes else ""
+        lines.append(f"Aujourd'hui — séance : {seance.type}, {', '.join(details)}{travail}")
 
     # Les séries du jour, rendues **exactement** comme `detail_seances` les rend : deux
     # formulations pour la même chose finiraient par diverger, et un coach lirait deux
     # charges différentes selon la rubrique qu'il regarde. `_charge` porte `ACT-07` — « 0 »
     # est le poids du corps, jamais une absence.
-    entries = [
-        ExerciseService.entry_to_schema(row) for row in await ExerciseService(store).log_entries()
-    ]
     du_jour = [entry for entry in entries if entry.date == today]
     if du_jour:
         rendu = " · ".join(
@@ -463,6 +476,25 @@ MAX_PROGRESS = 12
 #: renvoyer le fichier.
 MAX_SESSIONS = 5
 MAX_SERIES = 6
+
+
+def _muscles(entries: list[object], workout_id: str) -> str:
+    """Les groupes musculaires d'une séance, dans l'ordre où ils ont été travaillés.
+
+    **C'est une lecture, pas un calcul.** `muscle_group` est une colonne d'`exercise_log`,
+    recopiée du catalogue à l'écriture — trois lecteurs s'en servent déjà plutôt que de
+    remonter au catalogue. Les lister ne dérive donc rien, et « le serveur calcule » n'est
+    pas mis en cause.
+
+    L'ordre d'apparition plutôt que l'alphabétique : « pectoraux, triceps » dit qu'on a
+    poussé avant de finir sur les bras, et un coach lit ça.
+    """
+    vus: list[str] = []
+    for entry in entries:
+        groupe = getattr(entry, "muscle_group", "")
+        if getattr(entry, "workout_id", None) == workout_id and groupe and groupe not in vus:
+            vus.append(groupe)
+    return ", ".join(vus)
 
 
 def _charge(kg: float) -> str:
@@ -675,7 +707,7 @@ async def _activity_recent(store: FileStore, _today: date) -> list[str]:
     à 4'30 avec 140 de moyenne et une course de 8 km à 6'00 avec 165 ne se coachent pas
     pareil, et l'assistant lisait la même ligne pour les deux.
     """
-    from app.domains.activity.service import RunService, WorkoutService
+    from app.domains.activity.service import ExerciseService, RunService, WorkoutService
 
     runs = [RunService.to_schema(row) for row in (await RunService(store).all())[-5:]]
     workouts = (await WorkoutService(store).all())[-5:]
@@ -698,6 +730,13 @@ async def _activity_recent(store: FileStore, _today: date) -> list[str]:
             f"(row_id={run.id}, token={run.token})"
         )
 
+    # Les mêmes groupes que le condensé sert pour la semaine : deux rubriques qui
+    # décriraient la même séance différemment feraient douter de la bonne.
+    entries = [
+        ExerciseService.entry_to_schema(entry)
+        for entry in await ExerciseService(store).log_entries()
+    ]
+
     for row in workouts:
         seance = row.model
         details = [f"{fr(seance.duration_min)} min"]
@@ -705,8 +744,10 @@ async def _activity_recent(store: FileStore, _today: date) -> list[str]:
             details.append(f"effort perçu {seance.rpe}/10")
         if seance.calories is not None:
             details.append(f"{seance.calories} kcal")
+        groupes = _muscles(list(entries), seance.id)
+        travail = f" — {groupes}" if groupes else ""
         lines.append(
-            f"Séance du {seance.date:%d/%m/%Y} : {seance.type}, {', '.join(details)} "
+            f"Séance du {seance.date:%d/%m/%Y} : {seance.type}, {', '.join(details)}{travail} "
             f"(row_id={row.index}, token={row.token})"
         )
     return lines or ["Activités récentes : aucune"]
