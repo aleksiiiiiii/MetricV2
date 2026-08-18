@@ -62,6 +62,11 @@ MAX_TRACKING_DAYS = 30
 #: que `progression_charges` ou `tendances`.
 WEEK_BACK = 7
 
+#: Jours de planning servis d'office. Même fenêtre que le passé, et pour la même raison :
+#: « ce soir », « demain », « cette semaine » sont les questions posées. La tranche
+#: `planning_a_venir` garde les quatre semaines et les jetons.
+WEEK_AHEAD = 7
+
 #: Les sept sources de l'assiduité (`AGG-03`), en français. Leurs clés sont techniques et
 #: anglaises ; la consigne, elle, est en français de bout en bout.
 _SOURCES = {
@@ -166,7 +171,42 @@ async def build(
 
     lines.extend(await today_lines(store, current))
     lines.extend(await week_lines(store, current))
+    lines.extend(await plan_lines(store, current))
 
+    return lines
+
+
+async def plan_lines(store: FileStore, today: date) -> list[str]:
+    """Ce qui est **prévu** sur les sept jours qui viennent, servi d'office.
+
+    ## Le même angle mort que la semaine écoulée, dans l'autre sens
+
+    Le condensé porte le **taux** de respect du planning — « 3 séances honorées sur 9
+    prévues, 33,3 % ». Un taux dit si l'on tient ses rendez-vous ; il ne dit jamais lequel
+    est mardi. « Je fais quoi ce soir ? » et « qu'est-ce qui est prévu demain ? » retombaient
+    donc exactement dans le piège qui a fait dire « cette course n'apparaît pas dans ton
+    suivi » : une tranche à réclamer, et un modèle qui préfère conclure.
+
+    ## Pas de jetons ici
+
+    `planning_a_venir` reste, et couvre quatre semaines **avec les jetons**. C'est le même
+    partage qu'ailleurs : le condensé sert les **faits**, la tranche sert de quoi **agir**.
+    Retirer une séance prévue continue d'exiger la tranche — `STO-05` ne s'assouplit pas
+    parce qu'une information est devenue plus facile à lire.
+    """
+    from app.domains.planning.service import PlanningService
+
+    sessions = await PlanningService(store).between(today, today + timedelta(days=WEEK_AHEAD))
+    if not sessions:
+        return [f"Rien de prévu d'ici {WEEK_AHEAD} jours"]
+
+    lines: list[str] = []
+    for item in sessions:
+        quand = "aujourd'hui" if item.date == today else f"le {item.date:%d/%m}"
+        # L'heure est facultative dans `plan.csv` — une séance sans créneau est une
+        # possibilité normale, et lui en inventer un la daterait faussement.
+        heure = f" à {item.time}" if item.time else ""
+        lines.append(f"Prévu {quand}{heure} : {item.title} ({fr(item.duration_min)} min)")
     return lines
 
 
@@ -950,11 +990,13 @@ __all__ = [
     "MAX_TRACKING_DAYS",
     "RECENT_INSIGHTS",
     "SLICES",
+    "WEEK_AHEAD",
     "WEEK_BACK",
     "Slice",
     "build",
     "describe_slices",
     "memory_lines",
+    "plan_lines",
     "slices",
     "week_lines",
 ]

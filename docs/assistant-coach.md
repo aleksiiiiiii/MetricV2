@@ -1474,3 +1474,43 @@ part, et rien n'empêchait le modèle de conclure de son condensé à l'inventai
 
 **Mesure.** `make check` vert : 1 345 tests backend, 385 écran. Condensé rendu relu — la
 course d'hier y figure désormais avec sa distance, sa durée, son allure et sa FC.
+
+### 15.2 Le planning aussi — le même angle mort, dans l'autre sens
+
+Le condensé portait le **taux** de respect du planning : « 3 séances honorées sur 9
+prévues, 33,3 % ». Un taux dit si l'on tient ses rendez-vous ; il ne dit jamais **lequel
+est mardi**. « Je fais quoi ce soir ? » et « qu'est-ce qui est prévu demain ? » retombaient
+donc exactement dans le piège de §15.1 : une tranche à réclamer, et un modèle qui préfère
+conclure.
+
+`plan_lines` sert d'office les sept jours qui viennent, dans la même fenêtre que le passé
+et pour la même raison — « ce soir », « demain », « cette semaine » sont les questions
+posées.
+
+Deux détails valent d'être retenus. **Une séance prévue aujourd'hui se dit « aujourd'hui »**
+et non « le 18/08 » : obliger le modèle à comparer deux dates pour comprendre que c'est ce
+soir, c'est lui faire dériver ce qu'on peut lui servir. Et **une séance sans créneau n'en
+reçoit pas un** — l'heure est facultative dans `plan.csv`, lui en inventer une la daterait
+faussement.
+
+**Le partage tenu partout** : le condensé sert les **faits**, la tranche sert de quoi
+**agir**. `planning_a_venir` garde ses quatre semaines et ses jetons, et retirer une séance
+continue de l'exiger. `STO-05` ne s'assouplit pas parce qu'une information est devenue plus
+facile à lire — un test le vérifie.
+
+**Le condensé au complet**, sur une journée ordinaire :
+
+```
+- Nous sommes le mardi 18/08/2026 — demain sera le mercredi 19/08/2026
+  … objectif, métriques, cibles, assiduité, respect du planning …
+- Aujourd'hui — hydratation : rien de noté, cible 2000 ml
+- Aujourd'hui — nutrition : aucun repas noté, cibles 150 g de protéines …
+- Course du 17/08 : 6,1 km, 29 min, allure 4,8 min/km, FC moyenne 158
+- Prévu aujourd'hui à 19:00 : Abs + bras (45 min)
+- Prévu le 20/08 à 18:30 : Sortie longue (60 min)
+```
+
+Seize lignes. Ce qui a été fait, ce qui vient, et ce qui manque au jour — sans qu'une seule
+seconde passe soit nécessaire.
+
+**Mesure.** `make check` vert : 1 350 tests backend, 385 écran.

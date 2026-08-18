@@ -34,7 +34,8 @@ from app.domains.body.service import WeightService
 from app.domains.hydration.schemas import IntakePayload
 from app.domains.hydration.service import HydrationService
 from app.domains.nutrition.service import NutritionService
-from app.domains.planning.schemas import AdherenceView
+from app.domains.planning.schemas import AdherenceView, PlanPayload
+from app.domains.planning.service import PlanningService
 from app.storage.files import FileStore
 
 TODAY = today_local()
@@ -44,6 +45,7 @@ TODAY = today_local()
 _AUCUN_PLAN = AdherenceView(weeks=[], planned=0, honoured=0, rate=None)
 HIER = TODAY - timedelta(days=1)
 AVANT_HIER = TODAY - timedelta(days=2)
+DEMAIN = TODAY + timedelta(days=1)
 
 
 async def _exercice(store: FileStore, nom: str, groupe: str = "pectoraux") -> str:
@@ -688,3 +690,66 @@ async def test_une_course_d_il_y_a_trois_semaines_ne_passe_pas_pour_recente(
     lignes = await context.week_lines(store, TODAY)
 
     assert lignes == ["Les sept jours précédents : aucune séance ni course notée"]
+
+
+async def test_le_planning_de_la_semaine_part_sans_qu_on_le_demande(
+    store: FileStore,
+) -> None:
+    """Le même angle mort que la semaine écoulée, dans l'autre sens.
+
+    Le condensé porte le **taux** de respect du planning. Un taux dit si l'on tient ses
+    rendez-vous ; il ne dit jamais lequel est mardi. « Je fais quoi ce soir ? » retombait
+    donc dans le piège qui a fait dire « cette course n'apparaît pas dans ton suivi ».
+    """
+    await PlanningService(store).create(
+        PlanPayload(date=DEMAIN, time="19:00", kind="muscu", title="Haut du corps", duration_min=45)
+    )
+
+    lignes = await context.plan_lines(store, TODAY)
+
+    assert any("Haut du corps" in ligne for ligne in lignes)
+    assert any("19:00" in ligne for ligne in lignes)
+
+
+async def test_une_seance_prevue_aujourd_hui_se_dit_aujourd_hui(store: FileStore) -> None:
+    """« Prévu le 18/08 » quand on est le 18/08 oblige le modèle à comparer deux dates
+    pour comprendre que c'est ce soir. Ce qui se dérive se sert."""
+    await PlanningService(store).create(
+        PlanPayload(date=TODAY, time="19:00", kind="muscu", title="Jambes", duration_min=60)
+    )
+
+    lignes = await context.plan_lines(store, TODAY)
+
+    assert any("Prévu aujourd'hui à 19:00" in ligne for ligne in lignes)
+
+
+async def test_une_seance_sans_creneau_n_en_recoit_pas_un(store: FileStore) -> None:
+    """L'heure est facultative dans `plan.csv` — une séance sans créneau est une
+    possibilité normale, et lui en inventer un la daterait faussement."""
+    await PlanningService(store).create(
+        PlanPayload(date=DEMAIN, kind="autre", title="Mobilité", duration_min=20)
+    )
+
+    lignes = await context.plan_lines(store, TODAY)
+
+    assert any("Mobilité" in ligne for ligne in lignes)
+    assert not any(" à  :" in ligne or " à :" in ligne for ligne in lignes)
+
+
+async def test_un_planning_vide_le_dit(store: FileStore) -> None:
+    assert await context.plan_lines(store, TODAY) == ["Rien de prévu d'ici 7 jours"]
+
+
+async def test_le_condense_ne_donne_pas_les_jetons_du_planning(store: FileStore) -> None:
+    """Le partage tenu partout : le condensé sert les **faits**, la tranche sert de quoi
+    **agir**. Retirer une séance prévue continue d'exiger `planning_a_venir` — `STO-05` ne
+    s'assouplit pas parce qu'une information est devenue plus facile à lire."""
+    await PlanningService(store).create(
+        PlanPayload(date=DEMAIN, time="19:00", kind="muscu", title="Haut du corps", duration_min=45)
+    )
+
+    base = "\n".join(await context.plan_lines(store, TODAY))
+    tranche = await _rendu(store, "planning_a_venir")
+
+    assert "token=" not in base
+    assert "token=" in tranche
