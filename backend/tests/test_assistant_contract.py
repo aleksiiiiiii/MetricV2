@@ -451,3 +451,64 @@ def test_the_prompt_names_the_ceiling_instead_of_dropping_silently() -> None:
     text = prompt(actions=CATALOGUE, slices=SLICES)
 
     assert f"en demander {MAX_NEED} au plus" in text
+
+
+# ── 8. Ce qu'un vrai dialogue a fait ressortir ────────
+
+
+def test_a_missing_number_sends_the_model_looking_not_apologising() -> None:
+    """**Le défaut le plus cher du dialogue relu : un tour entier perdu.**
+
+    Sur « hier j'ai fait une super course », le modèle a répondu « je n'ai pas les chiffres
+    précis dans ce que tu m'as donné » — alors que `activites_recentes` était dans sa
+    liste. Il a fallu lui dire « demande la dernière course » pour qu'il aille la chercher.
+
+    La cause était dans la consigne, pas dans le modèle : « si la réponse demande une
+    donnée absente, dis-le » avait été écrit quand les tranches étaient pauvres, et
+    poussait à s'excuser là où il fallait demander.
+    """
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert 'demande-la dans "need" au lieu de t\'en excuser' in text
+    assert "aucune tranche ne peut l'apporter" in text
+
+
+def test_the_two_rules_about_missing_data_point_the_same_way() -> None:
+    """Les règles d'action disaient « demande-le dans "reply", ou remplis "need" » —
+    l'ordre inverse de celui qu'on vient de poser. Deux règles qui se contredisent laissent
+    le modèle choisir, et il choisit la plus facile."""
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert 'laisse "actions" vide et **remplis "need"**' in text
+    # Et la règle de base reste autonome : sans catalogue, « need » n'existe pas, et lui en
+    # parler enverrait le modèle remplir un champ qu'on ne lui a pas donné.
+    assert '"need"' not in prompt()
+
+
+def test_a_greeting_gets_a_greeting_not_a_file_reading() -> None:
+    """« heyy » rendait cinq métriques, un taux de respect à 33,3 %, un rappel médical et
+    trois questions. La règle disait que la longueur suit la demande ; elle ne disait rien
+    du cas où l'on ne demande **rien**."""
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "un bonjour\n  appelle un bonjour" in text
+    assert "ne récite pas mon dossier" in text
+
+
+def test_the_model_is_told_not_to_narrate_its_own_plumbing() -> None:
+    """« J'ai déjà cette info sans avoir besoin de la redemander » — il venait de la
+    chercher. « Dans ce que tu m'as donné » désigne un condensé dont l'utilisateur n'a pas
+    à connaître l'existence."""
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "ne me décris pas ta mécanique" in text
+    assert "j'ai déjà cette info" in text
+
+
+def test_one_question_at_a_time_and_no_nagging() -> None:
+    """Ce qui rend un coach mécanique au-delà des trois défauts : il posait trois questions
+    d'affilée et rappelait à **chaque** message ce qui n'était pas noté."""
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "Une seule question à la fin, jamais trois" in text
+    assert "répété on cesse de l'entendre" in text

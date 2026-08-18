@@ -1388,3 +1388,52 @@ déclenche, que la réponse de ce tour-là n'est pas montrée — donc une phras
 plafond de quatre tranches, tiré de `MAX_NEED` plutôt que recopié à côté.
 
 **Mesure.** `make check` vert : 1 335 tests backend, 383 écran.
+
+---
+
+## 15. Ce qu'un vrai dialogue a montré — 2026-08-18
+
+Un échange réel relu ligne à ligne. **Ce qui marche d'abord**, parce que c'est ce que les
+lots précédents visaient : la date de résolution du carnet se lit (« résolu depuis le
+17/08 »), l'absence se dit sans zéro (« rien noté aujourd'hui »), et l'assistant
+**prescrit** au lieu de rapporter (« 3 séries de 12-15 reps sur triceps »).
+
+Puis quatre défauts, dont un qui coûte un tour entier.
+
+### Le tour perdu
+
+> — hier j'ai fait une super course
+>
+> — *je n'ai pas les chiffres précis (distance, allure) **dans ce que tu m'as donné***
+
+`activites_recentes` était dans sa liste. Il pouvait la demander ; il s'est excusé. Il a
+fallu lui écrire « si tu as accès à ces données demande la dernière course » pour qu'il
+aille la chercher — un aller-retour perdu, et une charge mentale rendue à l'utilisateur.
+
+**La cause était dans la consigne, pas dans le modèle.** « Si la réponse demande une donnée
+absente ci-dessus, dis-le » avait été écrit quand les tranches étaient pauvres ; il pousse
+à avouer là où il faut demander. Deux règles pointaient d'ailleurs en sens inverse — les
+règles d'action disaient encore « demande-le dans "reply", **ou** remplis "need" », et un
+modèle placé devant deux règles contradictoires prend la plus facile.
+
+**Où la nuance vit désormais.** Dans les règles d'action, et pas dans la règle de base : un
+premier essai l'avait mise dans le gabarit commun, ce qui faisait parler de `"need"` même
+quand aucun catalogue n'était offert — donc envoyait le modèle remplir un champ qu'on ne
+lui avait pas donné. Un test l'a attrapé.
+
+### Trois défauts de ton
+
+| Vu | Corrigé par |
+|---|---|
+| « heyy » a rendu cinq métriques, un taux à 33,3 %, un rappel médical et trois questions | un bonjour appelle un bonjour ; ne pas réciter le dossier quand rien n'est demandé |
+| « J'ai déjà cette info sans avoir besoin de la redemander » — il venait de la chercher | ne pas décrire sa propre mécanique ; ni « dans ce que tu m'as donné », ni « le condensé » |
+| Trois questions à la fin, et un rappel de ce qui n'est pas noté à **chaque** message | une seule question ; le rappel une fois, pas à chaque tour |
+
+Le dernier est celui qui rend un coach mécanique sans qu'on sache dire pourquoi : répété à
+chaque message, un rappel cesse d'être entendu.
+
+**Mesure.** `make check` vert : 1 340 tests backend, 385 écran. Cinq cas nouveaux, dont
+celui qui vérifie que les deux règles sur la donnée manquante pointent dans le même sens.
+
+**Ce qui n'est toujours pas mesuré.** Rien de tout cela n'est passé au jeu d'évaluation. Le
+dialogue relu vaut mieux qu'une impression, mais il ne vaut pas les vingt-cinq cas.
