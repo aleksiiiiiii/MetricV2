@@ -3,6 +3,13 @@
 À coller dans une session neuve. Le contexte utile est dedans ; ce document n'est pas une
 spécification à lire en plus, c'est le brief lui-même.
 
+> **Ce brief a été exécuté : `scripts/update.py` existe** (`make update`, entrée `update`
+> de la console). Il est gardé tel quel — il porte le *pourquoi* de onze décisions que le
+> script applique sans les réexpliquer. Un seul écart, assumé et noté dans le script : la
+> décision 5 demandait un `EnvironmentFile=` systemd, et c'est le lien symbolique de
+> `deploiement.md` §3.2 qui a été retenu — deux analyseurs pour un même `.env` divergent
+> précisément sur un hash Argon2. Ce qui reste à éprouver est au §10 de `deploiement.md`.
+
 ---
 
 Lis `docs/etat-du-projet.md` en premier — document d'entrée, à jour. Puis le §5 pour la

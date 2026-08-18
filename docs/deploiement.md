@@ -34,8 +34,9 @@ la question sans objet.
 
 ## 2. La structure des dossiers
 
-Pose-la **dès le premier jour**, même à la main. La monter plus tard demanderait un arrêt
-de service, et c'est elle qui rend les mises à jour réversibles.
+Pose-la **dès le premier jour** — `make update ARGS=migrate-layout` la monte, y compris
+depuis une installation à plat existante, qu'il **déplace** sans la copier. La monter plus
+tard demanderait un arrêt de service, et c'est elle qui rend les mises à jour réversibles.
 
 ```
 /opt/metric/
@@ -285,9 +286,29 @@ avion. C'est la moitié de DoD du lot L15, et elle ne se teste que derrière un 
 
 ## 7. Mettre à jour
 
-Le script de `docs/prompt-mise-a-jour.md` n'est pas encore écrit. En attendant, la
-procédure manuelle est la même que l'installation, dans cet ordre — **et l'ordre est ce qui
-la rend réversible** :
+```bash
+cd /opt/metric/current
+make update                        # ne touche à rien : dit ce qui tourne et ce qui est dispo
+make update ARGS="run --dry-run"   # le plan, étape par étape, sans rien exécuter
+make update ARGS=run               # la mise à jour
+make update ARGS=rollback          # le retour arrière
+```
+
+`scripts/update.py` tient la procédure ci-dessous, dans le même ordre, et ajoute ce qu'une
+suite de commandes tapées à la main ne peut pas offrir : une sauvegarde **relue** avant que
+quoi que ce soit ne bouge, une archive vérifiée **entière** avant d'être extraite, et un
+**retour arrière automatique** si `/api/health` ne revient pas dans les trente secondes.
+Sans dépendance et sans le `.venv` — qu'il est précisément chargé de reconstruire.
+
+La première exécution sur une installation existante passe par
+`make update ARGS=migrate-layout`, qui monte la structure du §2, écrit l'unité systemd du
+§4 et retient les trois valeurs qui ne se devinent pas dans `shared/deploy.conf` : la
+racine, l'utilisateur du service, et si NPM sert le front depuis cette machine.
+
+### La même chose à la main
+
+Utile pour comprendre ce que le script fait, ou le jour où il est lui-même en cause —
+**et l'ordre est ce qui rend la procédure réversible** :
 
 ```bash
 cd /opt/metric
@@ -366,9 +387,27 @@ Nommé plutôt que passé sous silence :
 
 - **Cette procédure n'a jamais été exécutée en entier.** Elle est écrite depuis le code et
   vérifiée contre lui ; elle n'a pas encore installé un serveur.
-- **Le script de mise à jour n'existe pas.** Son cahier des charges est dans
-  [`prompt-mise-a-jour.md`](prompt-mise-a-jour.md) — sauvegarde vérifiée, bascule atomique,
-  retour arrière automatique si la santé ne revient pas.
+- **Le script de mise à jour n'a jamais tourné sur le serveur.** `scripts/update.py`
+  existe et est éprouvé : `python3 scripts/update-essais.py` joue trente essais — l'archive
+  coupée en plein milieu, le refus sur un Python trop vieux *avant* que la sauvegarde ne
+  soit écrite, la relecture de sauvegarde qui diverge, le retour arrière automatique,
+  l'élagage qui épargne `current`, et `--dry-run` qui ne touche à rien. Une mise à jour
+  réelle a aussi été jouée de bout en bout depuis GitHub : téléchargement, `make setup`,
+  `make build`, `make check`.
+
+  Ce qu'il reste à voir en vrai, et qui ne s'émule pas : le chemin `systemctl` — ici c'est
+  toujours le repli par la console qui a été emprunté —, les droits sur un `shared/.env`
+  appartenant à un autre utilisateur que celui qui lance, et `migrate-layout` sur une
+  installation à plat qui **tourne** plutôt que sur une reconstitution.
+
+- **Ce que cette mise à jour réelle a trouvé, et qui bloquait tout déploiement neuf** :
+  `make setup` appelait `npm run fonts`, qui régénérait `src/styles/fonts.css` avec un
+  `unicode-range` sur une seule ligne — que `prettier --check` refuse. `make check`
+  échouait donc sur un fichier que personne n'avait édité, dans **toute** installation
+  fraîche, y compris celle du §3.3. Les `.woff2` et le CSS étant tous versionnés, l'appel
+  a été retiré de `make setup` ; `make fonts` reste, et repasse maintenant prettier sur ce
+  qu'il produit. Aucun test ne pouvait voir ce défaut : la batterie tourne sur un dépôt où
+  le fichier est déjà au bon format.
 - **L'unité systemd du §4 n'a pas tourné.** Elle est écrite depuis le code, pas depuis un
   `systemctl status` réussi.
 - **Aucune sauvegarde automatique de `shared/.env`.** C'est aujourd'hui un geste manuel, et

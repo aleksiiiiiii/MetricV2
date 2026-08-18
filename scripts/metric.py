@@ -741,6 +741,10 @@ HELP = f"""
     storage              diagnostique Nextcloud (STO-11)
     env                  quelles clés de .env sont renseignées
 
+  {paint('Déploiement', INK_LOW)}
+    update [run|rollback|releases]
+                         le serveur de production ; sans argument, ne touche à rien
+
   {paint('Console', INK_LOW)}
     help  ·  h  ·  ?     cette aide
     quit  ·  q           quitter (les serveurs continuent de tourner)
@@ -824,6 +828,15 @@ def dispatch(line: str) -> bool:
             run_make("check-storage")
         case "env":
             show_env()
+        case "update" | "u":
+            # La console est la porte d'entrée du projet : elle doit savoir dire quelle
+            # version tourne là-bas. Elle ne réimplémente rien — `update.py` détient la
+            # procédure, ici on relaie.
+            say()
+            subprocess.run(  # noqa: S603
+                [sys.executable, str(ROOT / "scripts/update.py"), *args], cwd=ROOT, check=False
+            )
+            say()
         case "help" | "h" | "?":
             say(HELP)
         case "quit" | "q" | "exit":
@@ -836,7 +849,7 @@ def dispatch(line: str) -> bool:
 
 COMMANDS = [
     "start", "stop", "restart", "status", "logs", "build", "check", "test",
-    "push", "proxy", "hash", "vapid", "storage", "env", "help", "quit",
+    "push", "proxy", "hash", "vapid", "storage", "env", "update", "help", "quit",
 ]
 
 
