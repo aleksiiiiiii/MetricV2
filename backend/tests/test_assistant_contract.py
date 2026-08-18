@@ -426,3 +426,28 @@ def test_an_extraction_keeps_its_temperature_and_a_conversation_drops_it() -> No
         "un-modele", instruction="i", prompt="p", temperature=None
     )
     assert "temperature" not in conversation_body
+
+
+def test_the_prompt_says_what_filling_need_actually_triggers() -> None:
+    """Il disait **quoi** demander, jamais ce que ça déclenche.
+
+    Quand `need` est rempli, la passe est rejouée et son `reply` est intégralement
+    remplacé — il n'est même pas diffusé, puisque le serveur refuse de montrer une passe
+    remplaçable. Le modèle rédigeait donc une réponse complète que personne ne verrait
+    jamais : depuis que la consigne autorise un plan à se développer, c'est jusqu'à treize
+    cents jetons produits pour rien à chaque question qui réclame une tranche.
+    """
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "je te repose la question avec" in text
+    assert "ne sera pas montrée" in text
+    assert 'une seule phrase dans "reply"' in text
+
+
+def test_the_prompt_names_the_ceiling_instead_of_dropping_silently() -> None:
+    """« Demande tout d'un coup » sans nombre invite à en demander six, dont deux tombent
+    en silence. Le chiffre vient de `MAX_NEED` plutôt que d'être recopié — deux sources
+    divergeraient au premier réglage."""
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert f"en demander {MAX_NEED} au plus" in text

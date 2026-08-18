@@ -1365,3 +1365,26 @@ désormais `SLICES` et `SLICE_NAMES`, ce qui dit lequel est lequel.
 
 **Mesure.** `make check` vert : 1 333 tests backend, 383 écran. Consigne rendue relue à
 l'œil.
+
+### 14.1 « Et il connaît la route ? » — non, et c'est le dessin
+
+**Il n'y a pas de route à connaître.** Le modèle n'appelle jamais rien : il écrit
+`"need": ["tendances"]` dans sa réponse, le serveur lit ce champ, appelle lui-même le
+chargeur, et le relance avec le contenu. C'est ce qui fait tenir `IA-09` — « le modèle
+choisit dans une liste, il ne nomme pas un fichier » — et c'est exactement ce que §12.0
+refusait d'ouvrir.
+
+**Mais la question en cachait une meilleure : sait-il ce que demander déclenche ?** Non, et
+ça coûtait cher.
+
+Quand `need` est rempli, la passe est rejouée et son `reply` est **intégralement
+remplacé**. Il n'est même pas diffusé — le serveur refuse de montrer une passe remplaçable
+(§7.1). Le modèle rédigeait donc, à chaque question réclamant une tranche, une réponse
+complète que personne ne verrait jamais : depuis que la consigne autorise un plan à se
+développer, jusqu'à treize cents jetons produits pour rien.
+
+La consigne dit maintenant les trois choses qui manquaient : ce que remplir `need`
+déclenche, que la réponse de ce tour-là n'est pas montrée — donc une phrase suffit —, et le
+plafond de quatre tranches, tiré de `MAX_NEED` plutôt que recopié à côté.
+
+**Mesure.** `make check` vert : 1 335 tests backend, 383 écran.

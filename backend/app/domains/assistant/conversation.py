@@ -176,9 +176,26 @@ _PERIODS = """Par défaut une tranche porte sur aujourd'hui. Pour un autre jour,
 ne sais pas lire ne rend aucune tranche, elle ne retombe pas sur aujourd'hui."""
 
 #: Description de `need`. En tête parce que c'est la première décision à prendre.
-_NEED_FIELD = """- "need" : ce qui te manque pour répondre ou pour agir, à choisir dans la liste des
-  tranches ci-dessus. Ne le remplis que si tu ne peux pas t'en passer. Tu ne l'obtiendras
-  qu'une fois, alors demande tout d'un coup."""
+#: Description de `need`, et **le mécanisme avec**.
+#:
+#: Il disait quoi demander sans dire ce que ça déclenche. Deux conséquences mesurables :
+#:
+#: **Le modèle rédigeait une réponse complète qu'il ne verra jamais.** Quand `need` est
+#: rempli, la passe est rejouée et son `reply` est intégralement remplacé — il n'est même
+#: pas diffusé, puisque le serveur refuse de montrer une passe remplaçable (§7.1). Depuis
+#: que la consigne autorise un plan à se développer, c'est jusqu'à treize cents jetons
+#: produits pour rien, à chaque question qui réclame une tranche.
+#:
+#: **Le plafond n'était pas dit.** « Demande tout d'un coup » sans nombre invite à en
+#: demander six, dont deux tombent en silence. Le chiffre vient de `MAX_NEED` plutôt que
+#: d'être recopié : deux sources divergeraient au premier réglage.
+_NEED_FIELD = f"""- "need" : ce qui te manque pour répondre ou pour agir, à choisir dans la liste des
+  tranches ci-dessus. Ne le remplis que si tu ne peux pas t'en passer.
+  **Ce que ça déclenche** : je vais chercher ces tranches et je te repose la question avec,
+  une seule fois. Tu peux en demander {MAX_NEED} au plus, alors demande tout d'un coup.
+  **Ta réponse de ce tour-ci ne sera pas montrée** — c'est celle d'après qui compte. Quand
+  tu remplis "need", mets donc une seule phrase dans "reply" et garde ton analyse pour la
+  suite."""
 
 #: Description de `actions`.
 #:
