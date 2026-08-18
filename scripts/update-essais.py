@@ -247,6 +247,44 @@ verdict("aucune sauvegarde écrite", not any(c.backups.iterdir()))
 verdict("current n'a pas bougé", up2.cible_actuelle(c2).name == ancienne.name)
 
 
+restaurer()
+print("\n=== 9. Ni root ni sudo : le refus est lisible, pas une trace Python ===")
+c = monter("essai-sans-sudo")
+ancienne = fausse_release(c, "2026-08-01T00-00-00-aaaaaaa", "a" * 40)
+up.basculer(c, ancienne)
+
+vrai_which, vrai_geteuid = shutil.which, os.geteuid
+shutil.which = lambda nom: None if nom == "sudo" else vrai_which(nom)
+os.geteuid = lambda: 1000                      # ni root, ni sudo — la Debian minimale
+up.systemd_present = lambda: True
+verdict("commande_systemctl rend None", up.commande_systemctl("restart", "x") is None)
+try:
+    up.redemarrer(c)
+    leve = False
+except up.Arret:
+    leve = True
+except Exception as erreur:                    # noqa: BLE001 - c'est précisément le point
+    leve = False
+    verdict("aucune exception non rattrapée", False, type(erreur).__name__)
+verdict("redemarrer s'arrête proprement", leve)
+
+os.geteuid = lambda: 0                         # root : plus de sudo, et ça doit marcher
+verdict("en root, pas de sudo dans la commande",
+        up.commande_systemctl("restart", "x") == ["systemctl", "restart", "x"])
+os.geteuid = lambda: 1000
+shutil.which = lambda nom: "/usr/bin/sudo" if nom == "sudo" else vrai_which(nom)
+verdict("non-root avec sudo, sudo est préfixé",
+        up.commande_systemctl("restart", "x") == ["sudo", "systemctl", "restart", "x"])
+
+# Une commande absente devient un arrêt annoncé, pas un FileNotFoundError.
+shutil.which, os.geteuid = vrai_which, vrai_geteuid
+try:
+    up.executer(["cette-commande-nexiste-pas-du-tout"])
+    leve = False
+except up.Arret:
+    leve = True
+verdict("une commande introuvable devient un Arret", leve)
+
 rates = [nom for nom, reussi in resultats if not reussi]
 print()
 print("=" * 62)

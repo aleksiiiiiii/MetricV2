@@ -152,7 +152,12 @@ def executer(commande, cwd=None, verifie=True):
     """Lance une commande, sortie en direct. Rend le code de retour."""
     if simule("$ " + " ".join(str(part) for part in commande)):
         return 0
-    resultat = subprocess.run(commande, cwd=str(cwd) if cwd else None)
+    try:
+        resultat = subprocess.run(commande, cwd=str(cwd) if cwd else None)
+    except OSError as erreur:
+        # Une commande absente du PATH — « sudo » sur une machine qui n'en a pas — rendait
+        # une trace Python au milieu d'un déploiement. C'est le pire moment pour ça.
+        raise Arret("« {} » est introuvable ({})".format(commande[0], erreur))
     if verifie and resultat.returncode != 0:
         raise Arret("« {} » a échoué (code {})".format(" ".join(commande), resultat.returncode))
     return resultat.returncode
@@ -640,6 +645,25 @@ def basculer(config, release):
 # ── 5. Sur le serveur, c'est systemd qui détient l'API ──
 
 
+def commande_systemctl(*arguments):
+    """`systemctl`, précédé de `sudo` seulement si c'est nécessaire **et** possible.
+
+    Une machine où l'on est déjà root n'a souvent pas `sudo` installé — c'est le cas des
+    Debian minimales et des conteneurs, où il ne sert à rien. Préfixer aveuglément par
+    `sudo` y faisait échouer le redémarrage **après** la bascule, c'est-à-dire au seul
+    moment où l'application est déjà sur la nouvelle release sans y avoir redémarré.
+
+    Rend `None` quand ni l'un ni l'autre n'est possible : l'appelant le dit et s'arrête,
+    plutôt que de laisser croire que le redémarrage a eu lieu.
+    """
+    base = ["systemctl", *arguments]
+    if os.geteuid() == 0:
+        return base
+    if shutil.which("sudo"):
+        return ["sudo", *base]
+    return None
+
+
 def systemd_present():
     if shutil.which("systemctl") is None:
         return False
@@ -653,8 +677,16 @@ def redemarrer(config):
     # DÉMARRAGE. Sans ce redémarrage, l'unité tournerait encore sur l'ancienne release —
     # c'est le piège classique de cette structure, et la bascule seule ne suffit jamais.
     if systemd_present():
-        executer(["sudo", "systemctl", "restart", UNITE])
-        ok("systemctl restart " + UNITE)
+        commande = commande_systemctl("restart", UNITE)
+        if commande is None:
+            fail("l'unité existe, mais ni root ni sudo pour la redémarrer")
+            say(dim("      « current » pointe DÉJÀ sur la nouvelle release ; l'API tourne"))
+            say(dim("      encore sur l'ancienne tant qu'elle n'a pas redémarré."))
+            say(dim("      en root :  systemctl restart " + UNITE))
+            say(dim("      puis :     curl -s http://127.0.0.1:{}/api/health".format(PORT_API)))
+            raise Arret("")
+        executer(commande)
+        ok(" ".join(commande))
         return True
 
     warn("unité systemd « {} » absente — régime de repli".format(UNITE))
