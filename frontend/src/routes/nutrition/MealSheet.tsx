@@ -162,6 +162,13 @@ export function MealSheet({
       return reduceImage(file);
     },
     onSuccess: (result) => {
+      // **Un format que le navigateur n'ouvre pas ne doit pas rendre un cadre vide.** Le
+      // fichier part quand même — le serveur, lui, sait le ranger — mais l'aperçu comme la
+      // vignette resteront blancs, et le dire vaut mieux que de laisser croire à une
+      // photo perdue.
+      if (result && !result.readable) {
+        notify('Ton navigateur ne sait pas afficher ce format. La photo part quand même.', 'load');
+      }
       setPreview((current) => {
         if (current) URL.revokeObjectURL(current);
         return result ? URL.createObjectURL(result.file) : null;
@@ -308,11 +315,19 @@ export function MealSheet({
           {wantsPhoto(mode) && (
             <div className={styles.field}>
               <label htmlFor="meal-photo">Photo</label>
+              {/* **`image/heic` est absent de « accept », et il ne faut pas le remettre.**
+                  iOS transcode une photo HEIC en JPEG au moment du choix — sauf si
+                  « accept » annonce accepter le HEIC, auquel cas il livre l'original tel
+                  quel. Or aucun navigateur hors Safari ne sait afficher du HEIC : l'envoi
+                  réussissait, le fichier était rangé et servi en 200, et ni l'aperçu ni la
+                  vignette ne montraient quoi que ce soit. Tout marchait, rien ne
+                  s'affichait. Les trois autres champs fichier de l'application l'omettent
+                  déjà ; celui-ci avait dérivé. */}
               <input
                 ref={fileInput}
                 id="meal-photo"
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic"
+                accept="image/jpeg,image/png,image/webp"
                 capture="environment"
                 className="sr-only"
                 onChange={(event) => {

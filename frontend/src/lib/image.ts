@@ -35,6 +35,17 @@ export interface Reduced {
   file: File;
   /** Vrai quand l'image a réellement été réencodée. */
   reduced: boolean;
+  /**
+   * Faux quand **le navigateur n'a pas su ouvrir le fichier** — typiquement un HEIC hors
+   * de Safari.
+   *
+   * Distingué de `reduced`, qui est faux aussi quand l'image était déjà assez petite. Les
+   * deux menaient au même `{reduced: false}`, et l'appelant ne pouvait donc pas faire la
+   * différence entre « rien à faire » et « je n'y vois rien ». C'est ce qui rendait le
+   * défaut muet : le fichier partait, était rangé, servi — et ni l'aperçu ni la vignette
+   * n'affichaient quoi que ce soit, sans qu'une ligne de code puisse le dire.
+   */
+  readable: boolean;
 }
 
 /** `1,4 Mo`, `312 ko` — pour dire à l'écran ce qui part réellement. */
@@ -56,12 +67,15 @@ export async function reduceImage(
   { maxSide = MAX_SIDE, quality = QUALITY } = {},
 ): Promise<Reduced> {
   const bitmap = await decode(file);
-  if (bitmap === null) return { file, reduced: false };
+  // Le fichier repart quand même : c'est `IA-07` transposé à l'image, un format que le
+  // navigateur ignore ne bloque pas la saisie. Mais l'appelant sait désormais qu'il ne
+  // pourra pas l'afficher, et peut le dire plutôt que de montrer un cadre vide.
+  if (bitmap === null) return { file, reduced: false, readable: false };
 
   try {
     const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     // Déjà sous la cible **et** déjà en JPEG : la réencoder ne ferait que la dégrader.
-    if (ratio === 1 && file.type === 'image/jpeg') return { file, reduced: false };
+    if (ratio === 1 && file.type === 'image/jpeg') return { file, reduced: false, readable: true };
 
     const width = Math.round(bitmap.width * ratio);
     const height = Math.round(bitmap.height * ratio);
@@ -70,7 +84,7 @@ export async function reduceImage(
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext('2d');
-    if (context === null) return { file, reduced: false };
+    if (context === null) return { file, reduced: false, readable: true };
     context.drawImage(bitmap, 0, 0, width, height);
 
     const blob = await new Promise<Blob | null>((resolve) => {
@@ -78,11 +92,11 @@ export async function reduceImage(
     });
     // Un canevas peut refuser d'être lu — une image d'une autre origine le salit. Ce n'est
     // pas le cas ici, un fichier local n'a pas d'origine, mais un `null` reste un `null`.
-    if (blob === null || blob.size === 0) return { file, reduced: false };
+    if (blob === null || blob.size === 0) return { file, reduced: false, readable: true };
 
     // Le réduit n'est pas toujours plus léger : une capture d'écran en PNG plat peut
     // grossir en JPEG. On garde le plus petit des deux, et on le dit.
-    if (blob.size >= file.size && ratio === 1) return { file, reduced: false };
+    if (blob.size >= file.size && ratio === 1) return { file, reduced: false, readable: true };
 
     return {
       file: new File([blob], renameToJpeg(file.name), {
@@ -90,6 +104,7 @@ export async function reduceImage(
         lastModified: file.lastModified,
       }),
       reduced: true,
+      readable: true,
     };
   } finally {
     bitmap.close();
