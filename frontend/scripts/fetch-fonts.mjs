@@ -10,6 +10,7 @@
  * Relancer avec `npm run fonts` uniquement si l'on change de graisse ou de famille.
  */
 
+import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,6 +109,18 @@ async function main() {
   ].join('\n');
 
   await writeFile(CSS_OUT, `${header}\n${rules.join('\n\n')}\n`);
+
+  // Le fichier est versionné et passe sous `prettier --check` comme le reste de `src/`.
+  // Sans ce passage, la génération laisse un `unicode-range` sur une seule ligne longue,
+  // que prettier replie — et `make check` échoue sur un fichier que personne n'a édité.
+  await new Promise((resolve, reject) => {
+    const prettier = spawn('npx', ['prettier', '--write', CSS_OUT], { stdio: 'inherit' });
+    prettier.on('error', reject);
+    prettier.on('close', (code) =>
+      code === 0 ? resolve() : reject(new Error(`prettier a rendu ${code}`)),
+    );
+  });
+
   console.log(`${downloaded} fichiers woff2 → public/fonts/, ${rules.length} règles → fonts.css`);
 }
 

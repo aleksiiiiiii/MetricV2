@@ -7,7 +7,7 @@ UVICORN := backend/.venv/bin/uvicorn
 .DEFAULT_GOAL := help
 .PHONY: help setup setup-api setup-web console dev dev-lan dev-api dev-web preview \
         check check-api check-web test test-api test-web eval fmt fmt-check build fonts \
-        check-storage hash-password vapid-keys clean
+        check-storage hash-password vapid-keys update clean
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -21,9 +21,13 @@ setup-api:
 	$(PY) -m pip install -q -U pip
 	$(PY) -m pip install -q -e "./backend[dev]"
 
+# Pas de « npm run fonts » ici. Les .woff2 ET fonts.css sont versionnés : le rejouer à
+# l'installation n'apporte rien, ajoute une dépendance réseau au moment le plus fragile —
+# et régénère fonts.css dans une forme que prettier refuse, ce qui faisait échouer
+# « make check » sur toute installation fraîche. Trouvé en déployant pour de vrai, jamais
+# par la batterie : elle tourne sur un dépôt où le fichier est déjà au bon format.
 setup-web:
 	cd frontend && npm install --no-audit --no-fund
-	cd frontend && npm run fonts
 
 # ── Développement ──────────────────────────────────
 console: ## Console de supervision : start/stop/status/logs, build, tunnel HTTPS, push
@@ -109,6 +113,19 @@ hash-password: ## Génère le hash Argon2id à coller dans .env (AUTH-08)
 
 vapid-keys: ## Génère la paire de clés Web Push à coller dans .env (NOT-01)
 	cd backend && .venv/bin/python -m app.scripts.vapid_keys
+
+# ── Déploiement ────────────────────────────────────
+#
+# Tourne SUR LE SERVEUR, pas ici. Sans argument c'est « check » : il dit quelle version
+# tourne et laquelle est disponible, et ne touche à rien — un script de mise à jour qu'on
+# lance par curiosité ne doit pas mettre à jour.
+#
+#   make update
+#   make update ARGS="run --dry-run"
+#   make update ARGS=run
+#   make update ARGS=rollback
+update: ## Met à jour le déploiement serveur (défaut : « check », ne touche à rien)
+	@python3 scripts/update.py $(ARGS)
 
 clean: ## Supprime les artefacts de build et les caches
 	rm -rf frontend/dist frontend/node_modules/.vite
