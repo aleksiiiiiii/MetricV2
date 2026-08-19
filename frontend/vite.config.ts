@@ -59,5 +59,17 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: true,
+    // Le fuseau est épinglé, et ce n'est pas un détail de confort. Les fixtures d'écran
+    // portent des horodatages décalés — `2026-07-26T08:15:00+02:00` — et les tests
+    // cherchent le libellé rendu, « Supprimer la prise de 08:15 ». Or le formatage se
+    // fait dans le fuseau de la machine : en UTC le même instant s'affiche « 06:15 », le
+    // bouton cherché n'existe pas, et deux tests tombent sur un timeout de requête DOM
+    // qui ne dit rien de la vraie cause.
+    //
+    // Trouvé en déployant : la batterie était verte sur un poste en Europe/Paris et
+    // rouge sur le serveur, un conteneur Debian en UTC — sur le même commit. Europe/Paris
+    // est le fuseau de l'application elle-même (`/api/health` l'annonce), donc celui dans
+    // lequel les écrans doivent être éprouvés.
+    env: { TZ: 'Europe/Paris' },
   },
 });
