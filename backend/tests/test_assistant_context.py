@@ -16,9 +16,10 @@ Trois familles :
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 
-from app.core.dates import today_local
+from app.core.dates import today_local, tz
 from app.domains.activity.schemas import (
     ExerciseEntryPayload,
     ExercisePayload,
@@ -363,6 +364,35 @@ async def test_le_condense_nomme_demain(store: FileStore) -> None:
 
     assert "lundi 17/08/2026" in lines[0]
     assert "demain sera le mardi 18/08/2026" in lines[0]
+
+
+async def test_le_condense_donne_l_heure(store: FileStore) -> None:
+    """La moitié des conseils dépendent de l'heure, pas seulement du jour.
+
+    « J'ai assez bu ? » n'appelle pas la même réponse à 9 h et à 22 h : 750 ml est en
+    avance le matin et très en retard le soir. Sans heure, le modèle jugeait une journée
+    en cours comme si elle était déjà finie.
+    """
+    lines = await context.build(
+        store,
+        adherence=_AUCUN_PLAN,
+        now=datetime(2026, 8, 19, 12, 40, tzinfo=tz()),
+    )
+
+    assert "mercredi 19/08/2026" in lines[0]
+    assert "il est 12h40" in lines[0]
+
+
+async def test_l_heure_et_la_date_parlent_du_meme_jour(store: FileStore) -> None:
+    """Un jour épinglé sans instant ne doit pas mélanger deux journées.
+
+    L'appelant qui donne `today` sans `now` — c'est le cas de tout ce fichier — obtiendrait
+    sinon la date d'un jour et l'heure de l'horloge d'un autre, dans la même phrase.
+    """
+    lines = await context.build(store, adherence=_AUCUN_PLAN, today=date(2026, 8, 17))
+
+    assert "lundi 17/08/2026" in lines[0]
+    assert re.search(r"il est \d{2}h\d{2}", lines[0]) is not None
 
 
 async def test_les_chiffres_du_jour_sont_dans_le_condense_de_base(store: FileStore) -> None:

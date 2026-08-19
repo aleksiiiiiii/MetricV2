@@ -17,10 +17,10 @@ promesse vérifiable à l'écran plutôt que déclarative dans un commentaire.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, NamedTuple
 
-from app.core.dates import today_local, week_start
+from app.core.dates import now_local, today_local, week_start
 from app.domains.aggregates.service import DashboardService
 from app.domains.assistant.conversation import Need
 from app.domains.goals.progress import fr
@@ -105,15 +105,35 @@ class MemoryNote(NamedTuple):
 
 
 async def build(
-    store: FileStore, *, adherence: AdherenceView, today: date | None = None
+    store: FileStore,
+    *,
+    adherence: AdherenceView,
+    today: date | None = None,
+    now: datetime | None = None,
 ) -> list[str]:
     """Rassemble le condensé. `adherence` est **fourni**, jamais recalculé.
 
     L'ordre des lignes n'est pas indifférent : la date d'abord — un modèle n'a pas de
     calendrier et « cette semaine » ne veut rien dire sans elle —, puis ce qu'on vise, puis
     ce qu'on fait, puis ce qu'on a dit de la semaine passée.
+
+    **L'heure est donnée avec la date**, et pas par confort d'affichage : la moitié des
+    conseils en dépendent. « J'ai assez bu ? » n'appelle pas la même réponse à 9 h et à
+    22 h — 750 ml est en avance le matin et très en retard le soir. « Je m'entraîne
+    encore aujourd'hui ? » non plus. Sans heure, le modèle jugeait une journée entière
+    comme si elle était finie.
+
+    `now` suit la même règle que `today` : **injectable**, jamais lu en douce. Un condensé
+    qui irait chercher l'horloge lui-même ne serait pas reproductible, et c'est exactement
+    le défaut qui a fait échouer deux tests d'écran au déploiement du 19/08.
     """
-    current = today or today_local()
+    moment = now or now_local()
+    current = today or moment.date()
+    # Un appelant qui épingle le jour sans épingler l'instant — c'est le cas des tests —
+    # obtiendrait sinon une phrase qui donne la date d'un jour et l'heure d'un autre. On
+    # ramène l'heure sur le jour demandé : la ligne reste vraie d'elle-même.
+    if today is not None and now is None:
+        moment = datetime.combine(current, moment.timetz())
     goals = GoalService(store)
 
     # **Demain est nommé, pas laissé à dériver.** La date seule obligeait le modèle à
@@ -121,7 +141,8 @@ async def build(
     # plus fréquentes. C'est la même règle que partout : ce qui se dérive se sert.
     tomorrow = current + timedelta(days=1)
     lines: list[str] = [
-        f"Nous sommes le {_WEEKDAYS[current.weekday()]} {current:%d/%m/%Y} — "
+        f"Nous sommes le {_WEEKDAYS[current.weekday()]} {current:%d/%m/%Y}, "
+        f"il est {moment:%Hh%M} — "
         f"demain sera le {_WEEKDAYS[tomorrow.weekday()]} {tomorrow:%d/%m/%Y}"
     ]
 
