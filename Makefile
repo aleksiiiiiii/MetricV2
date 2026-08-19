@@ -1,5 +1,7 @@
-# Metric — orchestration du dépôt.
-# Une seule porte d'entrée pour les deux moitiés du projet.
+# Metric — repository orchestration.
+# A single entry point for both halves of the project: the FastAPI backend and the
+# React frontend. Every command below works from the repository root, and none of them
+# assumes the other half is already running.
 
 PY := backend/.venv/bin/python
 UVICORN := backend/.venv/bin/uvicorn
@@ -9,50 +11,55 @@ UVICORN := backend/.venv/bin/uvicorn
         check check-api check-web test test-api test-web eval fmt fmt-check build fonts \
         check-storage hash-password vapid-keys update clean
 
-help: ## Affiche cette aide
+help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 # ── Installation ───────────────────────────────────
-setup: setup-api setup-web ## Installe tout (venv backend, npm frontend, polices)
+setup: setup-api setup-web ## Install everything: backend virtualenv and frontend packages
 
 setup-api:
 	python3 -m venv backend/.venv
 	$(PY) -m pip install -q -U pip
 	$(PY) -m pip install -q -e "./backend[dev]"
 
-# Pas de « npm run fonts » ici. Les .woff2 ET fonts.css sont versionnés : le rejouer à
-# l'installation n'apporte rien, ajoute une dépendance réseau au moment le plus fragile —
-# et régénère fonts.css dans une forme que prettier refuse, ce qui faisait échouer
-# « make check » sur toute installation fraîche. Trouvé en déployant pour de vrai, jamais
-# par la batterie : elle tourne sur un dépôt où le fichier est déjà au bon format.
+# No "npm run fonts" here, on purpose. Both the .woff2 files AND fonts.css are committed,
+# so replaying the download adds nothing, introduces a network dependency at the most
+# fragile moment of an install — and regenerates fonts.css in a shape prettier rejects,
+# which made "make check" fail on every fresh installation. Found by deploying for real,
+# never by the test suite: it runs against a checkout where the file is already correct.
 setup-web:
 	cd frontend && npm install --no-audit --no-fund
 
-# ── Développement ──────────────────────────────────
-console: ## Console de supervision : start/stop/status/logs, build, tunnel HTTPS, push
+# ── Development ────────────────────────────────────
+console: ## Supervision console: start/stop/status/logs, build, HTTPS tunnel, push
 	@python3 scripts/metric.py $(filter-out $@,$(MAKECMDGOALS))
 
-dev: ## Lance API + frontend ensemble (au premier plan, Ctrl-C arrête tout)
+dev: ## Run the API and the frontend together (foreground, Ctrl-C stops both)
 	@bash scripts/dev.sh
 
-dev-lan: ## Comme « dev », mais le frontend est joignable depuis un téléphone du réseau
+dev-lan: ## Same as dev, but the frontend is reachable from a phone on the local network
 	@METRIC_LAN=1 bash scripts/dev.sh
 
-dev-api: ## Lance l'API seule sur :8000
+dev-api: ## Run the API on its own, on :8000
 	cd backend && ../$(UVICORN) app.main:app --reload --port 8000
 
-dev-web: ## Lance le frontend seul sur :5173
+dev-web: ## Run the frontend on its own, on :5173
 	cd frontend && npm run dev
 
-# Le service worker n'existe QUE dans le build (`lib/pwa.ts` ne l'enregistre qu'en
-# production). Éprouver la PWA, l'installation et les rappels passe donc par ici — et non
-# par « dev », où le worker servirait des fichiers périmés pendant qu'on code.
-preview: build ## Sert le build de production sur :4173 (le seul endroit où vit le service worker)
+# The service worker exists ONLY in a production build — `lib/pwa.ts` registers it in
+# production and nowhere else. Exercising the PWA, its installation and the reminders
+# therefore goes through here, and not through "dev", where the worker would serve stale
+# files while you are still editing them.
+preview: build ## Serve the production build on :4173 (the only place the service worker exists)
 	cd frontend && npm run preview -- --port 4173 --strictPort
 
-# ── Vérifications (ce que rejoue la CI) ────────────
-check: check-api check-web ## Lint + types + tests, des deux côtés
+# ── Verification (what CI replays) ─────────────────
+#
+# "check" is the gate: it must be green before every commit, without exception. It is
+# split in two so that either half can be run alone while working on that side, but the
+# combined target is the one that decides.
+check: check-api check-web ## Lint, type-check and test, on both sides
 
 check-api:
 	cd backend && .venv/bin/python -m ruff check .
@@ -66,7 +73,7 @@ check-web:
 	cd frontend && npm run types
 	cd frontend && npm run test
 
-test: test-api test-web ## Tests seuls
+test: test-api test-web ## Run the tests only, skipping lint and type-checking
 
 test-api:
 	cd backend && .venv/bin/python -m pytest
@@ -74,60 +81,64 @@ test-api:
 test-web:
 	cd frontend && npm run test
 
-# ── Qualité des réponses (hors « check ») ──────────
+# ── Answer quality (deliberately outside "check") ──
 #
-# **Délibérément hors de « check ».** Ce jeu appelle un modèle payant : il coûte, il dépend
-# du réseau, et il n'est pas déterministe — trois raisons pour lesquelles il n'a rien à
-# faire dans une batterie qui doit être verte avant chaque commit. Le
-# « testpaths = ["tests"] » du pyproject le garde hors de la collecte pytest.
+# **Deliberately outside "check".** This set calls a paid model: it costs money, it
+# depends on the network, and it is not deterministic — three reasons why it has no place
+# in a suite that must be green before every commit. The `testpaths = ["tests"]` setting
+# in pyproject.toml keeps it out of pytest collection as well.
 #
-# Il se lance à la main, avant et après tout changement de modèle ou de consigne :
+# Run it by hand, before and after any change of model or of instructions. The flags below
+# belong to the evaluation runner and are French on purpose — they are its real argument
+# names, not prose:
 #
 #   make eval
 #   make eval ARGS="--model anthropic/claude-opus-5 --reflexion --sortie apres.json"
 #   make eval ARGS="--comparer apres.json"
-eval: ## Joue le jeu d'évaluation de l'assistant (APPELS PAYANTS — voir docs/assistant-coach.md)
+eval: ## Run the assistant evaluation set (PAID API CALLS — see docs/assistant-coach.md)
 	cd backend && .venv/bin/python -m evals.runner $(ARGS)
 
-# ── Divers ─────────────────────────────────────────
-fmt: ## Formate le code
+# ── Miscellaneous ──────────────────────────────────
+fmt: ## Format the code in place, on both sides
 	cd backend && .venv/bin/python -m ruff format .
 	cd backend && .venv/bin/python -m ruff check --fix .
 	cd frontend && npm run fmt
 
-fmt-check: ## Vérifie le formatage sans modifier
+fmt-check: ## Report formatting problems without modifying anything
 	cd backend && .venv/bin/python -m ruff format --check .
 	cd frontend && npm run fmt:check
 
-build: ## Build de production du frontend
+build: ## Production build of the frontend (bundle and service worker)
 	cd frontend && npm run build
 
-fonts: ## Retélécharge les polices locales
+# Only needed when changing a family or a weight. The generated fonts.css is committed,
+# and this target runs prettier over it so that the tree stays clean afterwards.
+fonts: ## Re-download the local font files and regenerate fonts.css
 	cd frontend && npm run fonts
 
-check-storage: ## Diagnostique la configuration Nextcloud (STO-11)
+check-storage: ## Diagnose the Nextcloud configuration: connection, write, ETag (STO-11)
 	cd backend && .venv/bin/python -m app.scripts.check_storage
 
-hash-password: ## Génère le hash Argon2id à coller dans .env (AUTH-08)
+hash-password: ## Generate the Argon2id hash to paste into .env (AUTH-08)
 	cd backend && .venv/bin/python -m app.scripts.hash_password
 
-vapid-keys: ## Génère la paire de clés Web Push à coller dans .env (NOT-01)
+vapid-keys: ## Generate the Web Push key pair to paste into .env (NOT-01)
 	cd backend && .venv/bin/python -m app.scripts.vapid_keys
 
-# ── Déploiement ────────────────────────────────────
+# ── Deployment ─────────────────────────────────────
 #
-# Tourne SUR LE SERVEUR, pas ici. Sans argument c'est « check » : il dit quelle version
-# tourne et laquelle est disponible, et ne touche à rien — un script de mise à jour qu'on
-# lance par curiosité ne doit pas mettre à jour.
+# Runs ON THE SERVER, not here. With no argument it performs "check": it reports which
+# revision is deployed and which one is available upstream, and touches nothing — an
+# update script someone runs out of curiosity must not update anything.
 #
-#   make update
-#   make update ARGS="run --dry-run"
-#   make update ARGS=run
-#   make update ARGS=rollback
-update: ## Met à jour le déploiement serveur (défaut : « check », ne touche à rien)
+#   make update                        report only, changes nothing
+#   make update ARGS="run --dry-run"   print every step without executing it
+#   make update ARGS=run               back up, download, build, switch, restart, verify
+#   make update ARGS=rollback          return to the previous release
+update: ## Update the server deployment (default: report only, touches nothing)
 	@python3 scripts/update.py $(ARGS)
 
-clean: ## Supprime les artefacts de build et les caches
+clean: ## Remove build artefacts and caches
 	rm -rf frontend/dist frontend/node_modules/.vite
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
 	rm -rf backend/.pytest_cache backend/.mypy_cache backend/.ruff_cache
