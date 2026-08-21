@@ -12,8 +12,14 @@ from datetime import date
 from app.core.exceptions import AiUnreadableError
 from app.core.parsing import estimate_one_rep_max, pace_min_per_km
 from app.core.text import fold
-from app.domains.activity import notes
-from app.domains.activity.models import ExerciseLogRow, ExerciseRow, RunRow, WorkoutRow
+from app.domains.activity import notes, splits
+from app.domains.activity.models import (
+    ExerciseLogRow,
+    ExerciseRow,
+    RunRow,
+    RunSplitRow,
+    WorkoutRow,
+)
 from app.domains.activity.schemas import (
     Exercise,
     ExerciseEntry,
@@ -21,7 +27,10 @@ from app.domains.activity.schemas import (
     ExercisePayload,
     NoteDraft,
     Run,
+    RunDetail,
     RunPayload,
+    RunSplit,
+    RunSplits,
     Workout,
     WorkoutPayload,
 )
@@ -30,7 +39,7 @@ from app.domains.ai.service import AiService
 from app.storage.csv_repo import CsvRepository, Row
 from app.storage.errors import StorageConflictError, StorageNotFoundError
 from app.storage.files import FileStore
-from app.storage.paths import EXERCISE_LOG, EXERCISES, RUNS, WORKOUTS
+from app.storage.paths import EXERCISE_LOG, EXERCISES, RUN_SPLITS, RUNS, WORKOUTS
 
 #: Longueur des identifiants stables. Assez court pour rester lisible dans un tableur,
 #: assez long pour qu'une collision soit hors de portée à l'échelle d'une vie de relevés.
@@ -49,13 +58,14 @@ def _round(value: float | None, digits: int = 2) -> float | None:
 
 
 class RunService:
-    """Courses : saisie, allure dérivée, correction (`ACT-01`, `ACT-02`, `ACT-05`)."""
+    """Courses : saisie, allure dérivée, correction, paliers (`ACT-01`, `ACT-02`, `ACT-05`)."""
 
     def __init__(self, store: FileStore) -> None:
         self._repo: CsvRepository[RunRow] = CsvRepository(store, RUNS, RunRow)
+        self._splits: CsvRepository[RunSplitRow] = CsvRepository(store, RUN_SPLITS, RunSplitRow)
 
     @staticmethod
-    def to_schema(row: Row[RunRow]) -> Run:
+    def to_schema(row: Row[RunRow], *, splits: int = 0) -> Run:
         model = row.model
         pace = model.pace_min_km or pace_min_per_km(model.distance_km, model.duration_min)
         return Run(
@@ -71,10 +81,16 @@ class RunService:
             cadence_spm=model.cadence_spm,
             note=model.note,
             source=model.source,
+            run_id=model.run_id,
+            total_calories=model.total_calories,
+            start_time=model.start_time,
+            end_time=model.end_time,
+            split_length_km=model.split_length_km,
+            splits=splits,
         )
 
     @staticmethod
-    def _to_row(payload: RunPayload, source: str = "manual") -> RunRow:
+    def _to_row(payload: RunPayload, source: str = "manual", run_id: str = "") -> RunRow:
         """La ligne à écrire.
 
         Distance et allure arrivent **déjà accordées** : le schéma complète l'une depuis
@@ -83,6 +99,10 @@ class RunService:
 
         L'allure est stockée avec la course : recalculable, mais la conserver rend le
         fichier lisible sans outil (`ACT-02`, `STO-02`).
+
+        `run_id` est **reçu**, jamais tiré ici : une correction doit conserver celui de la
+        ligne qu'elle remplace, sinon les paliers déjà écrits se détacheraient de leur
+        course sans que rien ne le signale. C'est la règle que `workout_id` porte déjà.
         """
         # Le schéma garantit les deux ; l'assertion documente l'invariant pour le
         # vérificateur de types, qui ne peut pas le lire dans un `model_validator`.
@@ -98,6 +118,11 @@ class RunService:
             cadence_spm=payload.cadence_spm,
             note=payload.note,
             source=source,
+            run_id=run_id,
+            total_calories=payload.total_calories,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            split_length_km=_round(payload.split_length_km, 3),
         )
 
     async def all(self) -> list[Row[RunRow]]:
@@ -107,20 +132,201 @@ class RunService:
         rows = await self._repo.read_all()
         if not 0 <= index < len(rows):
             raise StorageNotFoundError("Cette course n'existe pas.")
-        return self.to_schema(rows[index])
+        row = rows[index]
+        return self.to_schema(row, splits=len(await self._splits_of(row.model.run_id)))
 
     async def create(self, payload: RunPayload, *, source: str = "manual") -> Run:
-        """Enregistre une course. `source` reste `manual` sauf import (`IMP-05`)."""
-        return self.to_schema(await self._repo.append(self._to_row(payload, source)))
+        """Enregistre une course, et ses paliers s'il y en a (`ACT-19`, `IMP-05`).
+
+        **La course s'écrit d'abord.** Le stockage est un dépôt CSV sur WebDAV et n'a pas
+        de transaction : si les paliers échouent après elle, il reste une course entière
+        sans ses paliers — une perte de détail. L'ordre inverse laisserait des paliers
+        orphelins rattachés à un `run_id` qui n'existe nulle part, c'est-à-dire un fichier
+        que rien ne vient jamais nettoyer.
+        """
+        run_id = new_id() if payload.splits else ""
+        row = await self._repo.append(self._to_row(payload, source, run_id))
+
+        written = 0
+        if payload.splits:
+            written = len(await self._splits.extend(_split_rows(run_id, payload)))
+        return self.to_schema(row, splits=written)
 
     async def update(self, index: int, token: str, payload: RunPayload) -> Run:
+        """Corrige une course. **Ses paliers ne bougent pas.**
+
+        Une correction porte sur ce que le formulaire affiche — la date, la distance, la
+        durée —, et le formulaire n'affiche pas les paliers. Les réécrire depuis un
+        payload qui n'en porte aucun les effacerait à chaque correction de faute de frappe.
+        Les remplacer demande de repasser par l'import, qui est le seul geste qui les lit.
+        """
         rows = await self._repo.read_all(fresh=True)
-        source = rows[index].model.source if 0 <= index < len(rows) else "manual"
-        row = await self._repo.replace_by_token(index, token, self._to_row(payload, source))
-        return self.to_schema(row)
+        current = rows[index].model if 0 <= index < len(rows) else None
+        source = current.source if current else "manual"
+        run_id = current.run_id if current else ""
+
+        row = await self._repo.replace_by_token(index, token, self._to_row(payload, source, run_id))
+        return self.to_schema(row, splits=len(await self._splits_of(run_id)))
 
     async def delete(self, index: int, token: str) -> None:
+        """Supprime une course **et ses paliers**.
+
+        L'ordre compte, et c'est l'inverse de celui de la création : les paliers partent en
+        premier. Si la suppression de la course échoue derrière, il reste une course sans
+        détail — visible, corrigible, supprimable à nouveau. La laisser partir d'abord
+        aurait laissé des paliers que plus aucune ligne ne désigne, et qu'aucun écran ne
+        montre pour qu'on pense à les retirer.
+        """
+        rows = await self._repo.read_all(fresh=True)
+        run_id = rows[index].model.run_id if 0 <= index < len(rows) else ""
+        if run_id:
+            await self._splits.remove_where(lambda row: row.run_id == run_id)
         await self._repo.delete_by_token(index, token)
+
+    # ── Paliers (`ACT-19`) ────────────────────────────
+
+    async def detail(self, index: int) -> RunDetail:
+        """Une course et ses paliers, prêts à l'affichage."""
+        rows = await self._repo.read_all()
+        if not 0 <= index < len(rows):
+            raise StorageNotFoundError("Cette course n'existe pas.")
+        return await self._detail_of(rows[index])
+
+    async def latest(self) -> RunDetail:
+        """La course la plus récente, ou un détail **vide** si l'historique l'est.
+
+        Pas de `404` : « aucune course enregistrée » est une réponse, et l'écran a besoin
+        de la distinguer d'une panne pour dire ce que coûte le prochain geste plutôt que
+        d'afficher une erreur là où il n'y a qu'un début.
+        """
+        rows = await self._repo.read_all()
+        if not rows:
+            return RunDetail()
+        # Le plus récent par date, et la position départage deux courses du même jour :
+        # la seconde saisie est la seconde courue, faute de mieux — les bornes horaires
+        # ne sont pas toujours là.
+        latest = max(rows, key=lambda row: (row.model.date, row.index))
+        return await self._detail_of(latest)
+
+    async def _detail_of(self, row: Row[RunRow]) -> RunDetail:
+        stored = await self._splits_of(row.model.run_id)
+        computed = _analysed(stored, row.model)
+        return RunDetail(
+            run=self.to_schema(row, splits=len(stored)),
+            splits=computed,
+        )
+
+    async def _splits_of(self, run_id: str) -> list[RunSplitRow]:
+        """Les paliers d'une course, dans l'ordre de leur numéro.
+
+        Un `run_id` vide ne cherche rien : c'est le cas de toutes les courses saisies au
+        clavier, et parcourir le fichier pour n'en rien tirer serait une lecture par
+        course affichée.
+        """
+        if not run_id:
+            return []
+        rows = await self._splits.read_all()
+        found = [row.model for row in rows if row.model.run_id == run_id]
+        return sorted(found, key=lambda row: row.index)
+
+
+def _split_rows(run_id: str, payload: RunPayload) -> list[RunSplitRow]:
+    """Les lignes de paliers à écrire, drapeau et longueurs posés.
+
+    Deux choses se décident ici et **nulle part en amont** : quels paliers sont des
+    reliquats, et quelle distance chacun couvre. Le client peut se tromper sur les deux ;
+    ce sont aussi les deux qui faussent toutes les moyennes de la page si on les croit.
+    """
+    marked = splits.mark_partials(
+        [
+            splits.Split(
+                index=item.index,
+                duration_s=item.duration_s,
+                pace_min_km=item.pace_min_km,
+                cadence_spm=item.cadence_spm,
+                avg_hr=item.avg_hr,
+                elevation_m=item.elevation_m,
+            )
+            for item in payload.splits
+        ]
+    )
+    measured = splits.measure_distances(
+        marked,
+        split_length_km=payload.split_length_km,
+        total_distance_km=payload.distance_km,
+    )
+    return [
+        RunSplitRow(
+            run_id=run_id,
+            index=item.index,
+            duration_s=round(item.duration_s, 1),
+            # Une longueur que rien n'a permis de établir vaut le palier par défaut plutôt
+            # qu'une cellule vide : la colonne est requise, et un reliquat sans distance
+            # rendrait la ligne illisible dans un tableur — ce que `STO-02` interdit.
+            distance_km=item.distance_km or splits.DEFAULT_SPLIT_KM,
+            pace_min_km=_round(item.pace_min_km, 3),
+            cadence_spm=item.cadence_spm,
+            avg_hr=item.avg_hr,
+            elevation_m=item.elevation_m,
+            partial=item.partial,
+        )
+        for item in measured
+    ]
+
+
+def _analysed(stored: list[RunSplitRow], run: RunRow) -> RunSplits:
+    """Traduit les paliers rangés en ce que la page affiche.
+
+    Le drapeau `partial` est **relu depuis le fichier** et non recalculé : il a été décidé
+    à l'écriture, et le recalculer à chaque lecture ferait basculer un palier limite d'un
+    affichage à l'autre sans que rien n'ait changé dans les données.
+    """
+    if not stored:
+        return RunSplits()
+
+    computed = [
+        splits.Split(
+            index=row.index,
+            duration_s=row.duration_s,
+            distance_km=row.distance_km,
+            pace_min_km=row.pace_min_km,
+            cadence_spm=row.cadence_spm,
+            avg_hr=row.avg_hr,
+            elevation_m=row.elevation_m,
+            partial=row.partial,
+        )
+        for row in stored
+    ]
+    analysis = splits.analyse(computed)
+    ceiling = analysis.cadence_max_spm
+
+    return RunSplits(
+        splits=[
+            RunSplit(
+                index=row.index,
+                duration_s=row.duration_s,
+                distance_km=row.distance_km,
+                pace_min_km=row.pace_min_km,
+                cadence_spm=row.cadence_spm,
+                avg_hr=row.avg_hr,
+                elevation_m=row.elevation_m,
+                partial=row.partial,
+                cadence_ratio=(
+                    round(row.cadence_spm / ceiling, 4) if row.cadence_spm and ceiling else None
+                ),
+            )
+            for row in stored
+        ],
+        full_count=analysis.full_count,
+        partial_count=analysis.partial_count,
+        drift_s_per_km=analysis.drift_s_per_km,
+        first_half_pace_min_km=analysis.first_half_pace_min_km,
+        second_half_pace_min_km=analysis.second_half_pace_min_km,
+        fastest_index=analysis.fastest_index,
+        slowest_index=analysis.slowest_index,
+        pace_domain_min_km=analysis.pace_domain_min_km,
+        cadence_max_spm=analysis.cadence_max_spm,
+    )
 
 
 # ── Exercices ─────────────────────────────────────────
@@ -218,7 +424,7 @@ class ExerciseService:
             payload = await ai.ask_json(
                 instruction=notes.INSTRUCTION,
                 prompt=prompt,
-                image_url=prepare_data_url(photo),
+                images=[prepare_data_url(photo)],
                 max_tokens=1200,
             )
         else:

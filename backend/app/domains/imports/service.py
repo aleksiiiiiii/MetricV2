@@ -16,6 +16,7 @@ aucune ligne, puisqu'il n'en existe encore aucune.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 
 from app.core.dates import today_local
@@ -47,14 +48,28 @@ class AppleImportService:
     # ── Analyse (`IMP-01` → `IMP-04`, `IMP-06`) ───────
 
     async def analyze(
-        self, ai: AiService, screenshot: bytes, *, today: date | None = None
+        self, ai: AiService, screenshots: Sequence[bytes], *, today: date | None = None
     ) -> AppleDraft:
-        """Lit une capture et rend un pré-remplissage. **N'écrit rien.**"""
+        """Lit une ou plusieurs captures d'une **même** séance. **N'écrit rien.**
+
+        Plusieurs images parce qu'Apple sépare ce qui va ensemble : le résumé sur un écran,
+        les paliers derrière un appui. Les envoyer en un seul appel plutôt qu'un appel par
+        image n'est pas une économie de requêtes — c'est ce qui permet au modèle de rendre
+        **une** liste de paliers fusionnée plutôt que deux listes qu'il faudrait recoller
+        ici, sans savoir laquelle recouvre l'autre.
+
+        L'ordre est conservé jusqu'au corps de la requête : la consigne parle du résumé
+        comme de la première capture.
+        """
         payload = await ai.ask_json(
             instruction=INSTRUCTION,
             prompt=PROMPT,
-            image_url=prepare_data_url(screenshot),
-            max_tokens=600,
+            images=[prepare_data_url(shot) for shot in screenshots],
+            # Neuf paliers pèsent près de mille caractères de JSON à eux seuls. Le plafond
+            # d'avant — 600 jetons, posé pour un résumé — tronquait la liste en plein objet,
+            # et une réponse tronquée n'est pas une réponse partielle : elle n'a plus de
+            # JSON du tout, donc plus de course non plus.
+            max_tokens=2000,
         )
 
         draft = read_draft(payload, today=today or today_local())
@@ -128,6 +143,11 @@ class AppleImportService:
                     elevation_m=payload.elevation_m,
                     cadence_spm=payload.cadence_spm,
                     note=payload.note,
+                    total_calories=payload.total_calories,
+                    start_time=payload.start_time,
+                    end_time=payload.end_time,
+                    split_length_km=payload.split_length_km,
+                    splits=payload.splits,
                 ),
                 source="apple",
             )

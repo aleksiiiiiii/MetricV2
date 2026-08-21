@@ -241,7 +241,7 @@ class NutritionService:
             payload = await ai.ask_json(
                 instruction=INSTRUCTION,
                 prompt=photo_prompt(said),
-                image_url=prepare_data_url(photo),
+                images=[prepare_data_url(photo)],
                 # Une estimation tient en cinq nombres : au-delà, on paie le monologue d'un
                 # modèle à raisonnement visible, que l'extraction jettera de toute façon.
                 max_tokens=500,

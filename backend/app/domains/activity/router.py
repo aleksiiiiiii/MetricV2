@@ -24,6 +24,7 @@ from app.domains.activity.schemas import (
     ExerciseProgress,
     NoteDraft,
     Run,
+    RunDetail,
     RunPayload,
     Workout,
     WorkoutPayload,
@@ -92,9 +93,42 @@ async def create_run(payload: RunPayload, store: StoreDep) -> Run:
     return await RunService(store).create(payload)
 
 
+@router.get(
+    "/runs/latest",
+    response_model=RunDetail,
+    summary="La dernière course, paliers compris",
+)
+async def latest_run(store: StoreDep) -> RunDetail:
+    """La course la plus récente et ses paliers (`ACT-19`).
+
+    **Déclarée avant `/runs/{row_id}`**, et ce n'est pas une préférence de lecture :
+    FastAPI essaie les routes dans l'ordre, et `latest` se ferait sinon happer par le
+    motif d'identifiant, qui n'accepte qu'un entier — donc un `422` sur une adresse
+    parfaitement valide.
+
+    Un historique vide rend un détail vide et non un `404` : l'écran en tire son état
+    « aucune course » plutôt qu'une erreur.
+    """
+    return await RunService(store).latest()
+
+
 @router.get("/runs/{row_id}", response_model=Run, summary="Détail d'une course")
 async def read_run(row_id: RowId, store: StoreDep) -> Run:
     return await RunService(store).get(row_id)
+
+
+@router.get(
+    "/runs/{row_id}/splits",
+    response_model=RunDetail,
+    summary="Une course et ses paliers",
+)
+async def read_run_splits(row_id: RowId, store: StoreDep) -> RunDetail:
+    """Les paliers d'une course, et ce qu'ils disent d'elle (`ACT-19`).
+
+    Une course sans paliers — toute saisie au clavier l'est — rend une liste vide, pas une
+    erreur : ne pas avoir de détail n'est pas un défaut de la course.
+    """
+    return await RunService(store).detail(row_id)
 
 
 @router.patch("/runs/{row_id}", response_model=Run, summary="Corriger une course")

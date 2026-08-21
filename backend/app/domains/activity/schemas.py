@@ -7,7 +7,7 @@ se fait ici, à la frontière, pour que le domaine ne voie jamais que des minute
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.parsing import (
     ParseError,
     pace_min_per_km,
+    parse_clock_time,
     parse_decimal,
     parse_distance_km,
     parse_duration_minutes,
@@ -51,6 +52,55 @@ def _distance(value: str | float) -> float:
         return parse_distance_km(value)
     except ParseError as exc:
         raise ValueError(str(exc)) from exc
+
+
+# ── Paliers saisis (`ACT-19`) ─────────────────────────
+#
+# Déclarés **avant** `RunPayload`, qui les porte : une référence avant définition laisserait
+# le modèle inachevé jusqu'à un `model_rebuild()` que personne ne pense à appeler.
+
+
+class RunSplitPayload(BaseModel):
+    """Un palier tel qu'il arrive d'un import, **avant** relecture.
+
+    Les champs entrent en texte comme partout ailleurs à cette frontière (`ACT-01`) :
+    `05:06` est une durée, `5'06"` une allure. Le modèle recopie, cette classe normalise,
+    et rien entre les deux ne convertit.
+
+    Il n'y a **pas** de champ `partial` : le drapeau se déduit des durées, côté serveur,
+    et l'accepter d'un client reviendrait à laisser décider ce qui fausse toutes les
+    moyennes de la page.
+    """
+
+    index: int = Field(ge=1, le=500, description="Numéro du palier, lu sur la ligne")
+    #: Le temps du palier. `05:06` vaut cinq minutes six secondes — même lecture qu'une
+    #: durée de séance, par le même analyseur (`ACT-01`).
+    duration_s: float = Field(gt=0, le=86400)
+    pace_min_km: PaceMinKm | None = None
+    cadence_spm: CadenceSpm | None = None
+    avg_hr: HeartRate | None = None
+    elevation_m: ElevationM | None = None
+
+    @field_validator("duration_s", mode="before")
+    @classmethod
+    def read_duration(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        return round(_duration(value) * 60, 1)
+
+    @field_validator("pace_min_km", mode="before")
+    @classmethod
+    def read_pace(cls, value: object) -> object:
+        if isinstance(value, str):
+            return None if not value.strip() else _duration(value)
+        return value
+
+    @field_validator("cadence_spm", "avg_hr", "elevation_m", mode="before")
+    @classmethod
+    def read_optional_number(cls, value: object) -> object:
+        if isinstance(value, str):
+            return None if not value.strip() else round(parse_decimal(value))
+        return value
 
 
 # ── Courses ───────────────────────────────────────────
@@ -91,6 +141,19 @@ class RunPayload(BaseModel):
     elevation_m: ElevationM | None = None
     cadence_spm: CadenceSpm | None = None
     note: Note | None = None
+    #: Calories **totales**, métabolisme de base compris — le second des deux chiffres
+    #: qu'affiche une capture Apple. Le nom porte le qualificatif parce que « calories »
+    #: tout court désignerait tantôt l'un tantôt l'autre.
+    total_calories: Calories | None = None
+    #: Bornes horaires de la séance. Acceptent `7:40 PM` comme `19:40`.
+    start_time: time | None = None
+    end_time: time | None = None
+    #: Longueur d'un palier plein : 1 pour « 1 Kilometer », 1,609 pour « 1 Mile ».
+    split_length_km: DistanceKm | None = None
+    #: Les paliers, quand ils viennent avec — un import de captures, jamais une saisie au
+    #: clavier. Vide par défaut : les appelants d'avant ne changent pas d'un caractère, et
+    #: une course sans paliers reste une course entière.
+    splits: list[RunSplitPayload] = Field(default_factory=list)
 
     @field_validator("distance_km", mode="before")
     @classmethod
@@ -98,6 +161,26 @@ class RunPayload(BaseModel):
         if isinstance(value, str):
             return None if not value.strip() else _distance(value)
         return value
+
+    @field_validator("split_length_km", mode="before")
+    @classmethod
+    def read_split_length(cls, value: object) -> object:
+        if isinstance(value, str):
+            return None if not value.strip() else _distance(value)
+        return value
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def read_clock(cls, value: object) -> object:
+        """`7:40 PM` autant que `19:40`.
+
+        Une borne illisible vaut `None` et non une erreur : c'est un contexte, et refuser
+        la course entière parce qu'une heure d'horloge a mal été lue serait perdre une
+        mesure pour un ornement.
+        """
+        if not isinstance(value, str):
+            return value
+        return parse_clock_time(value)
 
     @field_validator("duration_min", mode="before")
     @classmethod
@@ -154,6 +237,74 @@ class Run(BaseModel):
     cadence_spm: int | None = None
     note: str | None = None
     source: str
+    #: Identifiant stable, celui auquel les paliers se rattachent. Vide sur une course
+    #: enregistrée avant le lot C08 : elle n'a pas de paliers, et `id` suffit à la corriger.
+    run_id: str = ""
+    total_calories: int | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    split_length_km: float | None = None
+    #: Ce que la page Course peut montrer sans redemander. Zéro veut dire « aucun palier
+    #: relevé », qui est le cas de toutes les courses saisies au clavier — pas une erreur.
+    splits: int = 0
+
+
+# ── Paliers rendus au client (`ACT-19`) ───────────────
+
+
+class RunSplit(BaseModel):
+    """Un palier rendu au client, sa longueur réelle comprise."""
+
+    index: int
+    duration_s: float
+    distance_km: float | None = None
+    pace_min_km: float | None = None
+    cadence_spm: int | None = None
+    avg_hr: int | None = None
+    elevation_m: int | None = None
+    #: Reliquat de distance et non kilomètre entier. L'écran le marque et grise son
+    #: allure, qui est une extrapolation de l'application et non une mesure.
+    partial: bool = False
+    #: Part de la barre de cadence, entre 0 et 1 — calculée ici pour que l'écran n'ait
+    #: aucun `Math.max` à faire sur une collection de mesures.
+    cadence_ratio: float | None = None
+
+
+class RunSplits(BaseModel):
+    """Les paliers d'une course et ce qu'ils disent d'elle (`ACT-19`).
+
+    Tout ce qui se moyenne ici écarte les paliers partiels : c'est la règle du domaine, et
+    elle vit dans `splits.py`, jamais à l'écran.
+    """
+
+    splits: list[RunSplit] = Field(default_factory=list)
+    full_count: int = 0
+    partial_count: int = 0
+    #: Secondes par kilomètre, seconde moitié moins première. **Négative = accélération**,
+    #: ce qui est contre-intuitif au premier regard : l'écran doit le dire en toutes
+    #: lettres plutôt que de montrer le signe seul.
+    drift_s_per_km: float | None = None
+    first_half_pace_min_km: float | None = None
+    second_half_pace_min_km: float | None = None
+    fastest_index: int | None = None
+    slowest_index: int | None = None
+    #: Bornes de l'axe d'allure, le plus lent d'abord : c'est ainsi que le graphique
+    #: retourne l'axe sans que l'écran ait à décider quoi que ce soit.
+    pace_domain_min_km: tuple[float, float] | None = None
+    cadence_max_spm: int | None = None
+
+
+class RunDetail(BaseModel):
+    """Ce que la page Course affiche : une course et ses paliers.
+
+    `run` est **nullable** parce que l'écran a besoin de distinguer deux silences que rien
+    d'autre ne sépare : « aucune course enregistrée » — auquel cas il dit ce que coûte le
+    prochain geste — et « le serveur n'a pas répondu », qui est une panne. Un `404` sur
+    l'adresse « la dernière course » aurait confondu les deux.
+    """
+
+    run: Run | None = None
+    splits: RunSplits = Field(default_factory=RunSplits)
 
 
 # ── Séances ───────────────────────────────────────────

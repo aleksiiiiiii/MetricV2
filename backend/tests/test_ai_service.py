@@ -262,7 +262,7 @@ async def test_an_image_only_goes_to_models_that_read_images(
 
     with pytest.raises(AiQuotaError):
         await service(ai_client).ask_json(
-            instruction=CONSIGNE, prompt="…", image_url="data:image/jpeg;base64,AAA"
+            instruction=CONSIGNE, prompt="…", images=["data:image/jpeg;base64,AAA"]
         )
 
     tried = [call.model for call in openrouter.calls]
@@ -276,7 +276,7 @@ async def test_the_image_travels_with_the_prompt(
     openrouter.say('{"ok": 1}')
 
     await service(ai_client).ask_json(
-        instruction=CONSIGNE, prompt="…", image_url="data:image/jpeg;base64,AAA"
+        instruction=CONSIGNE, prompt="…", images=["data:image/jpeg;base64,AAA"]
     )
 
     assert openrouter.calls[0].with_image
@@ -290,7 +290,7 @@ async def test_a_catalogue_without_any_vision_model_says_so_rather_than_guessing
 
     with pytest.raises(AiUnavailableError):
         await service(ai_client).ask_json(
-            instruction=CONSIGNE, prompt="…", image_url="data:image/jpeg;base64,AAA"
+            instruction=CONSIGNE, prompt="…", images=["data:image/jpeg;base64,AAA"]
         )
 
     assert openrouter.calls == []

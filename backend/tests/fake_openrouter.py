@@ -71,7 +71,12 @@ class Call:
     model: str
     #: Vrai si une image accompagnait la consigne (`IA-04`, `IA-06`).
     with_image: bool
+    #: La **première** image, qui est la seule pour presque tous les appels du dépôt.
     image_url: str | None
+    #: Toutes les images, dans l'ordre où elles sont parties. L'import d'une course en
+    #: envoie deux — le résumé puis les paliers — et l'ordre porte du sens : sans cette
+    #: trace, « les deux captures ont bien été transmises » ne se vérifierait pas.
+    images: list[str] = field(default_factory=list)
     #: Texte réellement envoyé, consigne système comprise.
     #:
     #: Journalisé parce que certaines promesses portent sur ce qui **ne** part **pas** :
@@ -150,12 +155,13 @@ class FakeOpenRouter:
     async def _complete(self, send: Send, body: bytes) -> None:
         request = json.loads(body or b"{}")
         model = str(request.get("model", ""))
-        image_url = _image_of(request)
+        images = _images_of(request)
         self.calls.append(
             Call(
                 model=model,
-                with_image=image_url is not None,
-                image_url=image_url,
+                with_image=bool(images),
+                image_url=images[0] if images else None,
+                images=images,
                 prompt=_prompt_of(request),
                 body=request,
             )
@@ -194,8 +200,9 @@ def _prompt_of(request: dict[str, Any]) -> str:
     return "\n".join(chunks)
 
 
-def _image_of(request: dict[str, Any]) -> str | None:
-    """Retrouve l'image d'une requête, à la forme des messages OpenAI."""
+def _images_of(request: dict[str, Any]) -> list[str]:
+    """Retrouve les images d'une requête, à la forme des messages OpenAI, dans l'ordre."""
+    found: list[str] = []
     for message in request.get("messages", []):
         content = message.get("content")
         if not isinstance(content, list):
@@ -204,8 +211,8 @@ def _image_of(request: dict[str, Any]) -> str | None:
             if isinstance(part, dict) and part.get("type") == "image_url":
                 url = part.get("image_url", {}).get("url")
                 if isinstance(url, str):
-                    return url
-    return None
+                    found.append(url)
+    return found
 
 
 async def _read_body(receive: Receive) -> bytes:

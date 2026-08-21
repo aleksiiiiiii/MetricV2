@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from app.config import Settings
@@ -156,7 +156,7 @@ class AiService:
         *,
         instruction: str,
         prompt: str,
-        image_url: str | None = None,
+        images: Sequence[str] = (),
         max_tokens: int = 900,
         temperature: float | None = EXTRACTION_TEMPERATURE,
     ) -> dict[str, Any]:
@@ -172,7 +172,7 @@ class AiService:
         extraction, et le champ y coûte la variété des réponses. Le défaut est ici et non
         chez l'appelant pour que le passage à `None` reste une décision qui se lit.
         """
-        models = await self.candidates(vision=image_url is not None)
+        models = await self.candidates(vision=bool(images))
         if not models:
             raise AiUnavailableError(
                 "Aucun modèle gratuit n'est disponible pour l'instant. "
@@ -189,7 +189,7 @@ class AiService:
                     model.id,
                     instruction=instruction,
                     prompt=prompt,
-                    image_url=image_url,
+                    images=images,
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )

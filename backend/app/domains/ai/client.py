@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any
@@ -247,7 +247,7 @@ class OpenRouterClient:
         *,
         instruction: str,
         prompt: str,
-        image_url: str | None = None,
+        images: Sequence[str] = (),
         max_tokens: int = 900,
         temperature: float | None = EXTRACTION_TEMPERATURE,
         extra: dict[str, Any] | None = None,
@@ -262,7 +262,7 @@ class OpenRouterClient:
             model,
             instruction=instruction,
             prompt=prompt,
-            image_url=image_url,
+            images=images,
             max_tokens=max_tokens,
             temperature=temperature,
             extra=extra,
@@ -280,7 +280,7 @@ class OpenRouterClient:
         *,
         instruction: str,
         prompt: str,
-        image_url: str | None = None,
+        images: Sequence[str] = (),
         max_tokens: int = 900,
         temperature: float | None = EXTRACTION_TEMPERATURE,
         extra: dict[str, Any] | None = None,
@@ -303,11 +303,15 @@ class OpenRouterClient:
         le réglage devenu permanent est passé dans la signature, comme le disait déjà cette
         page.
         """
+        # Le texte d'abord, puis les images **dans l'ordre reçu**. L'ordre porte du sens
+        # dès qu'il y en a plusieurs : le résumé d'une séance vient avant ses paliers, et
+        # une consigne qui parle de « la première capture » doit désigner la même que
+        # celle que l'appelant a mise en tête.
         content: list[dict[str, Any]] | str = prompt
-        if image_url is not None:
+        if images:
             content = [
                 {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": image_url}},
+                *({"type": "image_url", "image_url": {"url": url}} for url in images),
             ]
 
         body: dict[str, Any] = {

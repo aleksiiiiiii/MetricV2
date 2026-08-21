@@ -12,7 +12,9 @@ deux analyseurs finiraient par diverger.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import date, time, timedelta
+
+from app.core.text import fold
 
 #: `44:12` ou `1:18:44`, avec ou sans espaces.
 _CLOCK = re.compile(r"^(?:(\d+):)?(\d{1,2}):(\d{1,2}(?:[.,]\d+)?)$")
@@ -131,6 +133,70 @@ _WEEKDAYS: dict[str, int] = {
     "dimanche": 6,
 }
 
+#: Mois écrits en toutes lettres, français et anglais, abréviations comprises.
+#:
+#: L'anglais n'est pas un luxe : un iPhone réglé en anglais titre « August 21, 2026 », et
+#: c'est exactement la forme qu'un modèle recopie quand on lui demande de ne rien
+#: convertir. Sans cette table, une capture parfaitement lue rendait une date **vide** —
+#: le pire des cas, parce qu'il ressemble à une mauvaise lecture du modèle.
+#:
+#: Les clés sont déjà repliées — sans accent, sans point : `parse_day` normalise avant de
+#: chercher, et « février » doit répondre sous `fevrier`.
+_MONTHS: dict[str, int] = {
+    "janvier": 1,
+    "january": 1,
+    "jan": 1,
+    "fevrier": 2,
+    "february": 2,
+    "feb": 2,
+    "fev": 2,
+    "mars": 3,
+    "march": 3,
+    "mar": 3,
+    "avril": 4,
+    "april": 4,
+    "avr": 4,
+    "apr": 4,
+    "mai": 5,
+    "may": 5,
+    "juin": 6,
+    "june": 6,
+    "jun": 6,
+    "juillet": 7,
+    "july": 7,
+    "jul": 7,
+    "juil": 7,
+    "aout": 8,
+    "august": 8,
+    "aug": 8,
+    "septembre": 9,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "octobre": 10,
+    "october": 10,
+    "oct": 10,
+    "novembre": 11,
+    "november": 11,
+    "nov": 11,
+    "decembre": 12,
+    "december": 12,
+    "dec": 12,
+}
+
+#: `august21,2026` et `21aout2026`, une fois les espaces retirés.
+#:
+#: Les deux ordres coexistent sur le même appareil selon sa langue, et **rien dans la
+#: position ne permet de trancher** : c'est le mot qui lève l'ambiguïté, jamais le rang.
+#: D'où deux motifs et non un seul avec des groupes optionnels.
+_MONTH_FIRST = re.compile(r"^([a-z]+)\.?(\d{1,2}),?(\d{4})?$")
+_DAY_FIRST = re.compile(r"^(\d{1,2})([a-z]+)\.?,?(\d{4})?$")
+
+#: `7:40PM`, `19:40`, `7:40:12PM`, une fois les espaces retirés. Les secondes sont
+#: tolérées puis oubliées : une borne horaire de séance se lit à la minute, et Apple n'en
+#: affiche pas davantage.
+_TIME_OF_DAY = re.compile(r"^(\d{1,2}):(\d{2})(?::\d{2})?(am|pm)?$")
+
 
 def parse_day(raw: str, *, today: date) -> date | None:
     """Date absolue et **non future**, à partir de ce qu'une capture peut porter (`IMP-03`).
@@ -195,7 +261,80 @@ def parse_day(raw: str, *, today: date) -> date | None:
             year += 2000
         return _valid_past_date(year, month, day, today=today)
 
+    return _month_name_date(raw, today=today)
+
+
+def _month_name_date(raw: str, *, today: date) -> date | None:
+    """« August 21, 2026 » et « 21 août 2026 ».
+
+    En **dernier recours**, après les formes chiffrées : celles-ci portent des séparateurs
+    (`/`, `-`, `.`) que le repli efface, et les essayer sur du texte replié transformerait
+    `28-07-2026` en un nombre de huit chiffres.
+
+    Le repli est celui du projet (`app.core.text.fold`) et non un second : il retire les
+    accents, la casse et la ponctuation, ce qui règle d'un coup « août », « Août », le
+    point de « sept. » et la virgule de « August 21, 2026 ».
+    """
+    letters = fold(raw).replace(" ", "")
+    if not letters:
+        return None
+
+    for pattern, month_first in ((_MONTH_FIRST, True), (_DAY_FIRST, False)):
+        found = pattern.match(letters)
+        if found is None:
+            continue
+        name = found.group(1 if month_first else 2)
+        number = found.group(2 if month_first else 1)
+        month = _MONTHS.get(name)
+        if month is None:
+            continue
+
+        day = int(number)
+        written_year = found.group(3)
+        if written_year is not None:
+            return _valid_past_date(int(written_year), month, day, today=today)
+        # Sans année, la même règle que `28/07` : celle qui ne soit pas future.
+        for year in (today.year, today.year - 1):
+            candidate = _valid_past_date(year, month, day, today=today)
+            if candidate is not None:
+                return candidate
+        return None
+
     return None
+
+
+def parse_clock_time(raw: str) -> time | None:
+    """Heure d'horloge d'une capture — `7:40 PM`, `19:40` (`IMP-03`).
+
+    Rend `None` plutôt que de lever : une borne horaire est un **contexte**, pas une
+    mesure. Une plage mal lue ne doit pas faire échouer l'import d'une course dont la
+    distance et la durée, elles, sont parfaitement lisibles.
+
+    `12 AM` vaut minuit et `12 PM` midi — le cas qui se trompe dans les deux sens quand on
+    ajoute douze heures sans y penser.
+    """
+    # Les espaces fines et insécables s'écrivent en échappement : une capture les porte,
+    # et un caractère invisible dans le source se relit mal et se copie encore plus mal.
+    text = raw.strip().lower()
+    for space in (" ", "\u202f", "\xa0"):
+        text = text.replace(space, "")
+    if not text:
+        return None
+
+    found = _TIME_OF_DAY.match(text)
+    if found is None:
+        return None
+
+    hours, minutes = int(found.group(1)), int(found.group(2))
+    half = found.group(3)
+    if half is not None:
+        if not 1 <= hours <= 12:
+            return None
+        hours = hours % 12 + (12 if half == "pm" else 0)
+
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        return None
+    return time(hour=hours, minute=minutes)
 
 
 def _valid_past_date(year: int, month: int, day: int, *, today: date) -> date | None:

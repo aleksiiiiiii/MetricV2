@@ -347,7 +347,10 @@ def test_a_validated_run_is_written_with_its_source(
     assert response.status_code == 201
     assert response.json()["source"] == "apple"
     content = dav.content_of(RUNS_FILE)
-    assert content.rstrip().endswith(",apple")
+    # `source` n'est plus la dernière colonne depuis le lot C08 : on la lit par son nom
+    # plutôt que par sa position, ce qu'un test de bout en bout aurait dû faire d'emblée.
+    header, line = content.rstrip().splitlines()
+    assert dict(zip(header.split(","), line.split(","), strict=True))["source"] == "apple"
 
 
 def test_a_validated_workout_is_written_with_its_source(

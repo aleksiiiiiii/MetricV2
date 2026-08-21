@@ -14,6 +14,15 @@ WEIGHT = "body/weight.csv"
 MEASUREMENTS = "body/measurements.csv"
 
 RUNS = "activity/runs.csv"
+
+#: Les paliers d'une course — un kilomètre par ligne (`ACT-19`).
+#:
+#: Un fichier à part et non des colonnes de `runs.csv` : le nombre de paliers varie d'une
+#: course à l'autre, et l'aplatir en colonnes donnerait un en-tête qui s'allonge à chaque
+#: sortie plus longue que la précédente. C'est le même partage que `workouts.csv` et
+#: `exercise_log.csv`, pour la même raison.
+RUN_SPLITS = "activity/run_splits.csv"
+
 WORKOUTS = "activity/workouts.csv"
 EXERCISES = "activity/exercises.csv"
 EXERCISE_LOG = "activity/exercise_log.csv"

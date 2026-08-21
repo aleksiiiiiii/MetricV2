@@ -12,7 +12,7 @@ dans un tableur, des années après (`STO-02`).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 from enum import StrEnum
 
 from app.storage.model import CsvModel
@@ -66,6 +66,56 @@ class RunRow(CsvModel):
     cadence_spm: int | None = None
     note: str | None = None
     source: str = "manual"
+    #: Identifiant **stable** de la course, sur le modèle de `WorkoutRow.id` : les paliers
+    #: s'y rattachent, et `id` — la position dans le fichier — se décale à la première
+    #: suppression. Vide sur les lignes écrites avant le lot C08, ce qui est légitime
+    #: (`STO-04`) : elles n'ont pas de paliers, et on ne leur en inventera pas.
+    run_id: str = ""
+    #: Calories **totales**, métabolisme de base compris. `calories` tout court n'existe
+    #: pas ici, et c'est délibéré : une capture Apple en affiche deux — 439 actives, 492
+    #: totales — et un champ sans qualificatif finirait par mélanger les deux d'une course
+    #: à l'autre. Les actives restent hors de `runs.csv` tant qu'aucun écran ne les demande.
+    total_calories: int | None = None
+    #: Bornes horaires de la séance, telles que la capture les affiche. Elles ne servent
+    #: pas à dater la course — c'est `date` qui le fait — mais à la situer dans la journée.
+    start_time: time | None = None
+    end_time: time | None = None
+    #: Longueur d'un palier plein, en kilomètres : 1,0 pour « 1 Kilometer », 1,609 pour
+    #: « 1 Mile ». Sans elle, un fichier converti depuis des miles perdrait ce qui permet
+    #: de relire ses paliers.
+    split_length_km: float | None = None
+
+
+class RunSplitRow(CsvModel):
+    """Un palier d'une course. `activity/run_splits.csv` (`ACT-19`).
+
+    Le fichier existe pour une raison qui tient en une ligne de la capture : la neuvième.
+    Huit paliers autour de cinq minutes, puis `00:44` — qui n'est pas un kilomètre mais le
+    reliquat de distance. Apple lui affiche quand même une allure, par extrapolation.
+
+    `partial` est donc la colonne qui porte tout le poids du fichier : sans elle, une
+    moyenne, un écart ou une dérive comptent 44 secondes comme un kilomètre et se
+    trompent de bout en bout. C'est aussi le seul champ qu'aucune capture n'affiche
+    littéralement — il se déduit de la durée, côté serveur, jamais par le modèle.
+    """
+
+    #: Rattachement à `RunRow.run_id`, pas à sa position. Une course supprimée en amont
+    #: décalerait tous les index et ferait migrer les paliers vers la course voisine.
+    run_id: str
+    #: Le numéro **lu sur la ligne**, jamais recompté : une capture peut être défilée et
+    #: commencer au septième palier.
+    index: int
+    duration_s: float
+    #: La longueur **réelle** du palier — 1,0 pour un plein, le reliquat pour un partiel.
+    #: C'est elle et non `index` qui permet de sommer une distance sans mentir.
+    distance_km: float
+    #: Recopiée telle qu'affichée, y compris sur un partiel où elle est extrapolée. C'est
+    #: `partial` qui dit comment la lire, pas son absence.
+    pace_min_km: float | None = None
+    cadence_spm: int | None = None
+    avg_hr: int | None = None
+    elevation_m: int | None = None
+    partial: bool = False
 
 
 class WorkoutRow(CsvModel):
