@@ -124,6 +124,151 @@ def test_the_dashboard_answers_every_indicator_at_once(
     assert body["supplements"]["taken"] == 1
 
 
+# ── La journée à finir, l'objectif, la séance à venir ──
+
+
+def test_the_day_plan_says_what_is_left(
+    app_client: TestClient, auth: dict[str, str], seeded: Any
+) -> None:
+    """Les restants viennent des domaines qui les détiennent : rien n'est soustrait ici.
+
+    1 500 ml bus sur 2 000 de cible, 42 g de protéines sur 150, une prise sur une.
+    """
+    day = app_client.get(DASHBOARD, headers=auth).json()["day"]
+
+    by_key = {task["key"]: task for task in day["tasks"]}
+    assert by_key["hydration"]["remaining"] == "encore 500 ml"
+    assert by_key["protein"]["remaining"] == "encore 108 g"
+    assert by_key["supplements"]["remaining"] == "fait"
+    assert (day["done"], day["total"]) == (1, 3)
+
+
+def test_a_litre_is_said_in_litres(app_client: TestClient, auth: dict[str, str]) -> None:
+    """Sous le litre on parle en millilitres, au-dessus en litres — comme le client."""
+    task = next(
+        item
+        for item in app_client.get(DASHBOARD, headers=auth).json()["day"]["tasks"]
+        if item["key"] == "hydration"
+    )
+    assert task["remaining"] == "encore 2 L"
+
+
+def test_nothing_noted_is_not_zero(app_client: TestClient, auth: dict[str, str]) -> None:
+    """L'invariant du §2, sur une ligne de liste : un `0` à côté d'une cible se lirait
+    comme une mesure. L'absence se dit par l'absence, et l'écran dessine un tiret."""
+    tasks = app_client.get(DASHBOARD, headers=auth).json()["day"]["tasks"]
+
+    assert all(task["done"] is None for task in tasks)
+
+
+def test_a_finished_line_falls_to_the_bottom(
+    app_client: TestClient, auth: dict[str, str], seeded: Any
+) -> None:
+    """Ce qui reste d'abord, ce qui est bouclé ensuite — décidé par le serveur.
+
+    Le tri est **stable** : sans cela, boire un verre ferait sauter l'eau au-dessus des
+    protéines puis en dessous, et la liste changerait de forme au fil de la journée.
+    """
+    keys = [task["key"] for task in app_client.get(DASHBOARD, headers=auth).json()["day"]["tasks"]]
+
+    assert keys == ["hydration", "protein", "supplements"]
+
+
+def test_no_supplement_line_without_a_schedule(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """« 0 / 0 prise » demanderait d'agir sans qu'il y ait rien à faire — et apparaîtrait
+    au premier jour d'usage, là où l'écran doit être le plus clair."""
+    day = app_client.get(DASHBOARD, headers=auth).json()["day"]
+
+    assert [task["key"] for task in day["tasks"]] == ["hydration", "protein"]
+
+
+def test_the_dashboard_carries_the_active_goal(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav, seeded: Any
+) -> None:
+    """« On ne sait pas où on va » : l'objectif en cours n'était sur aucun écran d'accueil.
+
+    Il arrive **calculé** — ratio, libellé chiffré, fenêtre d'observation, jours restants
+    — parce que le client ne dérive rien (`HEAT-30`).
+    """
+    deadline = seeded + timedelta(weeks=6)
+    dav.seed(
+        "Metric/goals/goals.csv",
+        "id,created,title,metric,target,unit,deadline,rationale,source,status,outcome\n"
+        f"g1,{seeded - timedelta(days=7)},Trois séances,weekly_sessions,3,séances,"
+        f"{deadline},,ai,active,\n",
+    )
+
+    goal = app_client.get(DASHBOARD, headers=auth).json()["goal"]
+
+    assert goal is not None
+    assert goal["goal"]["title"] == "Trois séances"
+    assert goal["progress"]["target"] == 3
+    assert goal["progress"]["summary"]
+    assert goal["days_left"] == 42
+
+
+def test_no_goal_is_null_not_an_empty_shell(
+    app_client: TestClient, auth: dict[str, str], seeded: Any
+) -> None:
+    assert app_client.get(DASHBOARD, headers=auth).json()["goal"] is None
+
+
+def test_the_dashboard_carries_the_next_session(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav, seeded: Any
+) -> None:
+    """« Et ensuite ? » — la question que quatre indicateurs du passé ne posaient pas.
+
+    La plus proche est servie, pas la première du fichier : les séances arrivent triées
+    par date puis par heure.
+    """
+    dav.seed(
+        "Metric/planning/plan.csv",
+        "id,date,time,kind,title,duration_min,note,created,source\n"
+        f"p2,{seeded + timedelta(days=3)},10:00,course,Sortie longue,75,,{seeded},manual\n"
+        f"p1,{seeded + timedelta(days=1)},18:30,musculation,Haut du corps,45,,{seeded},manual\n",
+    )
+
+    session = app_client.get(DASHBOARD, headers=auth).json()["next_session"]
+
+    assert session["title"] == "Haut du corps"
+    assert session["time"] == "18:30"
+
+
+def test_a_session_beyond_the_window_is_not_what_comes_next(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav, seeded: Any
+) -> None:
+    """Une séance dans trois semaines ne dit rien de la journée qu'on est en train de lire."""
+    dav.seed(
+        "Metric/planning/plan.csv",
+        "id,date,time,kind,title,duration_min,note,created,source\n"
+        f"p1,{seeded + timedelta(days=21)},18:30,musculation,Haut du corps,45,,{seeded},manual\n",
+    )
+
+    assert app_client.get(DASHBOARD, headers=auth).json()["next_session"] is None
+
+
+def test_the_weekly_bars_carry_their_own_scale(
+    app_client: TestClient, auth: dict[str, str], seeded: Any
+) -> None:
+    """L'échelle de l'histogramme est **servie**, plus dérivée d'un `Math.max` à l'écran.
+
+    Un maximum sur une série est une dérivation, et c'est le défaut que ce lot corrige.
+    """
+    weeks = app_client.get(DASHBOARD, headers=auth).json()["training"]["weeks"]
+
+    assert max(week["ratio"] for week in weeks) == 1.0
+    assert all(0 <= week["ratio"] <= 1 for week in weeks)
+
+
+def test_an_empty_window_has_no_full_bar(app_client: TestClient, auth: dict[str, str]) -> None:
+    """Sans une minute d'entraînement, la barre n'est pas pleine : il n'y a pas de barre."""
+    weeks = app_client.get(DASHBOARD, headers=auth).json()["training"]["weeks"]
+
+    assert all(week["ratio"] == 0 for week in weeks)
+
+
 def test_each_source_file_is_pulled_once(
     app_client: TestClient, auth: dict[str, str], dav: FakeWebDav, seeded: Any
 ) -> None:

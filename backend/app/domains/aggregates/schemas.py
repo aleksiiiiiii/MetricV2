@@ -19,8 +19,10 @@ from pydantic import BaseModel, Field
 
 from app.domains.activity.schemas import TrainingTotals
 from app.domains.body.schemas import WeightStats
+from app.domains.goals.schemas import ActiveGoal
 from app.domains.hydration.schemas import HydrationStats
 from app.domains.nutrition.schemas import DayTotals
+from app.domains.planning.schemas import PlannedSession
 from app.domains.supplements.schemas import DayRatio
 
 # ── Série d'assiduité (`AGG-03`) ──────────────────────
@@ -116,6 +118,61 @@ class SeriesView(BaseModel):
     stats: SeriesStats
 
 
+# ── La journée à finir ────────────────────────────────
+
+
+class DayTask(BaseModel):
+    """Une ligne de « il reste aujourd'hui ».
+
+    **Ce n'est pas une case à cocher.** Elle dit un écart, elle n'écrit rien : le `⊕` de
+    la barre d'onglets sait déjà noter un verre et un supplément, et `/routine` détient la
+    case. Deux vocabulaires pour le même geste, c'est exactement ce qu'on évite.
+    """
+
+    #: `hydration`, `protein` ou `supplements`. L'écran s'en sert pour savoir où mène la
+    #: ligne — une table de correspondance, pas un calcul.
+    key: str
+    label: str
+    #: Ce qui est noté aujourd'hui. **`None` quand rien ne l'est**, et ce n'est pas zéro :
+    #: un `0` affiché à côté d'une cible se lit comme une mesure, et c'est précisément la
+    #: faute que le §2 nomme. L'écran dessine un tiret.
+    done: float | None = None
+    target: float
+    unit: str
+    #: Rapport à la cible, plafonné à 1 pour l'affichage.
+    ratio: float = Field(ge=0, le=1)
+    complete: bool
+    #: Ce qu'il reste, dit en français : « encore 1,1 L », « fait ».
+    #:
+    #: Servi et non déduit, pour la raison déjà écrite sur `HydrationStats.remaining_ml` :
+    #: sans lui, l'écran soustrait en TypeScript et l'assistant soustrait dans sa phrase,
+    #: et les deux finissent par ne pas dire la même chose.
+    remaining: str
+
+
+class DayPlan(BaseModel):
+    """Ce qu'il reste à faire aujourd'hui, toutes cibles confondues.
+
+    Les lignes sont **ordonnées par le serveur** : ce qui reste d'abord, ce qui est bouclé
+    ensuite. Laisser l'écran trier aurait mis un deuxième critère d'urgence dans
+    l'application, et celui-là aurait changé sans que personne le décide.
+    """
+
+    date: date
+    tasks: list[DayTask] = Field(default_factory=list)
+    #: Lignes bouclées sur le total. Deux entiers plutôt qu'un ratio : « 2 sur 3 » se lit,
+    #: « 66,7 % » demande à être retraduit.
+    done: int
+    total: int
+    #: Vrai dès qu'une donnée a été relevée aujourd'hui, **toutes sources confondues**.
+    #:
+    #: Servi, et non déduit des trois lignes ci-dessus : une pesée, une course ou des
+    #: mensurations font une journée relevée sans toucher à l'eau ni aux protéines.
+    #: L'écran le calculait en recollant quatre champs, et il se trompait dans ces
+    #: cas-là. La définition est celle de `AGG-03`, et il n'y en a qu'une.
+    logged: bool = False
+
+
 # ── Tableau de bord (`AGG-01`) ────────────────────────
 
 
@@ -140,3 +197,17 @@ class DashboardView(BaseModel):
     series: SeriesView
     #: Métrique mise en avant (`HEAT-08`), telle que réglée par l'utilisateur.
     highlight: str
+    #: Ce qu'il reste à faire aujourd'hui.
+    day: DayPlan
+    #: L'objectif en cours, avec sa progression déjà calculée (`GOAL-04`, `GOAL-05`).
+    #:
+    #: **Importé et non redéclaré**, comme les cinq indicateurs ci-dessus : un
+    #: `DashboardGoal` avec les mêmes champs aurait créé un second endroit où corriger un
+    #: ratio. `null` quand aucun objectif n'est en cours — l'écran retombe alors sur la
+    #: cible de poids, puis sur son état vide.
+    goal: ActiveGoal | None = None
+    #: La prochaine séance prévue, aujourd'hui ou dans les jours qui viennent.
+    #:
+    #: Elle répond au « et ensuite ? » que quatre indicateurs du passé ne posaient même
+    #: pas. `null` quand rien n'est prévu sur la fenêtre regardée.
+    next_session: PlannedSession | None = None

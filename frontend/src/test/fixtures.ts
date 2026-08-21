@@ -35,15 +35,17 @@ export const DASHBOARD: DashboardView = {
       distance_km: 8.4,
       pace_min_km: 5.26,
     },
+    // `ratio` est **servi** : l'échelle de l'histogramme se calcule là où la fenêtre
+    // entière est sous la main, plus par un `Math.max` à l'écran.
     weeks: [
-      { week_start: '2026-06-08', minutes: 180, sessions: 3 },
-      { week_start: '2026-06-15', minutes: 240, sessions: 4 },
-      { week_start: '2026-06-22', minutes: 120, sessions: 2 },
-      { week_start: '2026-06-29', minutes: 300, sessions: 5 },
-      { week_start: '2026-07-06', minutes: 0, sessions: 0 },
-      { week_start: '2026-07-13', minutes: 210, sessions: 4 },
-      { week_start: '2026-07-20', minutes: 260, sessions: 4 },
-      { week_start: '2026-07-27', minutes: 106, sessions: 2 },
+      { week_start: '2026-06-08', minutes: 180, sessions: 3, ratio: 0.6 },
+      { week_start: '2026-06-15', minutes: 240, sessions: 4, ratio: 0.8 },
+      { week_start: '2026-06-22', minutes: 120, sessions: 2, ratio: 0.4 },
+      { week_start: '2026-06-29', minutes: 300, sessions: 5, ratio: 1 },
+      { week_start: '2026-07-06', minutes: 0, sessions: 0, ratio: 0 },
+      { week_start: '2026-07-13', minutes: 210, sessions: 4, ratio: 0.7 },
+      { week_start: '2026-07-20', minutes: 260, sessions: 4, ratio: 0.87 },
+      { week_start: '2026-07-27', minutes: 106, sessions: 2, ratio: 0.35 },
     ],
     split: [
       { kind: 'run', label: 'Course', sessions: 46, minutes: 2300, ratio: 0.39 },
@@ -110,6 +112,46 @@ export const DASHBOARD: DashboardView = {
     },
   },
   highlight: 'activity',
+  day: {
+    date: '2026-07-27',
+    tasks: [
+      {
+        key: 'hydration',
+        label: 'Eau',
+        done: 1250,
+        target: 2000,
+        unit: 'ml',
+        ratio: 0.625,
+        complete: false,
+        remaining: 'encore 750 ml',
+      },
+      {
+        key: 'protein',
+        label: 'Protéines',
+        done: 96,
+        target: 150,
+        unit: 'g',
+        ratio: 0.64,
+        complete: false,
+        remaining: 'encore 54 g',
+      },
+      {
+        key: 'supplements',
+        label: 'Suppléments',
+        done: 2,
+        target: 3,
+        unit: 'prises',
+        ratio: 0.667,
+        complete: false,
+        remaining: 'encore 1 prise',
+      },
+    ],
+    done: 0,
+    total: 3,
+    logged: true,
+  },
+  goal: null,
+  next_session: null,
 };
 
 const DEFAULT_VALUES = {

@@ -454,8 +454,10 @@ export function Dashboard() {
             <Bars
               rows={data.training.weeks.map((week) => ({
                 label: dayMonth(week.week_start),
-                ratio:
-                  week.minutes / Math.max(...data.training.weeks.map((other) => other.minutes), 1),
+                // **Servie.** Elle était dérivée d'un `Math.max` sur la série entière, ce
+                // qui est un calcul métier à l'écran — et le seul qui connaisse la
+                // fenêtre entière est celui qui la construit.
+                ratio: week.ratio,
                 value: week.minutes > 0 ? hoursMinutes(week.minutes) : '—',
                 tone: 'effort' as const,
               }))}

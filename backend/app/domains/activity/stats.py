@@ -254,14 +254,29 @@ class ActivityStats:
         minutes: dict[date, float], sessions: dict[date, int], current: date
     ) -> list[WeekVolume]:
         """Les huit dernières semaines, la plus ancienne en premier (`ACT-12`)."""
-        weeks: list[WeekVolume] = []
+        totals: list[tuple[date, float, int]] = []
         for offset in range(WEEKS_BACK - 1, -1, -1):
             start = current - timedelta(weeks=offset)
             end = start + timedelta(days=7)
             total = sum(value for day, value in minutes.items() if start <= day < end)
             count = sum(value for day, value in sessions.items() if start <= day < end)
-            weeks.append(WeekVolume(week_start=start, minutes=_round(total) or 0, sessions=count))
-        return weeks
+            totals.append((start, _round(total) or 0, count))
+
+        # L'échelle de l'histogramme se calcule **ici**, où la fenêtre entière est sous la
+        # main. La rendre à l'écran l'obligerait à reparcourir la liste pour trouver son
+        # maximum, ce qui est un calcul métier — et c'était le cas jusqu'à ce lot.
+        peak = max((volume for _start, volume, _count in totals), default=0.0)
+        return [
+            WeekVolume(
+                week_start=start,
+                minutes=volume,
+                sessions=count,
+                # Une fenêtre sans une minute d'entraînement n'a pas de barre pleine :
+                # elle n'a pas de barre du tout.
+                ratio=volume / peak if peak > 0 else 0.0,
+            )
+            for start, volume, count in totals
+        ]
 
     # ── Muscles (`ACT-14`, `ACT-16`) ──────────────────
 

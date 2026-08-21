@@ -6,6 +6,8 @@
  * formate, il ne dérive pas (`HEAT-30`).
  */
 
+import type { ActiveGoal } from '@/features/goals/api';
+import type { PlannedSession } from '@/features/planning/api';
 import { request } from '@/lib/api';
 
 // ── Blocs repris des domaines ─────────────────────────
@@ -34,6 +36,13 @@ export interface WeekVolume {
   week_start: string;
   minutes: number;
   sessions: number;
+  /**
+   * Part de la semaine la plus chargée de la fenêtre, entre 0 et 1.
+   *
+   * **Servie.** L'écran la dérivait d'un `Math.max(...weeks.map(…))` : un maximum sur une
+   * série est une dérivation, et le client n'en fait aucune (`HEAT-30`).
+   */
+  ratio: number;
 }
 
 export interface TrainingSplit {
@@ -140,6 +149,41 @@ export interface SeriesView {
   stats: SeriesStats;
 }
 
+// ── La journée à finir ────────────────────────────────
+
+export interface DayTask {
+  /** `hydration`, `protein` ou `supplements` — une table de correspondance, pas un calcul. */
+  key: string;
+  label: string;
+  /**
+   * Ce qui est noté aujourd'hui. **`null` quand rien ne l'est**, et ce n'est pas zéro :
+   * un `0` affiché à côté d'une cible se lit comme une mesure.
+   */
+  done: number | null;
+  target: number;
+  unit: string;
+  ratio: number;
+  complete: boolean;
+  /** Ce qu'il reste, écrit en français par le serveur : « encore 1,1 L », « fait ». */
+  remaining: string;
+}
+
+export interface DayPlan {
+  date: string;
+  /** Ordonnées **par le serveur** : ce qui reste d'abord, ce qui est bouclé ensuite. */
+  tasks: DayTask[];
+  done: number;
+  total: number;
+  /**
+   * Vrai dès qu'une donnée a été relevée aujourd'hui, **toutes sources confondues**.
+   *
+   * L'écran le recollait à partir de quatre champs — repas, eau, prises, date de pesée —
+   * et se trompait dès qu'une course ou des mensurations faisaient la journée. La
+   * définition est celle de `AGG-03`, et il n'y en a qu'une.
+   */
+  logged: boolean;
+}
+
 // ── Tableau de bord (`AGG-01`) ────────────────────────
 
 export interface DashboardView {
@@ -153,6 +197,15 @@ export interface DashboardView {
   /** Incluse : la première peinture de l'écran, graphique compris, tient en un appel. */
   series: SeriesView;
   highlight: string;
+  /** Ce qu'il reste à faire aujourd'hui. */
+  day: DayPlan;
+  /**
+   * L'objectif en cours, progression comprise. `null` quand il n'y en a pas — l'écran
+   * retombe alors sur la cible de poids, puis sur son état vide.
+   */
+  goal: ActiveGoal | null;
+  /** La prochaine séance prévue. `null` quand rien n'est prévu sur la fenêtre regardée. */
+  next_session: PlannedSession | null;
 }
 
 export const aggregatesApi = {

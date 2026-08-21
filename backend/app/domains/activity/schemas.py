@@ -406,6 +406,14 @@ class WeekVolume(BaseModel):
     week_start: date
     minutes: float
     sessions: int
+    #: Part de la semaine la plus chargée de la fenêtre, entre 0 et 1.
+    #:
+    #: **Servi, et non déduit à l'écran.** Le tableau de bord le dérivait d'un
+    #: `Math.max(...weeks.map(…))` en TypeScript : un maximum sur une série *est* une
+    #: dérivation, et deux implémentations de la même échelle divergent au premier cas
+    #: limite — ici, une fenêtre entièrement vide. Toutes les semaines à zéro rendent 0,
+    #: jamais une division par zéro déguisée en barre pleine.
+    ratio: float = Field(default=0.0, ge=0, le=1)
 
 
 class TrainingSplit(BaseModel):

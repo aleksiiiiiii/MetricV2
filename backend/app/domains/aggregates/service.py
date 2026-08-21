@@ -24,6 +24,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.core.dates import days_between
+from app.core.text import fr
 from app.domains.activity.service import ExerciseService, RunService, WorkoutService
 from app.domains.activity.stats import ActivityStats
 from app.domains.aggregates.metrics import (
@@ -36,6 +37,8 @@ from app.domains.aggregates.metrics import (
 )
 from app.domains.aggregates.schemas import (
     DashboardView,
+    DayPlan,
+    DayTask,
     MetricDescriptor,
     MetricSubject,
     SeriesPoint,
@@ -46,8 +49,13 @@ from app.domains.aggregates.schemas import (
 )
 from app.domains.app_settings.service import SettingsService
 from app.domains.body.service import MeasurementService, WeightService
+from app.domains.goals.schemas import ActiveGoal
+from app.domains.hydration.schemas import HydrationStats
 from app.domains.hydration.service import HydrationService
+from app.domains.nutrition.schemas import DayTotals
 from app.domains.nutrition.service import NutritionService
+from app.domains.planning.schemas import PlannedSession
+from app.domains.supplements.schemas import DayRatio
 from app.domains.supplements.service import SupplementService
 from app.storage.errors import StorageNotFoundError
 from app.storage.files import FileStore
@@ -58,6 +66,13 @@ STREAK_LIMIT = 400
 
 #: Fenêtre montrée à côté de la série (`AGG-03`).
 RECENT_DAYS = 7
+
+#: Profondeur de recherche de la prochaine séance prévue, en jours.
+#:
+#: Quatorze : au-delà, « ce qui vient » n'est plus ce qui vient. Une séance prévue dans
+#: trois semaines ne dit rien de la journée qu'on est en train de lire, et l'afficher
+#: comme la suite immédiate serait une réponse à une question que personne ne pose.
+NEXT_SESSION_DAYS = 14
 
 
 class SeriesService:
@@ -146,6 +161,18 @@ class SeriesService:
         )
 
 
+def _volume(milliliters: int) -> str:
+    """Un volume tel qu'il se dit : « 250 ml », « 1,1 L ».
+
+    Le même seuil que le formateur du client — sous le litre on parle en millilitres, au
+    dessus en litres. Il est ici parce que la phrase du restant est écrite par le serveur
+    (`API-07`), et le client n'a rien à retraduire.
+    """
+    if milliliters < 1000:
+        return f"{milliliters} ml"
+    return f"{fr(milliliters / 1000)} L"
+
+
 class DashboardService:
     """Tous les indicateurs de synthèse en une requête (`AGG-01`)."""
 
@@ -157,17 +184,162 @@ class DashboardService:
     ) -> DashboardView:
         store = self._store
 
+        # Les trois totaux du jour sont lus **une fois** et servent deux fois : comme
+        # indicateurs, et comme lignes de « il reste aujourd'hui ». Les redemander au
+        # constructeur de la liste rouvrirait trois fichiers déjà ouverts — servis par le
+        # cache de `FileStore`, certes, mais pour rien.
+        nutrition = await NutritionService(store).totals(today)
+        hydration = await HydrationService(store).summary(today)
+        supplements = (await SupplementService(store).checklist(today)).ratio
+
+        # L'assiduité sait déjà si la journée a reçu quelque chose, et elle le sait pour
+        # les **sept** sources — pas seulement les trois qui ont une cible. C'est cette
+        # définition-là qu'on réemploie : `AGG-03` n'en a qu'une, et l'écran en recollait
+        # une seconde à partir de quatre champs.
+        streak = await self.streak(today)
+        logged = any(day.date == today and day.active for day in streak.last_seven)
+
         return DashboardView(
             date=today,
             weight=await WeightService(store).summary(),
             training=await ActivityStats(store).training(today),
-            nutrition=await NutritionService(store).totals(today),
-            hydration=await HydrationService(store).summary(today),
-            supplements=(await SupplementService(store).checklist(today)).ratio,
-            streak=await self.streak(today),
+            nutrition=nutrition,
+            hydration=hydration,
+            supplements=supplements,
+            streak=streak,
             series=await SeriesService(store).series(metric, today, range_key=range_key),
             highlight=(await SettingsService(store).values()).heatmap_metric,
+            day=self.day_plan(
+                today,
+                nutrition=nutrition,
+                hydration=hydration,
+                supplements=supplements,
+                logged=logged,
+            ),
+            goal=await self._active_goal(today),
+            next_session=await self._next_session(today),
         )
+
+    # ── La journée à finir ────────────────────────────
+
+    @staticmethod
+    def day_plan(
+        today: date,
+        *,
+        nutrition: DayTotals,
+        hydration: HydrationStats,
+        supplements: DayRatio,
+        logged: bool = False,
+    ) -> DayPlan:
+        """Ce qu'il reste à faire aujourd'hui, en lignes ordonnées.
+
+        **Aucune soustraction n'est faite ici.** Les trois restants sont servis par leurs
+        domaines — `remaining_ml`, `protein_remaining_g`, `taken` sur `planned` — pour la
+        raison déjà écrite sur `HydrationStats.remaining_ml` : un écart calculé deux fois
+        finit par ne pas dire la même chose des deux côtés. Cette méthode les **range**.
+
+        L'ordre est décidé ici et pas à l'écran : ce qui reste d'abord, ce qui est bouclé
+        ensuite. Un second critère d'urgence côté client aurait changé sans que personne
+        ne le décide.
+        """
+        tasks = [
+            DayTask(
+                key="hydration",
+                label="Eau",
+                # Zéro n'est pas une mesure : rien de noté se dit par l'absence, et
+                # l'écran dessine un tiret. C'est la même règle que le tiret des tuiles.
+                done=float(hydration.today_ml) or None,
+                target=float(hydration.target_ml),
+                unit="ml",
+                ratio=hydration.ratio,
+                complete=hydration.remaining_ml == 0,
+                remaining=(
+                    "fait"
+                    if hydration.remaining_ml == 0
+                    else f"encore {_volume(hydration.remaining_ml)}"
+                ),
+            ),
+            DayTask(
+                key="protein",
+                label="Protéines",
+                done=nutrition.protein_g or None,
+                target=nutrition.protein_target_g,
+                unit="g",
+                ratio=nutrition.protein_ratio,
+                complete=nutrition.protein_remaining_g == 0,
+                remaining=(
+                    "fait"
+                    if nutrition.protein_remaining_g == 0
+                    else f"encore {fr(nutrition.protein_remaining_g)} g"
+                ),
+            ),
+        ]
+
+        # **Pas de ligne quand rien n'est planifié.** « 0 / 0 prise » est une ligne qui
+        # demande d'agir sans qu'il y ait rien à faire, et elle apparaîtrait au premier
+        # jour d'usage — exactement là où l'écran doit être le plus clair.
+        if supplements.planned > 0:
+            left = supplements.planned - supplements.taken
+            tasks.append(
+                DayTask(
+                    key="supplements",
+                    label="Suppléments",
+                    done=float(supplements.taken) or None,
+                    target=float(supplements.planned),
+                    unit="prises",
+                    ratio=supplements.ratio,
+                    complete=supplements.complete,
+                    remaining=(
+                        "fait"
+                        if supplements.complete
+                        else f"encore {left} {'prise' if left == 1 else 'prises'}"
+                    ),
+                )
+            )
+
+        # Tri **stable** : les lignes gardent leur ordre naturel à l'intérieur de chaque
+        # moitié. Sans cela, boire un verre ferait sauter l'eau au-dessus des protéines
+        # puis en dessous, et la liste changerait de forme au fil de la journée.
+        tasks.sort(key=lambda task: task.complete)
+
+        return DayPlan(
+            date=today,
+            tasks=tasks,
+            done=sum(1 for task in tasks if task.complete),
+            total=len(tasks),
+            logged=logged,
+        )
+
+    # ── Où l'on va ────────────────────────────────────
+
+    async def _active_goal(self, today: date) -> ActiveGoal | None:
+        """L'objectif en cours, progression comprise (`GOAL-05`).
+
+        **Importé dans le corps de la méthode**, comme `context.plan_lines` le fait pour
+        le même genre de raison : `goals/service.py` a besoin du registre des métriques,
+        et le sens des dépendances entre ces deux domaines n'a qu'une direction sûre.
+        Ici, seule la **vue** est demandée, et elle arrive calculée.
+        """
+        from app.domains.goals.service import GoalService
+
+        return (await GoalService(self._store).view(today=today)).active
+
+    async def _next_session(self, today: date) -> PlannedSession | None:
+        """La prochaine séance prévue, aujourd'hui comprise.
+
+        **Elle n'est jamais dite « faite ».** Le rapprochement prévu / réalisé est la
+        règle de `PLAN-06`, et en écrire une seconde version ici donnerait deux verdicts
+        pour le même mardi. Cette ligne dit ce qui est **prévu**, et rien de plus.
+
+        Les séances sont déjà triées par date puis par heure : la première de la fenêtre
+        est la bonne, sans qu'il y ait à choisir.
+        """
+        from app.domains.planning.service import PlanningService
+
+        upcoming = await PlanningService(self._store).between(
+            today, today + timedelta(days=NEXT_SESSION_DAYS)
+        )
+        return upcoming[0] if upcoming else None
 
     # ── Série d'assiduité (`AGG-03`) ──────────────────
 
@@ -257,6 +429,7 @@ __all__ = [
     "DEFAULT_METRIC",
     "DEFAULT_RANGE",
     "METRICS",
+    "NEXT_SESSION_DAYS",
     "RANGES",
     "RECENT_DAYS",
     "STREAK_LIMIT",
