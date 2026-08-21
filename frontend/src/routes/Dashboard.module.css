@@ -1,3 +1,14 @@
+/* Le conteneur de page.
+
+   `cx('wrap', styles.screen)` : `wrap` plafonne la largeur de lecture et pose les marges,
+   `screen` gère l'empilement. En oublier un désaligne le contenu de l'en-tête — le défaut
+   a été trouvé deux fois, jamais par un test. Cet écran était l'un des huit encore sur
+   `className="wrap"` seul. */
+.screen {
+  display: flex;
+  flex-direction: column;
+}
+
 .split {
   display: grid;
   grid-template-columns: 1fr;
@@ -5,6 +16,21 @@
   align-items: start;
 }
 
+/* La taille minimale automatique d'un élément de grille est son **contenu minimal**, pas
+   zéro. `base.css` pose la règle sur `.grid > *`, mais elle ne peut pas atteindre une
+   `.grid` déclarée dans un module — le fichier le dit lui-même.
+
+   Ça se voyait : `.split` portait jusqu'ici une `.stack`, qui a son `min-width: 0`.
+   Depuis que la carte d'assiduité y est en direct, sa grille de sept jours poussait la
+   colonne et **la page entière défilait horizontalement de 3 px à 360 px**. Mesuré, pas
+   deviné — et invisible à 402, la seule largeur que l'audit regarde. */
+.split > * {
+  min-width: 0;
+}
+
+/* Deux colonnes seulement en paysage — iPad compris. À 820 px de portrait, une colonne
+   latérale de 360 px laisserait au graphique moins que ce qu'il a sur un téléphone à
+   l'horizontale, et les étiquettes d'axe se remettraient à se chevaucher. */
 @media (min-width: 960px) {
   .split {
     grid-template-columns: 1fr 360px;
@@ -29,6 +55,325 @@
   font-family: var(--mono);
   font-size: var(--t-meta);
   margin-top: var(--s3);
+}
+
+/* ── La lecture du jour ───────────────────────────── */
+
+/* Le texte du modèle, rendu par `Markdown`. Les chiffres arrivent en gras — c'est la
+   forme que `GuidelinesUI.html` §10 donne à cette carte, et `.ai strong` la porte déjà
+   dans le module des primitives. Rien n'est redéfini ici. */
+.briefText p {
+  text-wrap: pretty;
+}
+
+.briefText p + p {
+  margin-top: var(--s3);
+}
+
+/* L'attente. En chasse fixe et en minuscules, comme les autres « chargement… » de
+   l'écran : un état transitoire ne prend pas le ton d'une donnée. */
+.briefLoading {
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+}
+
+/* Le repli quand l'ordonnanceur n'est pas passé. `--tap-lg` parce qu'il **termine** un
+   geste : on le touche une fois, le matin, et il déclenche une attente. */
+.briefAsk {
+  min-height: var(--tap-lg);
+}
+
+/* Le condensé publié (`IA-09`), replié.
+
+   Même forme que sous chaque réponse de l'assistant : ce sont les mêmes lignes, et deux
+   présentations pour la même promesse en feraient deux promesses. */
+.facts {
+  margin-top: var(--s4);
+  font-size: var(--t-meta);
+  color: var(--ink-low);
+}
+
+.facts summary {
+  cursor: pointer;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+}
+
+.facts ul {
+  margin: var(--s2) 0 0 var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Il reste aujourd'hui ─────────────────────────── */
+
+/* L'écart entre l'état vide et la carte du jour.
+
+   Sans lui, les deux blocs se touchaient et « Aucun relevé aujourd'hui » se lisait comme
+   le titre de « La journée » — deux voix différentes collées en une seule.
+
+   Il vit sur un conteneur de l'état vide et non sur la carte : `Empty` pose sa boîte avec
+   une classe de **module**, donc hachée, qu'un sélecteur d'adjacence d'ici ne peut pas
+   atteindre. Et les jours où l'état vide n'est pas là, il n'y a rien à écarter — c'est
+   exactement ce que fait un écart porté par le bloc qui apparaît. */
+.dayEmpty {
+  margin-bottom: var(--s5);
+}
+
+.tasks {
+  list-style: none;
+  /* L'écart se resserre : chaque ligne porte désormais son propre retrait, et cumuler les
+     deux aurait donné une carte deux fois plus haute pour la même information. */
+  margin: var(--s4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/* La ligne : son contenu à gauche, le chevron à droite, centrés l'un sur l'autre. */
+.task {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  /* Pleine largeur de carte : le retrait négatif rend au doigt les 16 px que `Card` prend
+     de chaque côté, et l'état d'appui couvre alors la ligne entière plutôt qu'un
+     rectangle flottant au milieu. */
+  padding: var(--s3) var(--card-pad);
+  margin-inline: calc(var(--card-pad) * -1);
+  border-radius: var(--r-sm);
+}
+
+.taskBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/* La ligne **est** le lien.
+
+   Pas un chevron isolé à viser au pouce : la ligne fait plus de 44 px à elle seule et
+   court sur toute la largeur de la carte. C'est le contraire du défaut trouvé au L13 — un
+   lien de 17 px de haut noyé dans une phrase.
+
+   Naviguer n'est pas écrire : la case à cocher reste dans `/routine`, et cette ligne y
+   mène sans la doubler. */
+.taskLink {
+  color: inherit;
+  text-decoration: none;
+  min-height: var(--tap);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--t-fast);
+}
+
+.taskLink:active {
+  background: var(--surface-2);
+}
+
+/* Sous garde de pointeur fin, comme les vingt-six autres du projet : sur iOS, un `:hover`
+   nu laisse la ligne allumée après l'appui. */
+@media (hover: hover) and (pointer: fine) {
+  .taskLink:hover {
+    background: var(--surface-2);
+  }
+
+  .taskLink:hover .taskGo {
+    color: var(--ink);
+    transform: translateX(2px);
+  }
+}
+
+.taskLink:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+/* Le chevron dit « ça mène quelque part ».
+
+   Il compte : sans lui, une ligne à pastille ronde et à jauge se lit comme un état, et
+   rien n'annonce qu'elle s'ouvre — il n'y a pas de survol au pouce pour le découvrir.
+   `aria-hidden` : la destination est déjà dans l'`aria-label` du lien, en toutes lettres. */
+.taskGo {
+  flex: none;
+  color: var(--ink-low);
+  /* `--t-title` et non `--t-body` : au corps du texte, le chevron se confondait avec le
+     « / » qui sépare la valeur de sa cible, deux caractères plus à gauche. */
+  font-size: var(--t-title);
+  line-height: 1;
+  transition:
+    color var(--t-fast),
+    transform var(--t-fast);
+}
+
+.taskLink:active .taskGo {
+  color: var(--ink);
+}
+
+.taskHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+}
+
+/* La pastille d'état.
+
+   **Ce n'est pas une case à cocher**, et sa forme le dit : pas de carré, pas de coche,
+   pas de cible. Elle ne se touche pas — la liste dit un écart, elle n'écrit rien, et le
+   `⊕` de la barre d'onglets détient le geste. Lui donner l'apparence d'une case aurait
+   promis une action qui n'existe pas ici. */
+.mark {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-low);
+  /* Alignée sur la ligne de base du libellé plutôt que centrée : le `baseline` du
+     conteneur ne s'applique pas à un élément vide. */
+  transform: translateY(-1px);
+}
+
+.markDone {
+  border-color: var(--effort);
+  background: var(--effort);
+  box-shadow: 0 0 0 3px rgb(var(--effort-rgb) / 0.16);
+}
+
+/* La séance prévue n'est **jamais** dite faite : `PLAN-06` détient le rapprochement
+   prévu / réalisé, et en écrire une seconde version donnerait deux verdicts pour le même
+   mardi. Sa pastille reste creuse, dans le ton de ce qui est à venir. */
+.markPlanned {
+  border-color: var(--signal);
+  border-style: dashed;
+}
+
+.taskLabel {
+  color: var(--ink);
+  font-size: var(--t-body);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.taskCount {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-num);
+  white-space: nowrap;
+}
+
+.taskTarget {
+  color: var(--ink-low);
+}
+
+/* **Pas de capitales.** Le reste de l'écran met ses surtitres en `text-transform:
+   uppercase`, et l'appliquer ici écrivait « ENCORE 54 G » : un symbole d'unité ne prend
+   pas la majuscule, et « G » ne veut pas dire gramme. Vu en capture, pas par la mesure. */
+.taskLeft {
+  display: block;
+  color: var(--ink-mid);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  letter-spacing: 0.02em;
+  /* Aligné sur le libellé et non sur la pastille : la colonne de texte reste une. */
+  padding-left: calc(9px + var(--s3));
+}
+
+.taskDone {
+  color: var(--effort);
+}
+
+.taskNone {
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  margin-top: var(--s4);
+  text-wrap: pretty;
+}
+
+/* ── La bande de chiffres ─────────────────────────── */
+
+/* Trois chiffres nus, sur une rangée qui tient à 390 px.
+
+   Sans carte, et c'est le cœur de la refonte : quatre cartes de poids égal demandaient
+   de choisir laquelle regarder, ce qui est exactement le reproche d'où part ce lot. Deux
+   filets et trois colonnes se lisent d'un coup d'œil.
+
+   L'hydratation n'y est plus : elle disait le total quand la liste au-dessus dit le
+   restant, et deux lectures de la même mesure sur un même écran, c'est une de trop. */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  margin-top: var(--s5);
+  padding-block: var(--s5);
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.stripCell {
+  min-width: 0;
+}
+
+.stripCell + .stripCell {
+  border-left: 1px solid var(--line-soft);
+  padding-left: var(--s3);
+}
+
+@media (min-width: 600px) {
+  .strip {
+    gap: var(--s5);
+  }
+
+  .stripCell + .stripCell {
+    padding-left: var(--s5);
+  }
+}
+
+/* ── Où je vais ───────────────────────────────────── */
+
+.aim {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  margin-top: var(--s4);
+  /* Il passe à la ligne quand il ne tient pas, et seulement là : l'anneau fait 86 px,
+     le résumé chiffré en demande ~200, et 390 px moins les retraits n'en laissent pas
+     toujours assez. */
+  flex-wrap: wrap;
+}
+
+.aimFigures {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.aimSummary {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-num-md);
+}
+
+.aimNote {
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  text-wrap: pretty;
+}
+
+/* ── Les portes de l'assistant ────────────────────── */
+
+/* Une rangée de liens, et rien d'autre. L'ancienne carte enfermait trois boutons dans un
+   cadre qui ne contenait rien : le cadre annonçait un contenu, il n'y en avait pas. */
+.doors {
+  gap: var(--s3);
 }
 
 /* ── Graphique ────────────────────────────────────── */
@@ -67,9 +412,12 @@
 
 /* ── Sept derniers jours ──────────────────────────── */
 
+/* `minmax(0, 1fr)` et non `1fr` : la taille minimale automatique d'une piste est le
+   **contenu minimal** de sa case, et sept cases larges de leur libellé poussaient la
+   grille au-delà de la carte. La ceinture, en plus du quantième seul qui règle la cause. */
 .week {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
   margin-top: var(--s4);
 }
@@ -109,66 +457,4 @@
 
 .dayOff .daySources {
   color: var(--ink-low);
-}
-
-/* ── Journée ──────────────────────────────────────── */
-
-.rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s4);
-  margin-top: var(--s4);
-}
-
-.rowLabel {
-  color: var(--ink-mid);
-  display: block;
-  font-family: var(--mono);
-  font-size: var(--t-meta);
-  letter-spacing: 0.04em;
-  margin-bottom: 6px;
-  text-transform: uppercase;
-}
-
-/* Porte de l'écran Assistant.
-
-   Un lien reste un lien — c'est une navigation, pas une action d'application — mais il se
-   touche comme un bouton. Le plancher de `--tap` vaut pour lui comme pour le reste : c'est
-   exactement le défaut qu'une mesure du DOM avait trouvé au L13, sur le lien de
-   téléchargement du planning, à 17 px de haut. */
-/*
- * `.assistant` et `.emptyAction` vivaient ici, **identiques**, dix lignes chacune : un
- * lien nu fait 19 px de haut, et il fallait lui rendre le plancher tactile à la main.
- * C'est devenu la primitive `LinkButton`, et les deux copies ont disparu avec elle.
- */
-
-/* Trois actions, un seul rang principal : ouvrir prend toute la largeur, les deux portes
-   secondaires se rangent dessous. Les mettre au même niveau aurait fait de la carte un
-   menu, où plus rien n'a de poids. */
-.assistantActions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  margin-top: var(--s4);
-}
-
-.assistantOpen {
-  width: 100%;
-  /* L'action qui **ouvre** une conversation : la grande taille, celle qu'on touche sans
-     regarder. C'était un bouton de 44 px noyé sous six lignes de texte. */
-  min-height: var(--tap-lg);
-  font-size: var(--t-body);
-}
-
-@media (min-width: 600px) {
-  .assistantActions {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .assistantOpen {
-    width: auto;
-    min-width: 260px;
-  }
 }

@@ -701,6 +701,68 @@
   margin-top: var(--s4);
 }
 
+/* Le corps tappable.
+
+   Un bouton qui ne ressemble pas à un bouton : il occupe toute la largeur du bloc, garde
+   l'alignement à gauche du paragraphe, et n'ajoute ni fond ni bordure — le cadre du bloc
+   IA est déjà là, un second l'aurait doublé. Ce qu'il apporte est une **cible**, et le
+   plancher tactile est atteint par la hauteur du texte lui-même : deux à quatre phrases
+   ne descendent jamais sous 44 px. Le `min-height` est là pour le cas d'une lecture d'une
+   seule ligne, où il ne le serait pas.
+
+   `text-align: left` n'est pas cosmétique : un `<button>` centre son contenu par défaut,
+   et un paragraphe centré dans une carte de texte se lit deux fois moins vite. */
+.aiOpen {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  min-height: var(--tap);
+  display: block;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+
+.aiOpenBody {
+  display: block;
+}
+
+/* L'affordance, en toutes lettres.
+
+   Sans elle, rien ne dit qu'un paragraphe se touche : il n'y a pas de survol au pouce,
+   et une cible invisible n'existe pas. La flèche est décorative — le mot porte le sens. */
+.aiHint {
+  display: block;
+  margin-top: var(--s3);
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.aiOpen:active .aiHint {
+  opacity: 0.6;
+}
+
+/* Le survol est **sous garde de pointeur fin**, comme les vingt-six autres du projet :
+   sur iOS, un `:hover` non protégé laisse la cible allumée après l'appui. */
+@media (hover: hover) and (pointer: fine) {
+  .aiOpen:hover .aiHint {
+    color: var(--ink);
+  }
+}
+
+.aiOpen:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 4px;
+}
+
 /* ── En-tête d'écran ──────────────────────────────── */
 
 /* Les écarts que huit écrans posaient en `style={{ marginTop: … }}`, décidés une fois.

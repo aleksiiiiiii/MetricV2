@@ -176,11 +176,21 @@ export function Progress({
   done,
   total,
   tone,
+  bare = false,
 }: {
   done: number;
   total: number;
   /** Par défaut le ton suit l'avancement : charge, signal, puis effort. */
   tone?: Tone | undefined;
+  /**
+   * Sans le compte à droite.
+   *
+   * Le compte est brut — `1400 / 2500` — et c'est ce qu'il faut quand la jauge est seule.
+   * Quand la ligne au-dessus dit déjà « 1,4 L / 2,5 L », il écrit les mêmes deux nombres
+   * une seconde fois, dans une autre unité : vu en capture sur le tableau de bord, où la
+   * rangée portait quatre nombres pour deux valeurs.
+   */
+  bare?: boolean | undefined;
 }) {
   const ratio = total > 0 ? done / total : 0;
   const automatic: Tone = ratio >= 1 ? 'effort' : ratio >= 0.5 ? 'signal' : 'load';
@@ -193,9 +203,11 @@ export function Progress({
           style={{ width: width(ratio), background: TONE_VAR[tone ?? automatic] }}
         />
       </div>
-      <span className={styles.progressCount}>
-        {integer(done)} / {integer(total)}
-      </span>
+      {!bare && (
+        <span className={styles.progressCount}>
+          {integer(done)} / {integer(total)}
+        </span>
+      )}
     </div>
   );
 }

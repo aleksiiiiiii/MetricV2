@@ -556,23 +556,59 @@ export function Empty({
 /**
  * Lecture assistée. Le fond dégradé le distingue d'une donnée relevée : ce qui est écrit
  * là est une interprétation, pas une mesure (`NUT-04`, `IA-08`).
+ *
+ * ## Le corps peut se toucher — et ce n'est pas un cinquième vocabulaire
+ *
+ * Avec `onOpen`, le texte devient la cible : on appuie dessus pour continuer là où il
+ * mène. Le tag, la pastille, la teinte et le fond ne bougent pas d'un pixel — c'est le
+ * **même** bloc, avec une conduite en plus. Une seconde façon de marquer du proposé
+ * affaiblirait `AiBlock` et l'état `proposed` du `Stepper`, qui sont les deux seules du
+ * projet ; une variante d'apparence du même composant ne coûte rien à personne.
+ *
+ * La cible est un `<button>` **et la rangée d'actions reste en dehors** : un bouton
+ * imbriqué dans un autre est un piège d'accessibilité, et l'appui sur celui du dedans
+ * déclencherait les deux.
+ *
+ * `hint` porte l'affordance en toutes lettres — « Répondre à ce message ». Sans elle,
+ * rien ne dit qu'un paragraphe se touche : sur un téléphone il n'y a pas de survol pour
+ * le découvrir, et une cible invisible n'existe pas.
  */
 export function AiBlock({
   tag,
   children,
   actions,
+  onOpen,
+  hint,
+  label,
 }: {
   tag: string;
   children: ReactNode;
   actions?: ReactNode | undefined;
+  /** Rend le corps tappable. Sans elle, le bloc reste ce qu'il a toujours été. */
+  onOpen?: (() => void) | undefined;
+  /** L'affordance, écrite sous le texte. Requise dès que `onOpen` est fournie. */
+  hint?: string | undefined;
+  /** Ce que la cible annonce aux lecteurs d'écran, quand le texte ne suffit pas. */
+  label?: string | undefined;
 }) {
+  const head = (
+    <div className={styles.aiTag}>
+      <span className={styles.aiDot} />
+      <span className="eyebrow">{tag}</span>
+    </div>
+  );
+
   return (
     <div className={styles.ai}>
-      <div className={styles.aiTag}>
-        <span className={styles.aiDot} />
-        <span className="eyebrow">{tag}</span>
-      </div>
-      {children}
+      {head}
+      {onOpen === undefined ? (
+        children
+      ) : (
+        <button type="button" className={styles.aiOpen} onClick={onOpen} aria-label={label}>
+          <span className={styles.aiOpenBody}>{children}</span>
+          {hint !== undefined && <span className={styles.aiHint}>{hint}</span>}
+        </button>
+      )}
       {actions !== undefined && <div className={cx('row', styles.aiActions)}>{actions}</div>}
     </div>
   );

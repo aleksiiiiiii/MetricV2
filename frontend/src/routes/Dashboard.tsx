@@ -1,3 +1,39 @@
+/**
+ * Le tableau de bord.
+ *
+ * ## Ce que la refonte a changé, et pourquoi
+ *
+ * L'écran empilait quatre tuiles de poids égal, une carte « Assistant » qui ne contenait
+ * que trois boutons, puis une tendance. Il disait **où j'en suis** et jamais **ce que ça
+ * vaut**, ni **ce qui vient ensuite** — et rien n'y indiquait quoi regarder en premier.
+ *
+ * Il se lit maintenant de haut en bas comme une journée :
+ *
+ * 1. **la lecture du jour** — un message de l'assistant sur la situation du moment, dont
+ *    le corps se touche pour lui répondre dans un fil qui commence dessus ;
+ * 2. **il reste aujourd'hui** — l'eau, les protéines, les suppléments et la séance prévue,
+ *    avec l'écart qui reste sur chacun ;
+ * 3. **où je vais** — l'objectif en cours et sa progression, qui n'étaient sur aucun écran
+ *    d'accueil ;
+ * 4. la tendance et l'entraînement, inchangés.
+ *
+ * ## Les trois défauts corrigés au passage
+ *
+ * * Le conteneur passe à `cx('wrap', styles.screen)`. Il était l'un des huit écrans encore
+ *   sur `className="wrap"` seul, dont `.wrap .wrap` masquait la conséquence.
+ * * L'histogramme des huit semaines dérivait sa part d'un `Math.max(...weeks.map(…))`.
+ *   Un maximum sur une série **est** une dérivation ; `WeekVolume.ratio` est servi.
+ * * `data.highlight` était transporté et jamais lu. Il l'est toujours — c'est le réglage
+ *   de la piste d'assiduité, il appartient à `/assiduite` — mais plus rien ici ne prétend
+ *   s'en servir.
+ *
+ * ## Ce qui n'a pas bougé
+ *
+ * **Un seul appel pour les indicateurs** (`AGG-01`). La lecture du jour en ajoute un
+ * second, indépendant, avec ses propres quatre états : l'écran peint entièrement sans
+ * l'attendre, et la latence d'un modèle n'est jamais payée par les chiffres.
+ */
+
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -11,10 +47,8 @@ import {
   Empty,
   LinkButton,
   PageHead,
-  Progress,
   Rule,
   Segmented,
-  Stat,
 } from '@/components/ui';
 import {
   aggregatesApi,
@@ -23,21 +57,22 @@ import {
   type SeriesView,
   type Streak,
 } from '@/features/aggregates/api';
+import { cx } from '@/lib/cx';
 import {
   dayMonth,
   dayOfMonth,
   delta,
   hoursMinutes,
   integer,
-  kg,
   longDate,
   num,
-  percent,
   plural,
-  volume,
 } from '@/lib/format';
 import { keys } from '@/lib/query';
 
+import { Aim } from './dashboard/Aim';
+import { Brief } from './dashboard/Brief';
+import { Today } from './dashboard/Today';
 import styles from './Dashboard.module.css';
 
 /** Les trois plages du contrat `AGG-04`. Le serveur refuse tout le reste. */
@@ -57,81 +92,6 @@ const SOURCE_LABELS: Record<string, string> = {
   hydration: 'hydratation',
   supplements: 'suppléments',
 };
-
-// ── Rangée de chiffres clés ───────────────────────────
-
-function Numbers({ data }: { data: DashboardView }) {
-  const { weight, training, hydration, streak } = data;
-
-  return (
-    // `tiles` et non `g4` : ces quatre-là sont un libellé, un chiffre et une ligne de
-    // détail — ils tiennent deux de front dès 390 px. Empilés, il fallait faire défiler
-    // pour lire son poids **et** sa semaine, alors que la comparaison est tout l'intérêt.
-    <div className="grid tiles">
-      <Card>
-        <Stat
-          compact
-          label="Poids"
-          value={weight.latest_kg !== null ? num(weight.latest_kg, 1) : '—'}
-          unit={weight.latest_kg !== null ? 'kg' : undefined}
-          detail={
-            weight.change_kg !== null
-              ? `${delta(weight.change_kg)} kg sur les 8 dernières pesées`
-              : weight.latest_kg !== null
-                ? // Il y a un chiffre : lui dire d'en poser un se lisait comme un écran
-                  // qui n'a pas vu la pesée qu'il affiche juste au-dessus.
-                  'Première pesée. La tendance vient à la deuxième.'
-                : 'Un chiffre le matin, et la courbe commence.'
-          }
-          direction={weight.change_kg === null ? undefined : weight.change_kg > 0 ? 'up' : 'down'}
-        />
-      </Card>
-
-      <Card>
-        <Stat
-          compact
-          label="Cette semaine"
-          value={training.week.sessions > 0 ? hoursMinutes(training.week.minutes) : '—'}
-          detail={
-            training.week.sessions > 0
-              ? `${integer(training.week.sessions)} ${plural(training.week.sessions, 'séance')}, ${num(training.week.distance_km, 1)} km`
-              : 'Rien depuis lundi.'
-          }
-        />
-      </Card>
-
-      <Card>
-        <Stat
-          compact
-          label="Hydratation"
-          value={hydration.today_ml > 0 ? volume(hydration.today_ml) : '—'}
-          // Le pourcentage n'accompagne le tiret que s'il y a bu quelque chose : « — » et
-          // « 0 % » côte à côte disent la même absence de deux façons dont l'une ressemble
-          // à une mesure.
-          detail={
-            hydration.today_ml > 0
-              ? `objectif ${volume(hydration.target_ml)} · ${percent(hydration.ratio)}`
-              : `objectif ${volume(hydration.target_ml)}`
-          }
-        />
-      </Card>
-
-      <Card>
-        <Stat
-          compact
-          label="Assiduité"
-          value={streak.current > 0 ? integer(streak.current) : '—'}
-          unit={streak.current > 0 ? (streak.current > 1 ? 'jours' : 'jour') : undefined}
-          detail={
-            streak.longest > 0
-              ? `record ${integer(streak.longest)} jours · ${integer(streak.active_days)} jours suivis`
-              : 'Une donnée, n’importe laquelle, et la série démarre.'
-          }
-        />
-      </Card>
-    </div>
-  );
-}
 
 // ── Graphique croisé (`AGG-04`) ───────────────────────
 
@@ -187,8 +147,7 @@ function Graph({ shipped }: { shipped: SeriesView }) {
       {/* Treize métriques dans une liste qui passe à la ligne prenaient **neuf lignes et
           470 px** sur un téléphone — plus d'une demi-hauteur d'écran pour un sélecteur —
           et chaque bouton faisait 28 px de haut. Une bande qui se tire au pouce en prend
-          50, et chaque pastille respecte le plancher tactile. C'est exactement ce pour
-          quoi `ChipStrip` existe ; il n'était employé que sur deux écrans. */}
+          50, et chaque pastille respecte le plancher tactile. */}
       {options.length > 1 && (
         <div className={styles.metrics}>
           <ChipStrip label="Métrique du graphique">
@@ -295,11 +254,66 @@ function Assiduity({ streak }: { streak: Streak }) {
   );
 }
 
+// ── Entraînement ──────────────────────────────────────
+
+function Training({ training }: { training: DashboardView['training'] }) {
+  return (
+    <div className="grid g2">
+      <Card>
+        <div className="spread">
+          <div>
+            <h3>Huit dernières semaines</h3>
+            <p className={styles.note}>
+              {integer(training.sessions_total)} {plural(training.sessions_total, 'séance')} depuis
+              le début, soit {hoursMinutes(training.minutes_total)}.
+            </p>
+          </div>
+        </div>
+
+        {training.sessions_total === 0 ? (
+          <p className={styles.empty}>Une première séance, et l’histogramme démarre.</p>
+        ) : (
+          <Bars
+            rows={training.weeks.map((week) => ({
+              label: dayMonth(week.week_start),
+              // **Servie.** Elle était dérivée d'un `Math.max` sur la série entière, ce
+              // qui est un calcul métier — le défaut que ce lot corrige.
+              ratio: week.ratio,
+              value: week.minutes > 0 ? hoursMinutes(week.minutes) : '—',
+              tone: 'effort' as const,
+            }))}
+          />
+        )}
+      </Card>
+
+      <Card>
+        <h3>Répartition</h3>
+        <p className={styles.note}>
+          Ce qui n’est ni course ni musculation est nommé pour ce qu’il est.
+        </p>
+
+        {training.split.length === 0 ? (
+          <p className={styles.empty}>Rien à répartir pour l’instant.</p>
+        ) : (
+          <Bars
+            rows={training.split.map((part) => ({
+              label: part.label,
+              ratio: part.ratio,
+              value: `${integer(part.sessions)} · ${hoursMinutes(part.minutes)}`,
+              tone: part.kind === 'run' ? ('signal' as const) : ('effort' as const),
+            }))}
+          />
+        )}
+      </Card>
+    </div>
+  );
+}
+
 // ── Écran ─────────────────────────────────────────────
 
 export function Dashboard() {
-  // **Un seul appel au chargement** (`AGG-01`) : indicateurs, totaux, assiduité et série
-  // du graphique arrivent ensemble. C'est la raison d'être du lot L08.
+  // **Un seul appel pour les indicateurs** (`AGG-01`) : chiffres du jour, journée à finir,
+  // objectif, séance à venir, assiduité et série du graphique arrivent ensemble.
   const { data, isPending, error } = useQuery({
     queryKey: keys.aggregates.dashboard(),
     queryFn: () => aggregatesApi.dashboard(),
@@ -307,10 +321,10 @@ export function Dashboard() {
 
   if (isPending) {
     return (
-      <div className="wrap">
+      <div className={cx('wrap', styles.screen)}>
         {/* L'en-tête est là **avant** la donnée. Un écran qui n'affiche qu'un
-          « chargement… » sur fond noir ne dit pas où l'on vient d'arriver, et la seconde
-          d'attente se lit comme un écran qui n'a pas répondu. */}
+            « chargement… » sur fond noir ne dit pas où l'on vient d'arriver, et la seconde
+            d'attente se lit comme un écran qui n'a pas répondu. */}
         <PageHead eyebrow="Aujourd’hui" title="Tableau de bord" />
         <p className={styles.empty}>chargement…</p>
       </div>
@@ -319,7 +333,7 @@ export function Dashboard() {
 
   if (error || !data) {
     return (
-      <div className="wrap">
+      <div className={cx('wrap', styles.screen)}>
         <PageHead eyebrow="Aujourd’hui" title="Tableau de bord" />
         <Empty title="Tableau de bord indisponible">
           {error instanceof Error ? error.message : 'Le serveur n’a pas répondu.'}
@@ -328,182 +342,49 @@ export function Dashboard() {
     );
   }
 
-  const nothingToday =
-    data.nutrition.meals === 0 &&
-    data.hydration.today_ml === 0 &&
-    data.supplements.taken === 0 &&
-    (data.weight.latest_date ?? '') !== data.date;
-
   return (
-    <div className="wrap">
+    <div className={cx('wrap', styles.screen)}>
       <PageHead eyebrow={longDate(data.date)} title="Tableau de bord" />
 
-      <Rule>Aujourd’hui</Rule>
+      {/* En tête d'écran, et c'est la décision de forme du lot. L'ancienne carte
+          d'assistant venait après les chiffres, « parce qu'une question se pose en
+          regardant ce qu'on vient de lire » — vrai d'une carte qui ne contenait que des
+          boutons. Une lecture qui **dit** quelque chose répond à la question avant qu'on
+          la pose, et c'est elle qu'on veut le matin. `AiBlock` existe exactement pour
+          qu'un texte proposé puisse se poser là sans se faire prendre pour une mesure. */}
+      <Brief />
 
-      {/* L'état vide **porte** le geste au lieu de le décrire.
-          « Une pesée » et « un verre d'eau » étaient des liens en ligne dans une phrase :
-          19 px de haut, mesurés — soit deux cibles sous le plancher tactile sur l'écran
-          qu'on ouvre le plus. Et il fallait lire la phrase pour comprendre où aller. */}
-      {nothingToday && (
-        <Empty
-          title="Aucun relevé aujourd’hui"
-          action={
-            <div className="row">
-              <LinkButton to="/corps">Noter une pesée</LinkButton>
-              <LinkButton to="/routine">Boire un verre</LinkButton>
-            </div>
-          }
-        >
-          Deux chiffres suffisent pour que la journée compte.
-        </Empty>
-      )}
+      <Today data={data} />
 
-      <Numbers data={data} />
-
-      {/* La porte de l'assistant, et les deux qui l'accompagnent.
-          Elle vient tout de suite après les chiffres du jour, avant la tendance, parce
-          qu'une question se pose en regardant ce qu'on vient de lire.
-
-          **Le paragraphe est parti.** Il énumérait ce que l'assistant lit — poids,
-          séances, macros, objectif, planning, carnet — soit six lignes de texte au-dessus
-          d'un bouton de 44 px. Ce qu'il décrivait, l'assistant le montre lui-même, et
-          mieux : le condensé réellement envoyé s'affiche sous chaque réponse (`IA-09`).
-
-          **Trois actions, un seul rang principal.** Ouvrir prend le poids visuel ; les
-          deux autres sont des portes qu'on emprunte plus rarement — et les mettre au même
-          niveau aurait rendu la carte illisible en la faisant passer pour un menu. */}
-      <Rule>Assistant</Rule>
-      <Card>
-        <div className={styles.assistantActions}>
-          <LinkButton variant="primary" className={styles.assistantOpen} to="/assistant">
-            Ouvrir l’assistant
-          </LinkButton>
-          <div className="row">
-            {/* Une adresse et non un état d'écran : la feuille s'ouvre à l'arrivée, le
-                bouton système « précédent » la referme, et le lien se garde en favori. */}
-            <LinkButton variant="ghost" to="/assistant?ouvre=discussions">
-              Discussions
-            </LinkButton>
-            <LinkButton variant="ghost" to="/assistant?ouvre=memoire">
-              Mémoire
-            </LinkButton>
-          </div>
-        </div>
-      </Card>
+      <Aim data={data} />
 
       <Rule>Tendance</Rule>
       <div className={styles.split}>
         <Graph shipped={data.series} />
-
-        <div className="stack">
-          <Assiduity streak={data.streak} />
-
-          <Card>
-            <div className="spread">
-              <h3>Journée</h3>
-              <Badge tone={data.nutrition.over_sugar ? 'recover' : 'signal'} mono>
-                {integer(data.nutrition.meals)} repas
-              </Badge>
-            </div>
-
-            <div className={styles.rows}>
-              <div>
-                <span className={styles.rowLabel}>Protéines</span>
-                <Progress
-                  done={Math.round(data.nutrition.protein_g)}
-                  total={Math.round(data.nutrition.protein_target_g)}
-                />
-              </div>
-              <div>
-                <span className={styles.rowLabel}>Hydratation</span>
-                <Progress done={data.hydration.today_ml} total={data.hydration.target_ml} />
-              </div>
-              <div>
-                <span className={styles.rowLabel}>Suppléments</span>
-                <Progress done={data.supplements.taken} total={data.supplements.planned} />
-              </div>
-            </div>
-
-            {data.nutrition.over_sugar && (
-              <p className={styles.warn}>
-                Plafond de sucres dépassé : {num(data.nutrition.added_sugar_g, 1)} g sur{' '}
-                {num(data.nutrition.added_sugar_max_g, 0)} g.
-              </p>
-            )}
-          </Card>
-        </div>
+        <Assiduity streak={data.streak} />
       </div>
 
       <Rule>Entraînement</Rule>
-      <div className="grid g2">
-        <Card>
-          <div className="spread">
-            <div>
-              <h3>Huit dernières semaines</h3>
-              <p className={styles.note}>
-                {integer(data.training.sessions_total)}{' '}
-                {plural(data.training.sessions_total, 'séance')} depuis le début, soit{' '}
-                {hoursMinutes(data.training.minutes_total)}.
-              </p>
-            </div>
-          </div>
+      <Training training={data.training} />
 
-          {data.training.sessions_total === 0 ? (
-            <p className={styles.empty}>Une première séance, et l’histogramme démarre.</p>
-          ) : (
-            <Bars
-              rows={data.training.weeks.map((week) => ({
-                label: dayMonth(week.week_start),
-                // **Servie.** Elle était dérivée d'un `Math.max` sur la série entière, ce
-                // qui est un calcul métier à l'écran — et le seul qui connaisse la
-                // fenêtre entière est celui qui la construit.
-                ratio: week.ratio,
-                value: week.minutes > 0 ? hoursMinutes(week.minutes) : '—',
-                tone: 'effort' as const,
-              }))}
-            />
-          )}
-        </Card>
-
-        <Card>
-          <h3>Répartition</h3>
-          <p className={styles.note}>
-            Ce qui n’est ni course ni musculation est nommé pour ce qu’il est.
-          </p>
-
-          {data.training.split.length === 0 ? (
-            <p className={styles.empty}>Rien à répartir pour l’instant.</p>
-          ) : (
-            <Bars
-              rows={data.training.split.map((part) => ({
-                label: part.label,
-                ratio: part.ratio,
-                value: `${integer(part.sessions)} · ${hoursMinutes(part.minutes)}`,
-                tone: part.kind === 'run' ? ('signal' as const) : ('effort' as const),
-              }))}
-            />
-          )}
-        </Card>
+      {/* Les deux portes de côté de l'assistant, et la sienne propre.
+          Elles restent **quoi qu'il arrive** : sans clé OpenRouter la lecture du jour ne
+          s'affiche pas (`IA-07`), et sur ordinateur cette rangée est la seule entrée vers
+          `/assistant` — la barre du haut n'en a pas.
+          Une adresse et non un état d'écran : la feuille s'ouvre à l'arrivée, le bouton
+          système « précédent » la referme, et le lien se garde en favori. */}
+      <Rule>Assistant</Rule>
+      <div className={cx('row', styles.doors)}>
+        <LinkButton variant="ghost" to="/assistant">
+          Ouvrir l’assistant
+        </LinkButton>
+        <LinkButton variant="ghost" to="/assistant?ouvre=discussions">
+          Discussions
+        </LinkButton>
+        <LinkButton variant="ghost" to="/assistant?ouvre=memoire">
+          Mémoire
+        </LinkButton>
       </div>
-
-      {data.weight.to_target_kg !== null && (
-        <>
-          <Rule>Objectif</Rule>
-          <Card>
-            <Stat
-              label={`Objectif ${kg(data.weight.target_kg)}`}
-              value={num(Math.abs(data.weight.to_target_kg), 1)}
-              unit="kg"
-              detail={
-                data.weight.to_target_kg > 0
-                  ? 'restants pour atteindre l’objectif'
-                  : 'sous l’objectif'
-              }
-              direction={data.weight.to_target_kg > 0 ? 'up' : 'down'}
-            />
-          </Card>
-        </>
-      )}
     </div>
   );
 }

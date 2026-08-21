@@ -139,6 +139,32 @@ toutes les mesures étant au vert :
 - `/corps` affirmait « aucune pesée » **avant d'avoir lu l'historique** ;
 - douze « 1 séance(s) », qui apparaissent précisément au premier jour d'usage.
 
+**Et à la refonte du tableau de bord, six de plus — dont un qui touchait toute
+l'application.** `make check` était vert, l'audit annonçait `14/14 sans défaut mesurable`,
+et il restait :
+
+- **toutes les jauges de l'application se peignaient pleines.** `Progress` et `Bars`
+  posaient leur largeur avec `percent()`, qui rend « 56 % » : l'espace avant le signe est
+  la typographie française, et c'est une largeur **invalide** que le navigateur jette sans
+  rien dire. La barre retombait sur sa valeur par défaut. Une semaine à zéro s'affichait
+  comme une semaine complète. Aucun test ne le voyait : ils regardaient tous le *texte*,
+  et il était juste. [data.test.tsx](../frontend/src/components/ui/data.test.tsx) mesure
+  désormais la barre ;
+- la page **défilait horizontalement de 3 px à 360 px** — la grille des sept jours
+  demandait 330 px pour 294 disponibles, le mois répété sept fois. L'audit ne mesure
+  que 402 ;
+- « ENCORE 54 G » : un `text-transform: uppercase` appliqué à une unité ;
+- `45:00` pour une séance de 45 minutes — `duration()` est un chronomètre, pas une durée ;
+- les mêmes deux nombres deux fois sur une ligne, en deux unités ;
+- « Cette semaine » sur deux lignes quand « Poids » tenait sur une : trois chiffres censés
+  se comparer, et pas de ligne de base commune ;
+- **les étiquettes du graphique se chevauchaient** — « 28/05 » par-dessus « 11/06 ». Le pas
+  entre deux dates était décidé par l'**écran** (`labelEvery={Math.ceil(points.length / 8)}`,
+  sur `/` et sur `/corps`), qui ne connaît ni la largeur d'une étiquette ni l'écart entre
+  deux points. Il vit maintenant dans
+  [chart-axis.ts](../frontend/src/components/ui/chart-axis.ts), module pur, qui le déduit
+  de la géométrie ; `labelEvery` survit comme **plancher**, jamais comme plafond.
+
 **Le seul écran non vérifié : `/objectif`.** Il reste sur « Chargement de l'objectif… »
 parce que **`/api/goals` et `/api/goals/weekly` ne répondent pas** — 25 s sans réponse,
 mesurés en direct. Ce n'est pas la refonte : aucun fichier du backend n'a changé
@@ -183,7 +209,11 @@ Plus deux écrans sans adresse propre : [NotFound.tsx](../frontend/src/routes/No
 sur `*`, et `SessionLoading` — exporté par [Shell.tsx](../frontend/src/app/Shell.tsx) —
 pendant la vérification du jeton au démarrage.
 
-Un sous-dossier : [routes/settings/](../frontend/src/routes/settings/) regroupe les
+Deux sous-dossiers. [routes/dashboard/](../frontend/src/routes/dashboard/) porte les trois
+sections nouvelles du tableau de bord — `Brief.tsx` (la lecture du jour), `Today.tsx` (la
+journée à finir et la bande de chiffres), `Aim.tsx` (« où je vais ») — refonte décrite dans
+[tableau-de-bord.md](tableau-de-bord.md). Et
+[routes/settings/](../frontend/src/routes/settings/) regroupe les
 sections de l'écran Réglages, qui en porte **trois** depuis le L15 —
 [Tracks.tsx](../frontend/src/routes/settings/Tracks.tsx) (856 lignes, le réglage des pistes
 d'assiduité) et [Reminders.tsx](../frontend/src/routes/settings/Reminders.tsx) (les rappels
@@ -287,6 +317,14 @@ sans toucher aux douze écrans.
 **Primitives** — `Eyebrow` · `Rule` · `Button` (`primary`/`ghost`/`quiet`) · `LogButton` ·
 `Card` · `CardHead` · `Badge` · `Field` · `Stepper` · `Chip` · `ChipStrip` · `SwipeRow` ·
 `Segmented` · `Empty` · `AiBlock`
+
+> `AiBlock` accepte depuis la refonte du tableau de bord un **corps tappable** (`onOpen`,
+> `hint`) : le texte devient la cible, et la rangée d'actions reste en dehors — un bouton
+> imbriqué dans un autre déclencherait les deux. Le tag, la pastille et la teinte ne
+> bougent pas : c'est le même bloc, pas une cinquième façon de dire « proposé ».
+>
+> `Progress` accepte `bare`, qui retire le compte brut à droite. Quand la ligne au-dessus
+> dit déjà « 1,4 L / 2,5 L », `1400 / 2500` écrit les mêmes deux nombres une seconde fois.
 
 **Données** — `Stat` · `Sparkline` · `Bars` · `Progress` · `Ring` · `Table` · `CheckGroup` ·
 `Check`

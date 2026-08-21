@@ -14,7 +14,7 @@
  * regardant la page, pas de la batterie — et celui-ci ne ressortira plus.
  */
 
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { Bars, Progress } from './index';
@@ -52,6 +52,15 @@ describe('Progress', () => {
     const { container } = render(<Progress done={0} total={0} />);
 
     expect(fill(container).style.width).toBe('0%');
+  });
+
+  it('sait se passer de son compte', () => {
+    // Quand la ligne au-dessus dit déjà « 1,4 L / 2,5 L », le compte brut écrit les mêmes
+    // deux nombres une seconde fois, dans une autre unité.
+    const { container } = render(<Progress bare done={1400} total={2500} />);
+
+    expect(screen.queryByText('1400 / 2500')).toBeNull();
+    expect(fill(container).style.width).toBe('56%');
   });
 });
 
