@@ -30,12 +30,19 @@ npm-debug.log*
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+.claude/settings.local.json
 playwright-report/
 test-results/
 
 # ── Console de développement ───────────────────────
 # PID, ports, journaux et historique des serveurs lancés localement.
 .metric/
+
+# ── Captures d'audit ───────────────────────────────
+# `scripts/audit-mobile.mjs` écrit ici, et le thème clair va dans un dossier à part
+# (`--shots audit-shots-clair`). Le motif couvre les deux : ce sont des centaines de PNG
+# régénérables à la demande, et le dépôt n'a rien à en faire.
+audit-shots*/
 
 # ── Données locales ────────────────────────────────
 # Les données de production vivent sur Nextcloud (STO-01),
