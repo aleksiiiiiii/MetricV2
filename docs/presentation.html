@@ -1,0 +1,1410 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metric — suivi de santé personnel</title>
+<meta name="description" content="Metric : application personnelle de suivi de santé. FastAPI, React, stockage CSV sur Nextcloud. Sept invariants nés d'une contrainte unique : aucune annulation nulle part.">
+<meta name="color-scheme" content="light dark">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   Page de présentation — Metric
+   Aucune requête réseau : pas de police distante, pas de CDN,
+   pas d'image bitmap. Tous les visuels sont du SVG écrit à la main.
+   Aucun JavaScript : la page est entièrement statique.
+
+   LES COULEURS N'EXISTENT QUE DANS DEUX BLOCS :
+     1. :root                                → thème clair (défaut)
+     2. @media (prefers-color-scheme: dark)  → thème sombre
+   Plus une table de références figées (--d-* / --c-*) qui sert
+   uniquement à montrer les deux thèmes côte à côte dans la section
+   « charte » : ces valeurs-là ne suivent pas le thème, c'est leur rôle.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Thème clair ───────────────────────────────────────────── */
+  --fond: #f5f7f9;
+  --surface: #ffffff;
+  --surface-2: #e6ebf1;
+  --filet: #cfd8e1;
+  --texte: #131b24;
+  --texte-moyen: #4c5a68;
+  --texte-discret: #5f6d7a;
+
+  --signal: #2b6b7b;
+  --effort: #4a6b38;
+  --load: #8a5a1f;
+  --recover: #8c3f5b;
+
+  --signal-rgb: 43 107 123;
+  --effort-rgb: 74 107 56;
+  --load-rgb: 138 90 31;
+  --recover-rgb: 140 63 91;
+
+  /* ── Références figées : les deux palettes, pour la bande de
+        charte. Elles ne changent pas avec le thème du lecteur. ── */
+  --d-fond: #0b0f16;      --c-fond: #f5f7f9;
+  --d-surface: #131a24;   --c-surface: #ffffff;
+  --d-surface2: #18212d;  --c-surface2: #e6ebf1;
+  --d-filet: #1f2a38;     --c-filet: #cfd8e1;
+  --d-texte: #e3e8ee;     --c-texte: #131b24;
+  --d-mid: #97a3b0;       --c-mid: #4c5a68;
+  --d-low: #5c6874;       --c-low: #5f6d7a;
+  --d-signal: #7fa8b4;    --c-signal: #2b6b7b;
+  --d-effort: #8aa37b;    --c-effort: #4a6b38;
+  --d-load: #c39b6e;      --c-load: #8a5a1f;
+  --d-recover: #a9748a;   --c-recover: #8c3f5b;
+
+  /* ── Échelle d'espacement — la seule autorisée ─────────────── */
+  --e1: 4px;  --e2: 6px;  --e3: 10px; --e4: 14px;
+  --e5: 20px; --e6: 26px; --e7: 36px; --e8: 52px;
+
+  /* ── Type. Aucune police n'est chargée : replis système.
+        La page n'affirme nulle part que ces polices sont visibles. */
+  --titrage: 'Space Grotesk', system-ui, -apple-system, Segoe UI, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --r: 14px;
+  --r-sm: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ── Thème sombre — mêmes variables, rien de plus ─────────── */
+    --fond: #0b0f16;
+    --surface: #131a24;
+    --surface-2: #18212d;
+    --filet: #1f2a38;
+    --texte: #e3e8ee;
+    --texte-moyen: #97a3b0;
+    --texte-discret: #5c6874;
+
+    --signal: #7fa8b4;
+    --effort: #8aa37b;
+    --load: #c39b6e;
+    --recover: #a9748a;
+
+    --signal-rgb: 127 168 180;
+    --effort-rgb: 138 163 123;
+    --load-rgb: 195 155 110;
+    --recover-rgb: 169 116 138;
+  }
+}
+
+/* ═══ Socle ═══════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--fond);
+  color: var(--texte);
+  font-family: var(--titrage);
+  font-size: 17px;
+  line-height: 1.62;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 { font-weight: 600; line-height: 1.22; margin: 0; letter-spacing: -0.01em; }
+p { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+strong { font-weight: 600; }
+
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+code {
+  font-size: 0.88em;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 0 var(--e2);
+  color: var(--texte);
+  overflow-wrap: anywhere;
+}
+
+.enveloppe { max-width: 1080px; margin: 0 auto; padding-inline: var(--e5); }
+
+section { border-top: 1px solid var(--filet); padding-block: var(--e8); }
+
+.oeil {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--texte-discret);
+  margin-bottom: var(--e4);
+}
+
+h2 { font-size: 26px; margin-bottom: var(--e4); }
+@media (min-width: 600px) { h2 { font-size: 34px; } }
+
+.chapeau { color: var(--texte-moyen); max-width: 66ch; font-size: 17px; }
+.chapeau + .chapeau { margin-top: var(--e4); }
+
+.pile { display: flex; flex-direction: column; gap: var(--e5); }
+
+/* ═══ En-tête ═════════════════════════════════════════════════ */
+.hero { padding-block: var(--e8) var(--e7); border-top: 0; }
+
+.hero h1 {
+  font-size: 48px;
+  letter-spacing: -0.03em;
+  margin-bottom: var(--e4);
+}
+@media (min-width: 600px) { .hero h1 { font-size: 68px; } }
+
+.hero-lede { font-size: 20px; color: var(--texte-moyen); max-width: 60ch; }
+@media (min-width: 600px) { .hero-lede { font-size: 22px; } }
+
+.hero-lede strong { color: var(--texte); font-weight: 600; }
+
+/* Fiche technique — les faits, en mono, sans emphase */
+.fiche {
+  margin-top: var(--e7);
+  border: 1px solid var(--filet);
+  border-radius: var(--r);
+  background: var(--surface);
+  padding: var(--e5);
+  display: grid;
+  gap: var(--e4);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 600px) { .fiche { grid-template-columns: 1fr 1fr; padding: var(--e6); gap: var(--e5); } }
+@media (min-width: 960px) { .fiche { grid-template-columns: repeat(3, 1fr); } }
+
+.fiche dt {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--texte-discret);
+  margin-bottom: var(--e1);
+}
+.fiche dd { margin: 0; font-size: 15px; color: var(--texte); }
+.fiche dd .chiffre { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ═══ Cartes ══════════════════════════════════════════════════ */
+.carte {
+  border: 1px solid var(--filet);
+  border-radius: var(--r);
+  background: var(--surface);
+  padding: var(--e5);
+}
+
+.grille { display: grid; gap: var(--e4); grid-template-columns: 1fr; }
+@media (min-width: 600px) { .grille { grid-template-columns: 1fr 1fr; gap: var(--e5); } }
+@media (min-width: 960px) { .grille-4 { grid-template-columns: repeat(4, 1fr); } }
+
+/* ═══ Domaines ════════════════════════════════════════════════ */
+.domaine { display: flex; gap: var(--e4); align-items: baseline; }
+.domaine .num {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--texte-discret);
+  flex: none;
+}
+.domaine h3 { font-size: 17px; margin-bottom: var(--e1); }
+.domaine p { font-size: 15px; color: var(--texte-moyen); }
+
+/* ═══ Figures ═════════════════════════════════════════════════ */
+figure { margin: 0; }
+
+figcaption {
+  font-size: 15px;
+  color: var(--texte-moyen);
+  margin-top: var(--e4);
+  max-width: 68ch;
+}
+figcaption b { color: var(--texte); font-weight: 600; }
+
+/* Conteneur de défilement : les schémas larges gardent leur taille
+   réelle et défilent chez eux, plutôt que de rétrécir sous 12 px. */
+.defile {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--filet);
+  border-radius: var(--r);
+  background: var(--surface);
+  padding: var(--e5);
+}
+.defile svg { display: block; max-width: none; margin-inline: auto; }
+
+.note-defile {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--texte-discret);
+  margin-top: var(--e3);
+}
+
+/* ═══ SVG : classes de couleur — aucun hex dans les balises ═══ */
+svg text { font-family: var(--mono); }
+.t-titre { font-family: var(--titrage); font-weight: 600; }
+
+.f-fond { fill: var(--fond); }
+.f-surf { fill: var(--surface); }
+.f-surf2 { fill: var(--surface-2); }
+.f-texte { fill: var(--texte); }
+.f-mid { fill: var(--texte-moyen); }
+.f-low { fill: var(--texte-discret); }
+.f-signal { fill: var(--signal); }
+.f-effort { fill: var(--effort); }
+.f-load { fill: var(--load); }
+.f-recover { fill: var(--recover); }
+.f-filet { fill: var(--filet); }
+.f-none { fill: none; }
+
+.s-filet { stroke: var(--filet); }
+.s-mid { stroke: var(--texte-moyen); }
+.s-low { stroke: var(--texte-discret); }
+.s-texte { stroke: var(--texte); }
+.s-signal { stroke: var(--signal); }
+.s-effort { stroke: var(--effort); }
+.s-load { stroke: var(--load); }
+.s-recover { stroke: var(--recover); }
+.s-fond { stroke: var(--fond); }
+
+.tint-signal { fill: rgb(var(--signal-rgb) / 0.14); }
+.tint-effort { fill: rgb(var(--effort-rgb) / 0.16); }
+.tint-load { fill: rgb(var(--load-rgb) / 0.16); }
+.tint-recover { fill: rgb(var(--recover-rgb) / 0.16); }
+
+/* ═══ Maquettes de téléphone ══════════════════════════════════ */
+.maquettes {
+  display: grid;
+  gap: var(--e7);
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+@media (min-width: 960px) {
+  .maquettes { grid-template-columns: 1fr 1fr; gap: var(--e7) var(--e6); align-items: start; }
+  .maquettes > *:nth-child(3) { grid-column: 1 / -1; max-width: 430px; }
+}
+
+.maquette { width: 100%; max-width: 430px; }
+.maquette svg { width: 100%; height: auto; display: block; }
+
+.avert {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--texte-discret);
+  border-left: 2px solid var(--filet);
+  padding-left: var(--e3);
+  margin-bottom: var(--e6);
+}
+
+/* ═══ Invariants ══════════════════════════════════════════════ */
+.invariants { display: grid; gap: var(--e4); grid-template-columns: 1fr; counter-reset: inv; }
+@media (min-width: 960px) { .invariants { grid-template-columns: 1fr 1fr; gap: var(--e5); } }
+
+.invariant { display: flex; flex-direction: column; gap: var(--e3); }
+
+.invariant .rang {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--signal);
+  letter-spacing: 0.1em;
+}
+.invariant h3 { font-size: 20px; }
+.invariant .regle { font-size: 15px; color: var(--texte); }
+.invariant .prix {
+  font-size: 15px;
+  color: var(--texte-moyen);
+  border-top: 1px solid var(--filet);
+  padding-top: var(--e3);
+}
+.invariant .prix b {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--texte-discret);
+  display: block;
+  margin-bottom: var(--e1);
+  font-weight: 400;
+}
+
+/* ═══ Tables de chiffres ══════════════════════════════════════ */
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: var(--e3) var(--e4); border-bottom: 1px solid var(--filet); }
+th {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--texte-discret);
+  font-weight: 400;
+}
+td.val { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--texte); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+
+/* ═══ Cibles tactiles ═════════════════════════════════════════ */
+.cibles {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--e5);
+  flex-wrap: wrap;
+}
+.cible-bloc { display: flex; flex-direction: column; align-items: center; gap: var(--e3); }
+.cible {
+  border: 1px solid var(--signal);
+  border-radius: var(--r-sm);
+  background: rgb(var(--signal-rgb) / 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--signal);
+}
+.cible-44 { width: 44px; height: 44px; }
+.cible-56 { width: 56px; height: 56px; border-color: var(--effort); background: rgb(var(--effort-rgb) / 0.14); color: var(--effort); }
+/* Pas une cible autorisée : ce que l'audit a trouvé sur six surfaces. */
+.cible-32 { width: 32px; height: 32px; border-color: var(--recover); background: rgb(var(--recover-rgb) / 0.14); color: var(--recover); }
+.cible-legende { font-size: 12px; font-family: var(--mono); color: var(--texte-moyen); text-align: center; }
+
+/* ═══ Charte ══════════════════════════════════════════════════ */
+.signal-carte { display: flex; flex-direction: column; gap: var(--e3); }
+.signal-carte h3 { font-size: 17px; }
+.signal-carte .role { font-size: 15px; color: var(--texte-moyen); }
+.signal-carte .paire { margin-top: auto; }
+
+.paire { display: flex; gap: var(--e2); }
+.echantillon {
+  flex: 1;
+  border-radius: var(--r-sm);
+  padding: var(--e3);
+  border: 1px solid;
+  min-width: 0;
+}
+.echantillon .nom {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  display: block;
+  margin-bottom: var(--e2);
+}
+.echantillon .pastille {
+  display: block;
+  height: 26px;
+  border-radius: var(--r-sm);
+  margin-bottom: var(--e2);
+}
+.echantillon .hex { font-family: var(--mono); font-size: 12px; display: block; }
+
+.ech-sombre { background: var(--d-surface); border-color: var(--d-filet); }
+.ech-sombre .nom, .ech-sombre .hex { color: var(--d-mid); }
+.ech-clair { background: var(--c-surface); border-color: var(--c-filet); }
+.ech-clair .nom, .ech-clair .hex { color: var(--c-mid); }
+
+.p-d-signal { background: var(--d-signal); }  .p-c-signal { background: var(--c-signal); }
+.p-d-effort { background: var(--d-effort); }  .p-c-effort { background: var(--c-effort); }
+.p-d-load { background: var(--d-load); }      .p-c-load { background: var(--c-load); }
+.p-d-recover { background: var(--d-recover); } .p-c-recover { background: var(--c-recover); }
+
+/* Table des surfaces : deux thèmes côte à côte */
+.tbl-surfaces { min-width: 460px; }
+.puce {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  vertical-align: -4px;
+  margin-right: var(--e2);
+  border: 1px solid var(--filet);
+}
+.pd-fond { background: var(--d-fond); }       .pc-fond { background: var(--c-fond); }
+.pd-surface { background: var(--d-surface); } .pc-surface { background: var(--c-surface); }
+.pd-surface2 { background: var(--d-surface2); } .pc-surface2 { background: var(--c-surface2); }
+.pd-filet { background: var(--d-filet); }     .pc-filet { background: var(--c-filet); }
+.pd-texte { background: var(--d-texte); }     .pc-texte { background: var(--c-texte); }
+.pd-mid { background: var(--d-mid); }         .pc-mid { background: var(--c-mid); }
+.pd-low { background: var(--d-low); }         .pc-low { background: var(--c-low); }
+
+/* ═══ Échelle d'espacement ════════════════════════════════════ */
+.echelle { display: flex; gap: var(--e4); align-items: flex-end; flex-wrap: wrap; }
+.pas { display: flex; flex-direction: column; align-items: center; gap: var(--e2); }
+.pas .barre { background: var(--signal); border-radius: 2px; width: 100%; height: 10px; }
+.pas .etiq { font-family: var(--mono); font-size: 12px; color: var(--texte-moyen); }
+
+/* ═══ Listes à filet ══════════════════════════════════════════ */
+.liste-filet li {
+  border-top: 1px solid var(--filet);
+  padding-block: var(--e3);
+  font-size: 15px;
+  color: var(--texte-moyen);
+}
+.liste-filet li:first-child { border-top: 0; }
+.liste-filet li b { color: var(--texte); font-weight: 600; }
+
+/* ═══ Pied ════════════════════════════════════════════════════ */
+footer {
+  border-top: 1px solid var(--filet);
+  padding-block: var(--e7) var(--e8);
+  color: var(--texte-discret);
+  font-size: 15px;
+}
+footer p { max-width: 66ch; }
+footer p + p { margin-top: var(--e3); }
+</style>
+</head>
+<body>
+
+<header class="enveloppe hero">
+  <p class="oeil">Application personnelle · un seul utilisateur · aucune ambition commerciale</p>
+  <h1>Metric</h1>
+  <p class="hero-lede">
+    Un suivi de santé qui n'invente rien. Huit domaines, un stockage que l'application
+    ne possède pas, et sept invariants qui descendent tous de la même contrainte :
+    <strong>il n'y a aucune annulation, nulle part.</strong>
+  </p>
+
+  <dl class="fiche">
+    <div>
+      <dt>Backend</dt>
+      <dd>FastAPI · Python <span class="chiffre">3.12</span></dd>
+    </div>
+    <div>
+      <dt>Frontend</dt>
+      <dd>React · TypeScript · Vite</dd>
+    </div>
+    <div>
+      <dt>Stockage</dt>
+      <dd>CSV sur Nextcloud, en WebDAV — pas de base de données</dd>
+    </div>
+    <div>
+      <dt>Sur le téléphone</dt>
+      <dd>PWA installable, service worker, Web Push, flux iCal</dd>
+    </div>
+    <div>
+      <dt>Déploiement</dt>
+      <dd>Linux, systemd, Nginx Proxy Manager — rien de conteneurisé</dd>
+    </div>
+    <div>
+      <dt>Vérification</dt>
+      <dd><span class="chiffre">1 244</span> tests backend · <span class="chiffre">385</span> tests d'écran</dd>
+    </div>
+  </dl>
+</header>
+
+<section class="enveloppe">
+  <p class="oeil">Ce que ça suit</p>
+  <h2>Huit domaines, un seul utilisateur</h2>
+  <p class="chapeau">
+    Pas de comptes, pas de partage, pas de rôles. Une personne, ses vraies mesures, et
+    des écrans qui n'ont qu'un cas à traiter correctement — celui-là.
+  </p>
+
+  <div class="grille grille-4" style="margin-top: var(--e6)">
+    <div class="carte domaine">
+      <span class="num">01</span>
+      <div><h3>Corps</h3><p>Poids, mensurations, l'écart sur la période.</p></div>
+    </div>
+    <div class="carte domaine">
+      <span class="num">02</span>
+      <div><h3>Activité</h3><p>Séances, exercices, charges, séries, tonnage.</p></div>
+    </div>
+    <div class="carte domaine">
+      <span class="num">03</span>
+      <div><h3>Nutrition</h3><p>Repas, macros, photos des assiettes.</p></div>
+    </div>
+    <div class="carte domaine">
+      <span class="num">04</span>
+      <div><h3>Routine</h3><p>Hydratation et compléments, jour par jour.</p></div>
+    </div>
+    <div class="carte domaine">
+      <span class="num">05</span>
+      <div><h3>Planning</h3><p>Ce qui est prévu, exporté en iCal.</p></div>
+    </div>
+    <div class="carte domaine">
+      <span class="num">06</span>
+      <div><h3>Objectifs</h3><p>Une cible, et la distance qui reste.</p></div>
+    </div>
+    <div class="carte domaine">
+      <span class="num">07</span>
+      <div><h3>Assiduité</h3><p>La régularité, pas la performance.</p></div>
+    </div>
+    <div class="carte domaine">
+      <span class="num">08</span>
+      <div><h3>Assistant</h3><p>Un modèle qui lit les domaines — et écrit dedans.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">Trois écrans</p>
+  <h2>À quoi ça ressemble</h2>
+  <p class="avert">
+    Dessins au trait, pas des captures d'écran. Le contenu est inventé ; la charte,
+    les proportions et les règles montrées sont celles de l'application. Ces maquettes
+    suivent le thème de votre système — comme l'application elle-même.
+  </p>
+
+  <div class="maquettes">
+
+    <!-- ═══ Maquette 1 — Tableau de bord ═══════════════════════ -->
+    <figure class="maquette">
+      <svg viewBox="0 0 430 902" role="img"
+           aria-label="Maquette du tableau de bord : poids 78,4 kilos en baisse de 0,6 sur quatorze jours, tonnage de la semaine, hydratation, et une tuile nutrition vide qui affiche un tiret plutôt qu'un zéro.">
+        <defs><clipPath id="ecran1"><rect x="0" y="0" width="402" height="874" rx="36"/></clipPath></defs>
+        <rect x="1" y="1" width="428" height="900" rx="48" class="f-surf2 s-filet" stroke-width="2"/>
+        <rect x="14" y="14" width="402" height="874" rx="36" class="f-fond"/>
+        <g transform="translate(14,14)" clip-path="url(#ecran1)">
+
+          <!-- barre d'état -->
+          <text x="42" y="34" font-size="16" class="f-texte">9:41</text>
+          <rect x="316" y="28" width="4" height="6" class="f-texte"/>
+          <rect x="323" y="25" width="4" height="9" class="f-texte"/>
+          <rect x="330" y="22" width="4" height="12" class="f-texte"/>
+          <rect x="344" y="23" width="24" height="12" rx="3" class="f-none s-texte"/>
+          <rect x="346" y="25" width="16" height="8" rx="1" class="f-texte"/>
+          <rect x="369" y="26" width="2" height="6" class="f-texte"/>
+
+          <!-- en-tête -->
+          <text x="20" y="88" font-size="26" class="t-titre f-texte">Tableau de bord</text>
+          <text x="20" y="114" font-size="16" class="f-mid">mercredi 19 août</text>
+
+          <!-- carte poids -->
+          <rect x="20" y="132" width="362" height="140" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="162" font-size="16" letter-spacing="1.2" class="f-low">POIDS</text>
+          <text x="38" y="214" font-size="44" class="f-texte">78,4</text>
+          <text x="150" y="214" font-size="18" class="f-mid">kg</text>
+          <text x="38" y="246" font-size="16" class="f-effort">−0,6 kg · 14 jours</text>
+          <polyline class="f-none s-signal" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+            points="230,184 249,192 269,175 288,201 308,209 327,218 347,226 366,235"/>
+          <circle cx="366" cy="235" r="3.5" class="f-signal"/>
+
+          <!-- tonnage 7 jours -->
+          <rect x="20" y="284" width="175" height="120" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="312" font-size="16" letter-spacing="1.2" class="f-low">TONNAGE 7 J</text>
+          <text x="38" y="350" font-size="26" class="f-texte">17 320</text>
+          <text x="138" y="350" font-size="16" class="f-mid">kg</text>
+          <rect x="38" y="360" width="14" height="26" rx="2" class="f-effort"/>
+          <rect x="60" y="358" width="14" height="28" rx="2" class="f-effort"/>
+          <rect x="82" y="362" width="14" height="24" rx="2" class="f-effort"/>
+          <rect x="104" y="359" width="14" height="27" rx="2" class="f-effort"/>
+
+          <!-- hydratation -->
+          <rect x="207" y="284" width="175" height="120" rx="14" class="f-surf s-filet"/>
+          <text x="225" y="312" font-size="16" letter-spacing="1.2" class="f-low">HYDRATATION</text>
+          <text x="225" y="350" font-size="26" class="f-texte">1,4</text>
+          <text x="278" y="350" font-size="16" class="f-mid">/ 2,5 L</text>
+          <rect x="225" y="372" width="139" height="8" rx="4" class="f-surf2"/>
+          <rect x="225" y="372" width="78" height="8" rx="4" class="f-signal"/>
+
+          <!-- nutrition : l'état vide -->
+          <rect x="20" y="416" width="362" height="152" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="444" font-size="16" letter-spacing="1.2" class="f-low">NUTRITION</text>
+          <text x="38" y="496" font-size="44" class="f-low">—</text>
+          <text x="38" y="526" font-size="16" class="f-mid">Aucun repas noté aujourd'hui.</text>
+          <text x="38" y="548" font-size="16" class="f-low">Le premier prend dix secondes.</text>
+
+          <!-- assiduité -->
+          <rect x="20" y="580" width="362" height="112" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="608" font-size="16" letter-spacing="1.2" class="f-low">ASSIDUITÉ · 14 JOURS</text>
+          <rect x="38"  y="628" width="18" height="18" rx="4" class="f-surf2"/>
+          <rect x="61"  y="628" width="18" height="18" rx="4" class="f-effort" fill-opacity="0.65"/>
+          <rect x="84"  y="628" width="18" height="18" rx="4" class="f-effort" fill-opacity="0.4"/>
+          <rect x="107" y="628" width="18" height="18" rx="4" class="f-surf2"/>
+          <rect x="130" y="628" width="18" height="18" rx="4" class="f-effort"/>
+          <rect x="153" y="628" width="18" height="18" rx="4" class="f-effort" fill-opacity="0.65"/>
+          <rect x="176" y="628" width="18" height="18" rx="4" class="f-surf2"/>
+          <rect x="199" y="628" width="18" height="18" rx="4" class="f-effort" fill-opacity="0.4"/>
+          <rect x="222" y="628" width="18" height="18" rx="4" class="f-effort"/>
+          <rect x="245" y="628" width="18" height="18" rx="4" class="f-surf2"/>
+          <rect x="268" y="628" width="18" height="18" rx="4" class="f-effort" fill-opacity="0.65"/>
+          <rect x="291" y="628" width="18" height="18" rx="4" class="f-surf2"/>
+          <rect x="314" y="628" width="18" height="18" rx="4" class="f-effort" fill-opacity="0.4"/>
+          <rect x="337" y="628" width="18" height="18" rx="4" class="f-surf2"/>
+          <text x="38" y="672" font-size="16" class="f-mid">8 séances · 6 jours de repos</text>
+
+          <!-- navigation -->
+          <line x1="0" y1="812" x2="402" y2="812" class="s-filet"/>
+          <rect x="0" y="813" width="402" height="61" class="f-surf"/>
+          <rect x="32"  y="828" width="7" height="7" rx="1" class="f-signal"/>
+          <rect x="41"  y="828" width="7" height="7" rx="1" class="f-signal"/>
+          <rect x="32"  y="837" width="7" height="7" rx="1" class="f-signal"/>
+          <rect x="41"  y="837" width="7" height="7" rx="1" class="f-signal"/>
+          <text x="40" y="862" font-size="15" text-anchor="middle" class="f-signal">Bord</text>
+          <circle cx="121" cy="831" r="3.5" class="f-none s-mid" stroke-width="1.6"/>
+          <line x1="121" y1="835" x2="121" y2="843" class="s-mid" stroke-width="1.6"/>
+          <line x1="116" y1="838" x2="126" y2="838" class="s-mid" stroke-width="1.6"/>
+          <text x="121" y="862" font-size="15" text-anchor="middle" class="f-mid">Corps</text>
+          <rect x="192" y="832" width="4" height="9" rx="1" class="f-mid"/>
+          <rect x="206" y="832" width="4" height="9" rx="1" class="f-mid"/>
+          <rect x="196" y="835" width="10" height="3" class="f-mid"/>
+          <text x="201" y="862" font-size="15" text-anchor="middle" class="f-mid">Séances</text>
+          <circle cx="281" cy="836" r="7" class="f-none s-mid" stroke-width="1.6"/>
+          <circle cx="281" cy="836" r="2.5" class="f-mid"/>
+          <text x="281" y="862" font-size="15" text-anchor="middle" class="f-mid">Repas</text>
+          <rect x="354" y="829" width="16" height="12" rx="3" class="f-none s-mid" stroke-width="1.6"/>
+          <polygon points="358,841 364,841 358,846" class="f-mid"/>
+          <text x="362" y="862" font-size="15" text-anchor="middle" class="f-mid">IA</text>
+        </g>
+      </svg>
+      <figcaption>
+        <b>Tableau de bord.</b> La tuile « Nutrition » montre l'invariant n° 2 : sans repas
+        enregistré, elle affiche un tiret et ce que coûte le prochain geste — pas un
+        <code>0 g</code> qui se lirait comme une mesure.
+      </figcaption>
+    </figure>
+
+    <!-- ═══ Maquette 2 — Séance ════════════════════════════════ -->
+    <figure class="maquette">
+      <svg viewBox="0 0 430 902" role="img"
+           aria-label="Maquette d'une séance : quatre exercices, tonnage de 4 660 kilos, et une ligne dont l'action de suppression est révélée et armée, en attente d'un second appui.">
+        <defs><clipPath id="ecran2"><rect x="0" y="0" width="402" height="874" rx="36"/></clipPath></defs>
+        <rect x="1" y="1" width="428" height="900" rx="48" class="f-surf2 s-filet" stroke-width="2"/>
+        <rect x="14" y="14" width="402" height="874" rx="36" class="f-fond"/>
+        <g transform="translate(14,14)" clip-path="url(#ecran2)">
+
+          <text x="42" y="34" font-size="16" class="f-texte">9:41</text>
+          <rect x="316" y="28" width="4" height="6" class="f-texte"/>
+          <rect x="323" y="25" width="4" height="9" class="f-texte"/>
+          <rect x="330" y="22" width="4" height="12" class="f-texte"/>
+          <rect x="344" y="23" width="24" height="12" rx="3" class="f-none s-texte"/>
+          <rect x="346" y="25" width="16" height="8" rx="1" class="f-texte"/>
+          <rect x="369" y="26" width="2" height="6" class="f-texte"/>
+
+          <text x="20" y="88" font-size="26" class="t-titre f-texte">Poussée B</text>
+          <text x="20" y="114" font-size="16" class="f-mid">mercredi 19 août · 47 min</text>
+
+          <rect x="20" y="132" width="362" height="96" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="162" font-size="16" letter-spacing="1.2" class="f-low">TONNAGE DE LA SÉANCE</text>
+          <text x="38" y="206" font-size="34" class="f-texte">4 660</text>
+          <text x="148" y="206" font-size="16" class="f-mid">kg</text>
+          <text x="364" y="192" font-size="15" text-anchor="end" class="f-mid">4 exercices</text>
+          <text x="364" y="214" font-size="15" text-anchor="end" class="f-mid">13 séries</text>
+
+          <rect x="20" y="244" width="362" height="88" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="276" font-size="17" class="t-titre f-texte">Développé couché</text>
+          <text x="38" y="304" font-size="16" class="f-mid">4 × 8 · 72,5 kg</text>
+          <text x="364" y="304" font-size="16" text-anchor="end" class="f-effort">2 320 kg</text>
+
+          <rect x="20" y="344" width="362" height="88" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="376" font-size="17" class="t-titre f-texte">Incliné haltères</text>
+          <text x="38" y="404" font-size="16" class="f-mid">3 × 10 · 28 kg</text>
+          <text x="364" y="404" font-size="16" text-anchor="end" class="f-effort">840 kg</text>
+
+          <rect x="20" y="444" width="362" height="88" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="476" font-size="17" class="t-titre f-texte">Barre au front</text>
+          <text x="38" y="504" font-size="16" class="f-mid">3 × 10 · 32 kg</text>
+          <text x="364" y="504" font-size="16" text-anchor="end" class="f-effort">960 kg</text>
+
+          <!-- ligne glissée : action révélée et armée -->
+          <rect x="20" y="544" width="362" height="88" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="576" font-size="17" class="t-titre f-texte">Élévations latérales</text>
+          <text x="38" y="604" font-size="16" class="f-mid">3 × 15 · 12 kg</text>
+          <rect x="286" y="544" width="96" height="88" rx="14" class="tint-recover s-recover"/>
+          <text x="334" y="584" font-size="15" text-anchor="middle" class="f-recover">Confirmer</text>
+          <text x="334" y="606" font-size="15" text-anchor="middle" class="f-low">2ᵉ appui</text>
+
+          <!-- action qui termine un geste : 56 px -->
+          <rect x="20" y="680" width="362" height="56" rx="14" class="f-signal"/>
+          <text x="201" y="714" font-size="16" text-anchor="middle" class="f-fond">Terminer la séance</text>
+
+          <line x1="0" y1="812" x2="402" y2="812" class="s-filet"/>
+          <rect x="0" y="813" width="402" height="61" class="f-surf"/>
+          <rect x="32"  y="828" width="7" height="7" rx="1" class="f-mid"/>
+          <rect x="41"  y="828" width="7" height="7" rx="1" class="f-mid"/>
+          <rect x="32"  y="837" width="7" height="7" rx="1" class="f-mid"/>
+          <rect x="41"  y="837" width="7" height="7" rx="1" class="f-mid"/>
+          <text x="40" y="862" font-size="15" text-anchor="middle" class="f-mid">Bord</text>
+          <circle cx="121" cy="831" r="3.5" class="f-none s-mid" stroke-width="1.6"/>
+          <line x1="121" y1="835" x2="121" y2="843" class="s-mid" stroke-width="1.6"/>
+          <line x1="116" y1="838" x2="126" y2="838" class="s-mid" stroke-width="1.6"/>
+          <text x="121" y="862" font-size="15" text-anchor="middle" class="f-mid">Corps</text>
+          <rect x="192" y="832" width="4" height="9" rx="1" class="f-signal"/>
+          <rect x="206" y="832" width="4" height="9" rx="1" class="f-signal"/>
+          <rect x="196" y="835" width="10" height="3" class="f-signal"/>
+          <text x="201" y="862" font-size="15" text-anchor="middle" class="f-signal">Séances</text>
+          <circle cx="281" cy="836" r="7" class="f-none s-mid" stroke-width="1.6"/>
+          <circle cx="281" cy="836" r="2.5" class="f-mid"/>
+          <text x="281" y="862" font-size="15" text-anchor="middle" class="f-mid">Repas</text>
+          <rect x="354" y="829" width="16" height="12" rx="3" class="f-none s-mid" stroke-width="1.6"/>
+          <polygon points="358,841 364,841 358,846" class="f-mid"/>
+          <text x="362" y="862" font-size="15" text-anchor="middle" class="f-mid">IA</text>
+        </g>
+      </svg>
+      <figcaption>
+        <b>Une séance.</b> La dernière ligne a été glissée : son action de suppression est
+        révélée et <i>armée</i>. Le second appui détruit — c'est l'invariant n° 7. Le bouton
+        qui termine la séance fait <code>56 px</code> de haut, pas <code>44</code> : il clôt
+        un geste.
+      </figcaption>
+    </figure>
+
+    <!-- ═══ Maquette 3 — Assistant ═════════════════════════════ -->
+    <figure class="maquette">
+      <svg viewBox="0 0 430 902" role="img"
+           aria-label="Maquette de l'assistant : le modèle prépare une pesée de 78,4 kilos, présentée dans un bloc marqué « proposé », avec un bouton enregistrer et un bouton écarter. Rien n'est écrit sans validation.">
+        <defs><clipPath id="ecran3"><rect x="0" y="0" width="402" height="874" rx="36"/></clipPath></defs>
+        <rect x="1" y="1" width="428" height="900" rx="48" class="f-surf2 s-filet" stroke-width="2"/>
+        <rect x="14" y="14" width="402" height="874" rx="36" class="f-fond"/>
+        <g transform="translate(14,14)" clip-path="url(#ecran3)">
+
+          <text x="42" y="34" font-size="16" class="f-texte">9:41</text>
+          <rect x="316" y="28" width="4" height="6" class="f-texte"/>
+          <rect x="323" y="25" width="4" height="9" class="f-texte"/>
+          <rect x="330" y="22" width="4" height="12" class="f-texte"/>
+          <rect x="344" y="23" width="24" height="12" rx="3" class="f-none s-texte"/>
+          <rect x="346" y="25" width="16" height="8" rx="1" class="f-texte"/>
+          <rect x="369" y="26" width="2" height="6" class="f-texte"/>
+
+          <text x="20" y="88" font-size="26" class="t-titre f-texte">Assistant</text>
+          <text x="20" y="114" font-size="16" class="f-mid">lit les domaines, et écrit dedans</text>
+
+          <rect x="112" y="140" width="270" height="52" rx="14" class="tint-signal"/>
+          <text x="130" y="172" font-size="16" class="f-texte">Note mon poids : 78,4 kg</text>
+
+          <rect x="20" y="212" width="330" height="96" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="244" font-size="16" class="f-texte">J'ai préparé la pesée du jour.</text>
+          <text x="38" y="268" font-size="16" class="f-texte">Rien n'est écrit tant que vous</text>
+          <text x="38" y="292" font-size="16" class="f-texte">n'avez pas validé.</text>
+
+          <!-- AiBlock : une valeur proposée, pas une mesure -->
+          <rect x="20" y="324" width="362" height="226" rx="14" class="f-surf s-load"/>
+          <rect x="38" y="344" width="110" height="26" rx="8" class="tint-load"/>
+          <text x="93" y="362" font-size="15" text-anchor="middle" letter-spacing="1" class="f-load">PROPOSÉ</text>
+          <text x="38" y="402" font-size="16" letter-spacing="1.2" class="f-low">POIDS</text>
+          <text x="38" y="440" font-size="34" class="f-texte">78,4</text>
+          <text x="130" y="440" font-size="16" class="f-mid">kg</text>
+          <text x="38" y="464" font-size="15" class="f-mid">19 août · rendu par le modèle</text>
+          <rect x="38" y="474" width="156" height="56" rx="8" class="f-signal"/>
+          <text x="116" y="508" font-size="16" text-anchor="middle" class="f-fond">Enregistrer</text>
+          <rect x="208" y="474" width="156" height="56" rx="8" class="f-none s-filet"/>
+          <text x="286" y="508" font-size="16" text-anchor="middle" class="f-mid">Écarter</text>
+
+          <text x="20" y="586" font-size="15" class="f-mid">Une écriture de l'assistant passe</text>
+          <text x="20" y="608" font-size="15" class="f-mid">par les mêmes gardes qu'un écran :</text>
+          <text x="20" y="630" font-size="15" class="f-mid">If-Match, code d'erreur, jour du</text>
+          <text x="20" y="652" font-size="15" class="f-mid">serveur.</text>
+
+          <rect x="20" y="730" width="290" height="56" rx="14" class="f-surf s-filet"/>
+          <text x="38" y="764" font-size="16" class="f-low">Message…</text>
+          <rect x="322" y="730" width="60" height="56" rx="14" class="f-signal"/>
+          <path d="M352 772 L352 748 M344 756 L352 748 L360 756" class="f-none s-fond"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+          <line x1="0" y1="812" x2="402" y2="812" class="s-filet"/>
+          <rect x="0" y="813" width="402" height="61" class="f-surf"/>
+          <rect x="32"  y="828" width="7" height="7" rx="1" class="f-mid"/>
+          <rect x="41"  y="828" width="7" height="7" rx="1" class="f-mid"/>
+          <rect x="32"  y="837" width="7" height="7" rx="1" class="f-mid"/>
+          <rect x="41"  y="837" width="7" height="7" rx="1" class="f-mid"/>
+          <text x="40" y="862" font-size="15" text-anchor="middle" class="f-mid">Bord</text>
+          <circle cx="121" cy="831" r="3.5" class="f-none s-mid" stroke-width="1.6"/>
+          <line x1="121" y1="835" x2="121" y2="843" class="s-mid" stroke-width="1.6"/>
+          <line x1="116" y1="838" x2="126" y2="838" class="s-mid" stroke-width="1.6"/>
+          <text x="121" y="862" font-size="15" text-anchor="middle" class="f-mid">Corps</text>
+          <rect x="192" y="832" width="4" height="9" rx="1" class="f-mid"/>
+          <rect x="206" y="832" width="4" height="9" rx="1" class="f-mid"/>
+          <rect x="196" y="835" width="10" height="3" class="f-mid"/>
+          <text x="201" y="862" font-size="15" text-anchor="middle" class="f-mid">Séances</text>
+          <circle cx="281" cy="836" r="7" class="f-none s-mid" stroke-width="1.6"/>
+          <circle cx="281" cy="836" r="2.5" class="f-mid"/>
+          <text x="281" y="862" font-size="15" text-anchor="middle" class="f-mid">Repas</text>
+          <rect x="354" y="829" width="16" height="12" rx="3" class="f-none s-signal" stroke-width="1.6"/>
+          <polygon points="358,841 364,841 358,846" class="f-signal"/>
+          <text x="362" y="862" font-size="15" text-anchor="middle" class="f-signal">IA</text>
+        </g>
+      </svg>
+      <figcaption>
+        <b>L'assistant.</b> Ce que le modèle rend est marqué <code>PROPOSÉ</code> et attend
+        une validation — invariant n° 4. Rien ne distingue ensuite cette pesée d'une pesée
+        saisie à la main : l'écriture emprunte les mêmes services, et les mêmes gardes.
+      </figcaption>
+    </figure>
+
+  </div>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">La contrainte</p>
+  <h2>Aucune annulation, nulle part</h2>
+  <p class="chapeau">
+    Pas de corbeille, pas de <code>Ctrl-Z</code>, pas d'historique de modifications dans
+    l'application. Ce n'est pas un manque à combler : c'est l'hypothèse de départ, et
+    elle rend chaque décision d'interface vérifiable. Une action qui ne se défait pas
+    doit être impossible à déclencher par accident — et un chiffre affiché doit être
+    impossible à confondre avec une mesure qui n'existe pas.
+  </p>
+  <p class="chapeau">
+    Les sept règles qui suivent en descendent. Chacune a coûté un incident.
+  </p>
+
+  <div class="invariants" style="margin-top: var(--e6)">
+
+    <article class="carte invariant">
+      <span class="rang">INVARIANT 01</span>
+      <h3>Aucun calcul métier côté client</h3>
+      <p class="regle">
+        Moyennes, écarts, ratios, cadences, sommes : le serveur calcule, le client formate.
+        <code>features/&lt;domaine&gt;/api.ts</code> ne contient que des types et des appels.
+      </p>
+      <p class="prix"><b>Ce que ça coûte</b>
+        Un chiffre qui manque à l'écran s'ajoute au service, jamais au composant — même
+        quand une ligne de TypeScript suffirait. Deux implémentations d'une moyenne
+        finissent par donner deux moyennes.
+      </p>
+    </article>
+
+    <article class="carte invariant">
+      <span class="rang">INVARIANT 02</span>
+      <h3>Aucune valeur inventée à l'écran</h3>
+      <p class="regle">
+        Sur historique vide : un tiret, et ce que coûte le prochain geste. Jamais un zéro
+        qui passerait pour une mesure.
+      </p>
+      <p class="prix"><b>Ce que ça coûte</b>
+        Les valeurs par défaut d'un formulaire comptent aussi. Un <code>sets: '3'</code>
+        écrit en dur est une valeur inventée — il en traînait trois dans le dépôt.
+      </p>
+    </article>
+
+    <article class="carte invariant">
+      <span class="rang">INVARIANT 03</span>
+      <h3>Le jour vient du serveur</h3>
+      <p class="regle">
+        Jamais de <code>new Date()</code> pour dater une donnée. Le seul calcul de date
+        qu'un écran s'autorise, c'est de choisir quelle page demander.
+      </p>
+      <p class="prix"><b>Ce que ça coûte</b>
+        Le fuseau du téléphone n'est pas celui du stockage. Deux écrans ont déjà été
+        corrigés pour ça, et un test de la batterie ne passait que sur une machine
+        en UTC+2.
+      </p>
+    </article>
+
+    <article class="carte invariant">
+      <span class="rang">INVARIANT 04</span>
+      <h3>Une valeur proposée n'est pas une mesure</h3>
+      <p class="regle">
+        Ce qu'un modèle rend est <i>proposé</i>, et se dit dans deux composants : le bloc
+        de proposition, et l'état <code>proposed</code> du sélecteur de valeur. Rien d'autre.
+      </p>
+      <p class="prix"><b>Ce que ça coûte</b>
+        Une cinquième façon de le dire affaiblirait les quatre existantes. Et un relevé
+        passé rappelé à l'écran n'est <i>pas</i> une proposition : ne pas le marquer comme tel.
+      </p>
+    </article>
+
+    <article class="carte invariant">
+      <span class="rang">INVARIANT 05</span>
+      <h3>Les erreurs portent un code, pas un texte</h3>
+      <p class="regle">
+        Le client décide sur <code>error.code</code>, jamais sur le message. Le message
+        vient du serveur, en français, et s'affiche tel quel.
+      </p>
+      <p class="prix"><b>Ce que ça coûte</b>
+        Deux vocabulaires à tenir au lieu d'un. En échange, reformuler un message ne
+        casse aucun branchement, et aucun test ne compare des phrases.
+      </p>
+    </article>
+
+    <article class="carte invariant">
+      <span class="rang">INVARIANT 06</span>
+      <h3>Garde <code>If-Match</code> sur toute modification</h3>
+      <p class="regle">
+        Le jeton se lit sur la ligne, se renvoie en en-tête, et un conflit remonte à
+        l'utilisateur : il ne se force pas. Un <code>If-Match</code> absent est un
+        <i>conflit</i>, jamais une permission.
+      </p>
+      <p class="prix"><b>Ce que ça coûte</b>
+        L'identifiant d'une ligne est sa <i>position</i> dans le CSV : supprimer décale
+        tout ce qui suit. C'est ce prix-là qui rend la garde non négociable — et pourquoi
+        les identifiants stables sont des colonnes à part, jamais régénérées.
+      </p>
+    </article>
+
+    <article class="carte invariant">
+      <span class="rang">INVARIANT 07</span>
+      <h3>Deux appuis pour détruire</h3>
+      <p class="regle">
+        Glissement pour révéler, premier appui qui arme, second qui exécute. Une seule
+        implémentation dans le dépôt — deux en donneraient deux seuils.
+      </p>
+      <p class="prix"><b>Ce que ça coûte</b>
+        Une <i>addition</i>, elle, ne se confirme pas : c'est la suppression que
+        l'utilisateur ferait ensuite. Demander confirmation partout finit par la faire
+        ignorer là où elle compte.
+      </p>
+    </article>
+
+  </div>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">Mobile d'abord</p>
+  <h2>Des chiffres, pas une intention</h2>
+  <p class="chapeau">
+    « Mobile d'abord » sans valeur chiffrée ne survit pas au premier écran pressé. Voici
+    celles qui sont opposables en relecture.
+  </p>
+
+  <div class="grille" style="margin-top: var(--e6); align-items: start">
+    <div class="carte">
+      <table>
+        <tbody>
+          <tr><td>Cible d'usage principale</td><td class="val">402 × 874 px</td></tr>
+          <tr><td>Feuilles de style écrites pour</td><td class="val">390 px</td></tr>
+          <tr><td>Plancher de toute cible tactile</td><td class="val">44 px</td></tr>
+          <tr><td>Action qui termine un geste</td><td class="val">56 px</td></tr>
+          <tr><td>Champ de saisie <span style="color:var(--texte-discret)">(sinon iOS zoome)</span></td><td class="val">16 px</td></tr>
+          <tr><td>Seuil de glissement</td><td class="val">56 px</td></tr>
+          <tr><td>Plancher de texte</td><td class="val">12 px</td></tr>
+          <tr><td>Points de rupture, en <code>min-width</code></td><td class="val">600 · 960</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pile">
+      <figure class="carte">
+        <div class="cibles">
+          <div class="cible-bloc">
+            <svg width="60" height="88" viewBox="0 0 60 88" role="img"
+                 aria-label="Pouce stylisé, sa zone de contact dessinée en pointillés, à la même échelle que les carrés.">
+              <path d="M30 4 C42 4 48 14 48 27 L48 62 C48 78 40 85 30 85 C20 85 12 78 12 62 L12 27 C12 14 18 4 30 4 Z"
+                    class="f-surf2 s-filet" stroke-width="1.5"/>
+              <path d="M15 66 C22 70 38 70 45 66" class="f-none s-filet" stroke-width="1.5"/>
+              <ellipse cx="30" cy="24" rx="17" ry="13" class="f-none s-signal"
+                       stroke-width="1.5" stroke-dasharray="4 3"/>
+            </svg>
+            <span class="cible-legende">pouce<br>(indicatif)</span>
+          </div>
+          <div class="cible-bloc">
+            <div class="cible cible-44">44</div>
+            <span class="cible-legende">plancher<br>de toute cible</span>
+          </div>
+          <div class="cible-bloc">
+            <div class="cible cible-56">56</div>
+            <span class="cible-legende">termine<br>un geste</span>
+          </div>
+          <div class="cible-bloc">
+            <div class="cible cible-32">32</div>
+            <span class="cible-legende">hors charte<br>— corrigé</span>
+          </div>
+        </div>
+        <figcaption>
+          Dessinés à l'échelle, en pixels CSS — les mêmes que ceux de l'application. Le
+          carré de <b>32</b> n'est pas une cible autorisée : c'est ce qu'un audit a trouvé
+          sur six surfaces qui n'existent qu'après un appui, et qui échappaient donc au
+          comptage automatique.
+        </figcaption>
+      </figure>
+
+      <div class="carte">
+        <p class="oeil" style="margin-bottom: var(--e3)">Trois règles pour le glissement</p>
+        <ul class="liste-filet">
+          <li><b>Un geste n'est jamais la seule porte.</b> Ce qu'un glissement révèle
+            existe dans le document, et s'affiche d'emblée là où il y a un curseur.</li>
+          <li><b>Un geste plus vertical qu'horizontal appartient à la page.</b> Sans cette
+            garde, faire défiler au pouce déclencherait l'action — qui, sur un historique,
+            est une suppression.</li>
+          <li><b>Le glissement navigue, il ne mesure pas.</b> Pas de curseur pour saisir
+            une charge.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">Architecture</p>
+  <h2>Le stockage n'appartient pas à l'application</h2>
+  <p class="chapeau">
+    Pas de base de données. Les données sont des fichiers CSV dans un Nextcloud, atteints
+    en WebDAV. Trois conséquences assumées : elles <b>survivent à l'application</b>, elles
+    s'ouvrent dans un tableur, et le versionnement est celui de Nextcloud — pas un
+    mécanisme à écrire et à maintenir.
+  </p>
+  <p class="chapeau">
+    Le prix se paie ailleurs : pas de transaction, pas d'index, et un identifiant de ligne
+    qui n'est que sa position dans le fichier. C'est exactement ce prix qui rend l'invariant
+    n° 6 non négociable.
+  </p>
+
+  <figure style="margin-top: var(--e6)">
+    <div class="defile">
+      <svg width="980" height="380" viewBox="0 0 980 380" role="img"
+           aria-label="Schéma d'architecture : le navigateur parle en HTTPS à Nginx Proxy Manager, qui relaie vers FastAPI sur le port 8000 ; FastAPI lit et écrit des CSV sur Nextcloud en WebDAV et en reçoit des ETag. Nextcloud est hors de la machine qui héberge l'application.">
+        <defs>
+          <marker id="fl-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="f-mid"/>
+          </marker>
+          <marker id="fl-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="f-signal"/>
+          </marker>
+        </defs>
+
+        <!-- frontière de la machine -->
+        <rect x="250" y="60" width="460" height="280" rx="14" class="f-none s-low"
+              stroke-dasharray="6 5"/>
+        <text x="266" y="86" font-size="12" letter-spacing="1" class="f-low">VPS LINUX · SYSTEMD · UNE SEULE MACHINE</text>
+
+        <!-- navigateur -->
+        <rect x="20" y="130" width="170" height="86" rx="14" class="f-surf s-filet"/>
+        <text x="105" y="162" font-size="14" text-anchor="middle" class="t-titre f-texte">Navigateur · PWA</text>
+        <text x="105" y="184" font-size="12" text-anchor="middle" class="f-mid">service worker</text>
+        <text x="105" y="202" font-size="12" text-anchor="middle" class="f-mid">Web Push · iCal</text>
+
+        <line x1="192" y1="173" x2="276" y2="173" class="s-mid" stroke-width="1.5" marker-end="url(#fl-a)"/>
+        <text x="216" y="163" font-size="12" text-anchor="middle" class="f-mid">HTTPS</text>
+
+        <!-- proxy -->
+        <rect x="280" y="130" width="170" height="86" rx="14" class="f-surf s-filet"/>
+        <text x="365" y="162" font-size="13" text-anchor="middle" class="t-titre f-texte">Nginx Proxy Manager</text>
+        <text x="365" y="184" font-size="12" text-anchor="middle" class="f-mid">TLS · proxy inverse</text>
+        <text x="365" y="202" font-size="12" text-anchor="middle" class="f-mid">sert aussi le build</text>
+
+        <line x1="452" y1="173" x2="536" y2="173" class="s-mid" stroke-width="1.5" marker-end="url(#fl-a)"/>
+        <text x="494" y="163" font-size="12" text-anchor="middle" class="f-mid">vers :8000</text>
+
+        <!-- API -->
+        <rect x="540" y="130" width="150" height="86" rx="14" class="f-surf s-signal"/>
+        <text x="615" y="162" font-size="14" text-anchor="middle" class="t-titre f-texte">FastAPI</text>
+        <text x="615" y="184" font-size="12" text-anchor="middle" class="f-mid">Python 3.12</text>
+        <text x="615" y="202" font-size="12" text-anchor="middle" class="f-mid">8 domaines</text>
+
+        <!-- assistant -->
+        <rect x="540" y="264" width="150" height="60" rx="14" class="f-surf s-filet"/>
+        <text x="615" y="290" font-size="14" text-anchor="middle" class="t-titre f-texte">Assistant</text>
+        <text x="615" y="310" font-size="12" text-anchor="middle" class="f-mid">lit et écrit</text>
+        <line x1="615" y1="262" x2="615" y2="222" class="s-mid" stroke-width="1.5" marker-end="url(#fl-a)"/>
+        <text x="627" y="246" font-size="12" class="f-mid">mêmes services</text>
+
+        <!-- stockage -->
+        <line x1="692" y1="160" x2="786" y2="160" class="s-signal" stroke-width="1.5" marker-end="url(#fl-b)"/>
+        <text x="739" y="150" font-size="12" text-anchor="middle" class="f-signal">WebDAV</text>
+        <line x1="786" y1="192" x2="692" y2="192" class="s-signal" stroke-width="1.5" marker-end="url(#fl-b)"/>
+        <text x="739" y="210" font-size="12" text-anchor="middle" class="f-signal">ETag</text>
+
+        <rect x="790" y="130" width="170" height="86" rx="14" class="f-surf s-filet"/>
+        <text x="875" y="162" font-size="14" text-anchor="middle" class="t-titre f-texte">Nextcloud</text>
+        <text x="875" y="184" font-size="12" text-anchor="middle" class="f-mid">CSV + photos</text>
+        <text x="875" y="202" font-size="12" text-anchor="middle" class="f-mid">versionnement inclus</text>
+
+        <text x="875" y="250" font-size="12" text-anchor="middle" class="f-low">hors de l'application —</text>
+        <text x="875" y="268" font-size="12" text-anchor="middle" class="f-low">les données lui survivent</text>
+      </svg>
+    </div>
+    <p class="note-defile">← schéma large : faites-le défiler horizontalement si nécessaire</p>
+    <figcaption>
+      L'<code>ETag</code> qui revient de Nextcloud est ce que l'application renvoie ensuite
+      en <code>If-Match</code>. La garde de l'invariant n° 6 n'est pas une convention
+      interne : c'est le protocole du stockage, remonté jusqu'à l'écran.
+    </figcaption>
+  </figure>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">Déploiement</p>
+  <h2>Basculer une version, c'est déplacer un lien</h2>
+  <p class="chapeau">
+    Vider un dossier puis extraire par-dessus laisserait, si l'extraction échoue au milieu,
+    une application ni ancienne ni nouvelle. Comme il n'y a aucune annulation, la mise à
+    jour doit être <b>atomique et réversible par le geste inverse</b>.
+  </p>
+
+  <figure style="margin-top: var(--e6)">
+    <div class="defile">
+      <svg width="860" height="420" viewBox="0 0 860 420" role="img"
+           aria-label="Schéma de déploiement : trois releases datées, un lien current qui pointe vers la plus récente et qu'on redirige vers la précédente pour revenir en arrière, et un fichier shared point env situé en dehors des releases.">
+        <defs>
+          <marker id="fl-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="f-signal"/>
+          </marker>
+          <marker id="fl-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="f-recover"/>
+          </marker>
+          <marker id="fl-e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="f-low"/>
+          </marker>
+        </defs>
+
+        <text x="24" y="26" font-size="13" class="f-mid">/opt/metric/</text>
+
+        <rect x="24" y="40" width="392" height="248" rx="14" class="f-none s-filet" stroke-dasharray="6 5"/>
+        <text x="44" y="66" font-size="12" letter-spacing="1" class="f-low">RELEASES/</text>
+
+        <rect x="44" y="80" width="352" height="56" rx="8" class="f-surf s-signal"/>
+        <text x="64" y="106" font-size="13" class="f-texte">2026-08-13-a1b2c3d</text>
+        <text x="64" y="124" font-size="12" class="f-signal">servie en ce moment</text>
+
+        <rect x="44" y="156" width="352" height="56" rx="8" class="f-surf s-filet"/>
+        <text x="64" y="182" font-size="13" class="f-mid">2026-08-10-9f8e7d0</text>
+        <text x="64" y="200" font-size="12" class="f-low">la précédente</text>
+
+        <rect x="44" y="232" width="352" height="56" rx="8" class="f-surf s-filet"/>
+        <text x="64" y="258" font-size="13" class="f-mid">2026-08-04-4c2b1a7</text>
+        <text x="64" y="276" font-size="12" class="f-low">gardée — on en garde trois</text>
+
+        <!-- le lien current -->
+        <rect x="560" y="80" width="150" height="56" rx="8" class="f-surf2 s-filet"/>
+        <text x="635" y="114" font-size="14" text-anchor="middle" class="f-texte">current</text>
+        <text x="635" y="158" font-size="12" text-anchor="middle" class="f-low">un lien symbolique</text>
+
+        <line x1="556" y1="108" x2="404" y2="108" class="s-signal" stroke-width="1.8" marker-end="url(#fl-c)"/>
+        <text x="480" y="98" font-size="12" text-anchor="middle" class="f-signal">ln -sfn</text>
+
+        <!-- le geste inverse -->
+        <path d="M556 128 C500 132 490 184 404 184" class="f-none s-recover" stroke-width="1.8"
+              stroke-dasharray="6 4" marker-end="url(#fl-d)"/>
+        <text x="568" y="196" font-size="12" class="f-recover">retour arrière :</text>
+        <text x="568" y="216" font-size="12" class="f-recover">le même ln -sfn, vers la précédente</text>
+
+        <!-- les secrets, hors des releases -->
+        <line x1="220" y1="292" x2="220" y2="320" class="s-low" stroke-width="1.5"
+              stroke-dasharray="4 3" marker-end="url(#fl-e)"/>
+        <rect x="24" y="324" width="392" height="64" rx="8" class="f-surf s-filet"/>
+        <text x="44" y="350" font-size="13" class="f-texte">shared/.env</text>
+        <text x="44" y="370" font-size="12" class="f-low">jamais dans ce qu'on remplace</text>
+
+        <text x="440" y="350" font-size="12" class="f-mid">chaque release y pointe par un lien —</text>
+        <text x="440" y="370" font-size="12" class="f-mid">les secrets ne sont donc jamais dans ce qu'on peut perdre.</text>
+      </svg>
+    </div>
+    <p class="note-defile">← schéma large : faites-le défiler horizontalement si nécessaire</p>
+    <figcaption>
+      <b>Le trait plein est la mise à jour, le pointillé est le retour arrière</b> — et c'est
+      la même commande, vers une autre cible. Trois releases conservées : assez pour reculer
+      de deux crans, pas assez pour remplir le disque.
+    </figcaption>
+  </figure>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">La charte</p>
+  <h2>Quatre signaux, deux thèmes, une échelle</h2>
+  <p class="chapeau">
+    Aucune couleur n'est écrite en dur, nulle part : tout passe par des variables, et une
+    couleur se change par paires. Les quatre signaux ne sont pas décoratifs — chacun porte
+    un sens, et l'employer hors de ce sens est un défaut au même titre qu'un mauvais calcul.
+  </p>
+
+  <div class="grille grille-4" style="margin-top: var(--e6)">
+    <div class="carte signal-carte">
+      <h3>Signal</h3>
+      <p class="role">Cyan ardoise. La mesure, le neutre — c'est l'accent par défaut.</p>
+      <div class="paire">
+        <div class="echantillon ech-sombre">
+          <span class="nom">SOMBRE</span>
+          <span class="pastille p-d-signal"></span>
+          <span class="hex">#7fa8b4</span>
+        </div>
+        <div class="echantillon ech-clair">
+          <span class="nom">CLAIR</span>
+          <span class="pastille p-c-signal"></span>
+          <span class="hex">#2b6b7b</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="carte signal-carte">
+      <h3>Effort</h3>
+      <p class="role">Sauge. L'activité, la série tenue, la régularité.</p>
+      <div class="paire">
+        <div class="echantillon ech-sombre">
+          <span class="nom">SOMBRE</span>
+          <span class="pastille p-d-effort"></span>
+          <span class="hex">#8aa37b</span>
+        </div>
+        <div class="echantillon ech-clair">
+          <span class="nom">CLAIR</span>
+          <span class="pastille p-c-effort"></span>
+          <span class="hex">#4a6b38</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="carte signal-carte">
+      <h3>Load</h3>
+      <p class="role">Argile. La charge, le seuil approché — et ce qui n'est pas encore acquis.</p>
+      <div class="paire">
+        <div class="echantillon ech-sombre">
+          <span class="nom">SOMBRE</span>
+          <span class="pastille p-d-load"></span>
+          <span class="hex">#c39b6e</span>
+        </div>
+        <div class="echantillon ech-clair">
+          <span class="nom">CLAIR</span>
+          <span class="pastille p-c-load"></span>
+          <span class="hex">#8a5a1f</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="carte signal-carte">
+      <h3>Recover</h3>
+      <p class="role">Mauve. Le repos, l'alerte, la dette — et l'action qui détruit.</p>
+      <div class="paire">
+        <div class="echantillon ech-sombre">
+          <span class="nom">SOMBRE</span>
+          <span class="pastille p-d-recover"></span>
+          <span class="hex">#a9748a</span>
+        </div>
+        <div class="echantillon ech-clair">
+          <span class="nom">CLAIR</span>
+          <span class="pastille p-c-recover"></span>
+          <span class="hex">#8c3f5b</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="font-size:20px; margin-top: var(--e7); margin-bottom: var(--e4)">Fonds, filets, textes</h3>
+  <div class="defile">
+    <table class="tbl-surfaces">
+      <thead>
+        <tr><th>Rôle</th><th>Sombre</th><th>Clair</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Fond</td><td class="val"><span class="puce pd-fond"></span>#0b0f16</td><td class="val"><span class="puce pc-fond"></span>#f5f7f9</td></tr>
+        <tr><td>Surface</td><td class="val"><span class="puce pd-surface"></span>#131a24</td><td class="val"><span class="puce pc-surface"></span>#ffffff</td></tr>
+        <tr><td>Surface secondaire</td><td class="val"><span class="puce pd-surface2"></span>#18212d</td><td class="val"><span class="puce pc-surface2"></span>#e6ebf1</td></tr>
+        <tr><td>Filets</td><td class="val"><span class="puce pd-filet"></span>#1f2a38</td><td class="val"><span class="puce pc-filet"></span>#cfd8e1</td></tr>
+        <tr><td>Texte</td><td class="val"><span class="puce pd-texte"></span>#e3e8ee</td><td class="val"><span class="puce pc-texte"></span>#131b24</td></tr>
+        <tr><td>Texte moyen</td><td class="val"><span class="puce pd-mid"></span>#97a3b0</td><td class="val"><span class="puce pc-mid"></span>#4c5a68</td></tr>
+        <tr><td>Texte discret</td><td class="val"><span class="puce pd-low"></span>#5c6874</td><td class="val"><span class="puce pc-low"></span>#5f6d7a</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grille" style="margin-top: var(--e6); align-items: start">
+    <div class="carte">
+      <p class="oeil" style="margin-bottom: var(--e4)">L'échelle d'espacement — la seule autorisée</p>
+      <div class="echelle">
+        <div class="pas"><span class="barre" style="height:4px"></span><span class="etiq">4</span></div>
+        <div class="pas"><span class="barre" style="height:6px"></span><span class="etiq">6</span></div>
+        <div class="pas"><span class="barre" style="height:10px"></span><span class="etiq">10</span></div>
+        <div class="pas"><span class="barre" style="height:14px"></span><span class="etiq">14</span></div>
+        <div class="pas"><span class="barre" style="height:20px"></span><span class="etiq">20</span></div>
+        <div class="pas"><span class="barre" style="height:26px"></span><span class="etiq">26</span></div>
+        <div class="pas"><span class="barre" style="height:36px"></span><span class="etiq">36</span></div>
+        <div class="pas"><span class="barre" style="height:52px"></span><span class="etiq">52</span></div>
+      </div>
+      <p style="font-size:15px; color:var(--texte-moyen); margin-top: var(--e5)">
+        Huit pas, à l'échelle. Un <code>margin-top: 14px</code> écrit à la main dans un écran
+        est un défaut — il en reste trois dans le dépôt, et ils sont listés plus bas.
+      </p>
+    </div>
+
+    <div class="carte">
+      <p class="oeil" style="margin-bottom: var(--e4)">Typographie</p>
+      <ul class="liste-filet">
+        <li><b>Space Grotesk</b> en titrage, <b>JetBrains Mono</b> pour tout ce qui est
+          chiffre ou donnée : une mesure ne doit jamais changer de largeur en changeant
+          de valeur.</li>
+        <li>Cette page ne charge <b>aucune police distante</b> — elle n'émet aucune requête
+          réseau du tout. Elle déclare ces deux familles avec un repli
+          <code>system-ui</code> et <code>ui-monospace</code>, et affiche donc ce que votre
+          système propose.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 style="font-size:20px; margin-top: var(--e7); margin-bottom: var(--e4)">Les signaux au travail</h3>
+  <figure>
+    <div class="defile">
+      <svg width="700" height="260" viewBox="0 0 700 260" role="img"
+           aria-label="Courbe de poids d'illustration : douze relevés hebdomadaires descendant d'environ 80,9 à 78,4 kilogrammes. Valeurs inventées pour la démonstration.">
+        <text x="70" y="20" font-size="12" letter-spacing="1" class="f-low">POIDS — VALEURS D'ILLUSTRATION, PAS DES DONNÉES RÉELLES</text>
+
+        <line x1="70" y1="40"  x2="660" y2="40"  class="s-filet"/>
+        <line x1="70" y1="97"  x2="660" y2="97"  class="s-filet"/>
+        <line x1="70" y1="154" x2="660" y2="154" class="s-filet"/>
+        <line x1="70" y1="200" x2="660" y2="200" class="s-filet"/>
+        <text x="60" y="44"  font-size="12" text-anchor="end" class="f-low">81,0</text>
+        <text x="60" y="101" font-size="12" text-anchor="end" class="f-low">80,0</text>
+        <text x="60" y="158" font-size="12" text-anchor="end" class="f-low">79,0</text>
+
+        <polygon class="tint-signal"
+          points="70,46 124,63 177,57 231,86 285,97 338,109 392,103 445,131 499,149 553,160 606,177 660,189 660,200 70,200"/>
+        <polyline class="f-none s-signal" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"
+          points="70,46 124,63 177,57 231,86 285,97 338,109 392,103 445,131 499,149 553,160 606,177 660,189"/>
+        <circle cx="660" cy="189" r="4.5" class="f-signal"/>
+        <text x="650" y="164" font-size="12" text-anchor="end" class="f-signal">78,4 kg</text>
+
+        <text x="70" y="224"  font-size="12" class="f-low">il y a 12 semaines</text>
+        <text x="660" y="224" font-size="12" text-anchor="end" class="f-low">aujourd'hui</text>
+      </svg>
+    </div>
+    <figcaption>
+      Une courbe de poids en <b>signal</b>, parce qu'un poids est une mesure neutre — pas
+      une performance. Les valeurs sont inventées pour la démonstration ; l'application,
+      elle, n'en dessinerait aucune sans relevé, et afficherait un tiret.
+    </figcaption>
+  </figure>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">Vérifier</p>
+  <h2>Ce que la batterie trouve, et ce qu'elle ne trouve pas</h2>
+
+  <div class="grille" style="margin-top: var(--e6); align-items: start">
+    <div class="carte">
+      <p class="oeil" style="margin-bottom: var(--e4)">Automatisé, vert avant chaque commit</p>
+      <table>
+        <tbody>
+          <tr><td>Tests backend</td><td class="val">1 244</td></tr>
+          <tr><td>Tests d'écran</td><td class="val">385</td></tr>
+          <tr><td>Python</td><td class="val">ruff · mypy</td></tr>
+          <tr><td>TypeScript</td><td class="val">eslint · tsc</td></tr>
+          <tr><td>Format</td><td class="val">ruff format · prettier</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="carte">
+      <p class="oeil" style="margin-bottom: var(--e4)">Ce que ça ne trouve pas</p>
+      <p style="font-size:15px; color:var(--texte-moyen)">
+        Un test vérifie ce qu'on a pensé à vérifier. Sur les derniers lots, la moitié des
+        défauts sont sortis en <b style="color:var(--texte)">regardant les captures</b>, et
+        aucun de la batterie : douze écrans mesurés à zéro défaut, et six défauts visibles
+        à l'œil dans les mêmes images.
+      </p>
+      <p style="font-size:15px; color:var(--texte-moyen); margin-top: var(--e4)">
+        D'où deux audits pilotés en CDP, sans aucune bibliothèque : l'un mesure toutes les
+        cibles écran par écran, dans les deux thèmes ; l'autre ouvre les surfaces qui
+        n'existent qu'<i>après</i> un appui, à 402, 390 et 360 px. C'est le second qui a
+        sorti les six poignées restées à 32 px pendant que le premier affichait
+        <code>0 cible &lt; 44 px</code>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="enveloppe">
+  <p class="oeil">Ce qui reste ouvert</p>
+  <h2>Les défauts connus, nommés</h2>
+  <p class="chapeau">
+    Un défaut trouvé et laissé se nomme, avec sa raison. Élargir le périmètre sans le dire
+    est pire que le laisser.
+  </p>
+  <ul class="liste-filet" style="margin-top: var(--e5)">
+    <li><b>Aucun écran n'a jamais été touché sur un vrai téléphone.</b> L'émulation ne
+      reproduit ni le pouce, ni le clavier système, ni la latence. C'est la limite la plus
+      sérieuse de la liste.</li>
+    <li><b>L'invariant n° 1 n'est pas tenu partout.</b> Un écran somme encore des valeurs
+      côté client, et deux graphiques y dérivent leur ratio d'un maximum calculé sur place.</li>
+    <li><b>Trois espacements écrits à la main</b> dans un écran de réglages, hors de
+      l'échelle.</li>
+    <li><b>Deux écrans dépassent 850 lignes</b> et attendent d'être découpés par section.</li>
+  </ul>
+</section>
+
+<footer class="enveloppe">
+  <p>
+    <b style="color:var(--texte)">Metric</b> est une application personnelle. Il n'y a rien
+    à installer, rien à essayer, et personne à convaincre : un seul utilisateur, ses vraies
+    données de santé, et un dépôt entièrement en français — le code, les commentaires, les
+    messages d'erreur et les commits.
+  </p>
+  <p>
+    Cette page est un fichier HTML unique. Aucune requête réseau, aucune bibliothèque,
+    aucun script : tous les écrans, schémas et graphiques ci-dessus sont du SVG écrit à
+    la main, et suivent le thème de votre système.
+  </p>
+</footer>
+
+</body>
+</html>
