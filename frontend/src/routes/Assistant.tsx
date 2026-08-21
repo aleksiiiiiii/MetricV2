@@ -679,27 +679,39 @@ export function Assistant() {
    * tombe après avoir parlé — le seul cas où le début affiché n'aura pas de suite.
    */
   const [draft, setDraft] = useState('');
-  const [threadId, setThreadId] = useState<string | null>(null);
   /**
-   * Les deux feuilles s'ouvrent aussi **par l'adresse** — `?ouvre=memoire`.
+   * Les deux feuilles s'ouvrent **par l'adresse** — `?ouvre=memoire` — et un fil s'ouvre
+   * de même — `?fil=<identifiant>`.
    *
-   * Le tableau de bord y mène directement, et une feuille qu'on atteint depuis un autre
+   * Le tableau de bord y mène directement, et une surface qu'on atteint depuis un autre
    * écran a besoin d'être adressable : sans cela, le lien ouvrirait la conversation et
    * l'utilisateur aurait un appui de plus à faire, sans savoir lequel.
    *
-   * Le paramètre est **retiré à la fermeture** : sans quoi le bouton système « précédent »
+   * **`?fil` est ce qui fait tenir la lecture du jour.** La carte d'accueil ouvre un fil
+   * dont le premier message est celui de l'assistant, et l'écran doit arriver *dedans* :
+   * poser le texte dans le champ de saisie ferait répondre le modèle à une phrase qu'il
+   * ne se souviendrait pas d'avoir écrite, puisque `_history` ne la porterait pas.
+   *
+   * `?ouvre` est **retiré à la fermeture** : sans quoi le bouton système « précédent »
    * rouvrirait la feuille qu'on vient de refermer, ce qui est le piège classique d'un
    * état d'interface porté par l'URL.
+   *
+   * `?fil` reste, lui, **tant qu'on est dans ce fil-là** : ce n'est pas un état
+   * d'interface mais une adresse, et recharger la page doit ramener où l'on était. Il
+   * n'est retiré qu'en ouvrant un autre fil, moment où il annoncerait autre chose que ce
+   * qu'on lit. `replace` évite d'ajouter une entrée d'historique dans les deux cas.
    */
   const [params, setParams] = useSearchParams();
   const asked = params.get('ouvre');
+  const [threadId, setThreadId] = useState<string | null>(params.get('fil'));
   const [threadsOpen, setThreadsOpen] = useState(asked === 'discussions');
   const [memoryOpen, setMemoryOpen] = useState(asked === 'memoire');
 
   function forget(): void {
-    if (!params.has('ouvre')) return;
+    if (!params.has('ouvre') && !params.has('fil')) return;
     const next = new URLSearchParams(params);
     next.delete('ouvre');
+    next.delete('fil');
     setParams(next, { replace: true });
   }
 
@@ -1101,6 +1113,8 @@ export function Assistant() {
           setThreadId(id);
           setExchanges([]);
           following.current = true;
+          // L'adresse cesse d'annoncer le fil qu'on vient de quitter.
+          forget();
         }}
       />
 

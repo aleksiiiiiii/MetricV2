@@ -32,6 +32,13 @@ GOALS = "goals/goals.csv"
 WEEKLY_INSIGHTS = "insights/weekly.csv"
 MEMORY = "insights/memory.csv"
 
+#: La lecture du jour, une ligne par journée (`brief/`).
+#:
+#: Rangé avec les bilans et le carnet plutôt qu'avec les fils de discussion, parce que
+#: c'est ce qu'il est : une lecture datée des chiffres, du même genre que le bilan
+#: hebdomadaire. Le fil qu'il sème n'est qu'une conséquence, et il vit dans son fichier.
+BRIEF = "insights/brief.csv"
+
 # Notifications push (`NOT-01`, `NOT-02`).
 #
 # `sent.csv` est la **mémoire de l'ordonnanceur**, et c'est un fichier plutôt qu'une

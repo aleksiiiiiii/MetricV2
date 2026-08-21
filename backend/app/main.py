@@ -32,6 +32,7 @@ from app.core.security import PasswordChecker, TokenIssuer
 from app.core.throttle import LoginThrottle
 from app.domains.ai.service import AiProvider
 from app.domains.api import protected_router, public_router
+from app.domains.brief.scheduler import BriefScheduler
 from app.domains.heatmap.cache import GridCache
 from app.domains.notifications.provider import PushProvider
 from app.domains.planning import calendar_router
@@ -80,6 +81,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         push = PushProvider(settings)
         await push.start(provider)
 
+        # La lecture du jour, et sa passe horaire.
+        #
+        # **Deuxième tâche de fond du projet, et elle ne dépend pas de la première.**
+        # `ReminderScheduler` ne démarre qu'avec une paire VAPID — correct pour lui, il
+        # n'aurait personne à qui envoyer. Celle-ci s'affiche sur une carte : la lier au
+        # réglage des notifications ferait dépendre un écran d'une clé qui n'a rien à y
+        # faire. Sans clé OpenRouter ou sans stockage, rien ne démarre et rien n'est
+        # bloqué — la carte porte alors son bouton, qui écrit la même ligne (`IA-07`).
+        briefs: BriefScheduler | None = None
+        if ai.enabled and settings.storage_configured:
+            briefs = BriefScheduler(provider.store, ai.service)
+            briefs.start()
+
         app.state.storage = provider
         app.state.ai = ai
         app.state.push = push
@@ -93,8 +107,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
-            # L'ordonnanceur en premier : il lit le stockage à chaque passe, et l'arrêter
-            # après lui le ferait échouer sur un client déjà refermé.
+            # Les ordonnanceurs en premier : ils lisent le stockage à chaque passe, et
+            # les arrêter après lui les ferait échouer sur un client déjà refermé.
+            if briefs is not None:
+                await briefs.stop()
             await push.stop()
             await ai.stop()
             await provider.stop()

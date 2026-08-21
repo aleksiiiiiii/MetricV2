@@ -472,6 +472,33 @@ class AssistantService:
             )
         raise StorageNotFoundError("Cette discussion n'existe pas.")
 
+    async def seed_thread(
+        self,
+        *,
+        title: str,
+        message: str,
+        context_lines: list[str],
+        moment: datetime | None = None,
+    ) -> str:
+        """Ouvre un fil dont le **premier message est de l'assistant**.
+
+        C'est le seul endroit du projet où une discussion commence par une réponse plutôt
+        que par une question, et c'est délibéré : la lecture du jour est un message que
+        l'assistant a écrit, et « répondre à ce message-là » n'a de sens que si le message
+        est *dans* le fil. Le poser plutôt dans le champ de saisie de l'utilisateur ferait
+        parler le modèle à un texte qu'il ne se souvient pas d'avoir écrit — `_history` ne
+        le porterait pas, et la réponse s'en ressentirait dès le premier tour.
+
+        Le condensé accompagne le message, comme pour toute réponse (`IA-09`) : c'est
+        celui sur lequel la lecture a été écrite, et il se relit trois semaines plus tard.
+        """
+        instant = moment or now_local()
+        thread_id = await self._open_thread(title, moment=instant)
+        await self._append_messages(
+            thread_id, [("assistant", message, context_lines)], moment=instant
+        )
+        return thread_id
+
     async def _open_thread(self, title: str, *, moment: datetime) -> str:
         """Ouvre un fil et rend son identifiant."""
         thread_id = new_id()

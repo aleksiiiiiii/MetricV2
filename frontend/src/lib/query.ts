@@ -89,6 +89,11 @@ export const keys = {
      *  croisée avec `settings` à l'écriture — les deux se partagent un jeton de fichier. */
     profile: () => ['assistant', 'profile'] as const,
   },
+  brief: {
+    all: () => ['brief'] as const,
+    /** La lecture du jour. Une seule par journée, et le serveur décide laquelle. */
+    today: () => ['brief', 'today'] as const,
+  },
   goals: {
     all: () => ['goals'] as const,
     active: () => ['goals', 'active'] as const,
