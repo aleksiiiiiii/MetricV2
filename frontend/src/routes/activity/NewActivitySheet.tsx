@@ -887,7 +887,9 @@ function AppleStep({
   });
 
   const read = useMutation({
-    mutationFn: (screenshot: File) => importsApi.analyze(screenshot),
+    // Une seule capture ici : cette étape lit un résumé pour pré-remplir une saisie, et
+    // n'a pas de tableau de paliers à recoller. L'import de `/activite` en accepte deux.
+    mutationFn: (screenshot: File) => importsApi.analyze([screenshot]),
     onSuccess: onRead,
     onError: (caught: unknown) => {
       notify(caught instanceof ApiError ? caught.message : 'Lecture impossible.', 'recover');

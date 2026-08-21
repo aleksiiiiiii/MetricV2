@@ -22,6 +22,63 @@ export interface Run {
   cadence_spm: number | null;
   note: string | null;
   source: string;
+  /** Identifiant stable, celui auquel les paliers se rattachent. Vide sur une saisie. */
+  run_id: string;
+  /** Kilocalories **totales**, métabolisme de base compris — jamais « calories » tout court. */
+  total_calories: number | null;
+  /** `19:40:00`, telle que le serveur la rend. Situe la séance, ne la date pas. */
+  start_time: string | null;
+  end_time: string | null;
+  split_length_km: number | null;
+  /** Nombre de paliers relevés. Zéro sur une course saisie au clavier, pas une erreur. */
+  splits: number;
+}
+
+/**
+ * Un palier d'une course (`ACT-19`).
+ *
+ * `partial` est le champ qui porte tout : sur 8,14 km, la neuvième ligne fait `00:44` et
+ * n'est **pas** un kilomètre. Son allure est une extrapolation de l'application, pas une
+ * mesure — l'écran la grise, et n'en fait aucune moyenne.
+ */
+export interface RunSplit {
+  index: number;
+  duration_s: number;
+  /** La longueur réelle — 1 pour un plein, le reliquat pour un partiel. */
+  distance_km: number | null;
+  pace_min_km: number | null;
+  cadence_spm: number | null;
+  avg_hr: number | null;
+  elevation_m: number | null;
+  partial: boolean;
+  /** Part de la barre de cadence, servie par le serveur : aucun `Math.max` à l'écran. */
+  cadence_ratio: number | null;
+}
+
+export interface RunSplits {
+  splits: RunSplit[];
+  full_count: number;
+  partial_count: number;
+  /**
+   * Secondes par kilomètre, seconde moitié moins première.
+   *
+   * **Négatif veut dire plus rapide**, ce qui se lit à l'envers du signe : l'écran le dit
+   * en toutes lettres plutôt que de montrer un `-4,2` que rien n'explique.
+   */
+  drift_s_per_km: number | null;
+  first_half_pace_min_km: number | null;
+  second_half_pace_min_km: number | null;
+  fastest_index: number | null;
+  slowest_index: number | null;
+  /** Bornes de l'axe d'allure, **le plus lent d'abord** : l'axe arrive déjà retourné. */
+  pace_domain_min_km: [number, number] | null;
+  cadence_max_spm: number | null;
+}
+
+/** Une course et ses paliers. `run` à `null` = aucune course, ce qui n'est pas une panne. */
+export interface RunDetail {
+  run: Run | null;
+  splits: RunSplits;
 }
 
 export interface ExerciseEntry {
@@ -236,6 +293,8 @@ export const activityApi = {
   createRun: (payload: RunPayload) =>
     request<Run>('/api/activity/runs', { method: 'POST', body: payload }),
   readRun: (id: number) => request<Run>(`/api/activity/runs/${id}`),
+  latestRun: () => request<RunDetail>('/api/activity/runs/latest'),
+  runSplits: (id: number) => request<RunDetail>(`/api/activity/runs/${id}/splits`),
   updateRun: (id: number, token: string, payload: RunPayload) =>
     request<Run>(`/api/activity/runs/${id}`, {
       method: 'PATCH',

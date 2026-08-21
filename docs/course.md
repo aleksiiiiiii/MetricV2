@@ -207,3 +207,51 @@ et il ne revient pas ici.
 - **Pas de météo stockée.**
 - **Pas de rétro-remplissage** des courses déjà dans `runs.csv` : elles n'ont pas de
   paliers, et leur en fabriquer serait la pire des valeurs inventées.
+
+---
+
+## 6. Ce qui a été fait, et où cela s'écarte du plan
+
+Écrit **après** le lot, parce qu'un plan qui ne dit pas où il a été démenti ne sert plus à
+relire la décision.
+
+**La dérive vaut -4,2 s/km, pas ~8.** Le §4 la calculait sur deux paliers contre deux.
+Elle porte sur les **moitiés** des paliers pleins : 1 216 s contre 1 199 s sur quatre
+kilomètres chacune. Le palier du milieu est écarté quand le compte est impair — il
+appartiendrait autant à l'une qu'à l'autre —, et en dessous de quatre paliers pleins on
+rend `None` plutôt qu'une tendance qu'un seul kilomètre lent expliquerait.
+
+**Deux adresses et non une.** `/activite/course` ouvre la dernière course, comme prévu ;
+`/activite/course/:id` en ouvre une précise depuis l'historique. S'en tenir à la première
+aurait rendu les paliers de toutes les courses antérieures définitivement invisibles —
+une donnée écrite que rien n'affiche jamais.
+
+**Le drapeau `partial` ne vient pas du modèle.** Le §2 le lui demande, et la consigne
+continue de le faire : le lui faire nommer améliore sa lecture du reste. Mais celui qui
+compte se déduit des durées, côté serveur, par la médiane. Un test lui fait déclarer
+l'inverse de la vérité sur toute la ligne ; le bon reliquat sort quand même.
+
+**La courbe ne trace que les paliers pleins.** Le §4 ne tranchait pas. L'allure d'un
+reliquat de 44 secondes est une extrapolation : la poser sur la même courbe que huit
+mesures en ferait un point de mesure de plus. Le tableau la montre, grisée et marquée.
+Les barres de cadence, elles, comptent **tous** les paliers — 163 pas par minute sur
+44 secondes est une mesure aussi valable que sur cinq minutes.
+
+**Deux défauts trouvés en chemin**, tous deux dans `parsing.py` et tous deux invisibles
+jusqu'ici : aucun mois écrit en toutes lettres n'était lu — « August 21, 2026 » rendait
+une date vide —, et `5'02"/KM`, la forme réellement affichée, ne se lisait pas non plus.
+
+**Trois défauts trouvés en regardant la page**, aucun par la batterie :
+
+- la phrase des barres de cadence citait « seize pas par minute d'écart », l'amplitude de
+  la course de référence — un nombre écrit en dur dans une phrase est une valeur inventée
+  comme une autre ;
+- la tuile de dérive répétait son chiffre dans son propre détail ;
+- à 390 px, le triangle du palier le plus rapide passait à la ligne et rendait deux
+  rangées plus hautes que les sept autres.
+
+La colonne « Cadence » du tableau a été **retirée** : à 360 px elle se coupait au premier
+chiffre, et les barres juste au-dessus portent déjà la même information en entier.
+
+**Non vérifié à l'œil** : la grille d'aperçus de l'écran d'import à deux captures. Elle
+n'entre dans le DOM qu'après un choix de fichier, ce qu'aucune sonde du dépôt ne fait.

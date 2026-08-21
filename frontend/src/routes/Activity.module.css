@@ -496,6 +496,15 @@
 
 /* Une capture de téléphone est très haute : la borner évite qu'elle pousse le
    formulaire hors de l'écran, sur mobile où c'est justement le geste suivant. */
+/* Les aperçus, côte à côte dès qu'il y en a deux — le résumé et les paliers. En colonne
+   ils poussaient le bouton « Lire » à 440 px du haut, c'est-à-dire hors de l'écran sur un
+   téléphone : on ne doit pas avoir à défiler pour déclencher ce qu'on vient de préparer. */
+.shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--s2);
+}
+
 .shot {
   width: 100%;
   max-height: 220px;
@@ -654,4 +663,33 @@
   .noteBody {
     flex: 1;
   }
+}
+
+/* ── La page Course (`ACT-19`) ────────────────────────────────────────────────── */
+
+/* L'allure d'un palier partiel. L'application l'extrapole d'une fraction de kilomètre :
+   elle s'affiche, parce qu'elle est sur la capture, mais elle ne se lit pas comme les
+   huit mesures au-dessus d'elle. La griser est ce qui dit la différence sans une
+   cinquième façon de marquer une valeur proposée — ce n'en est pas une : c'est un relevé
+   passé, simplement moins sûr que ses voisins. */
+.extrapolated {
+  color: var(--ink-low);
+}
+
+/* La cellule d'allure du tableau des paliers : la valeur et sa marque, insécables. Le
+   triangle passait à la ligne à 390 px, ce qui rendait deux rangées plus hautes que les
+   autres — mesuré en capture, invisible à la batterie de tests. */
+.paceCell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* Le plus rapide et le plus lent des paliers pleins. Un caractère et non une couleur :
+   la colonne porte déjà de la couleur sur le reliquat, et deux signaux colorés dans la
+   même cellule ne se distinguent plus. */
+.mark {
+  color: var(--ink-low);
+  font-size: var(--t-meta);
 }

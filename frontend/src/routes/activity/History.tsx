@@ -81,6 +81,16 @@ function HistoryRow({
               ouvrir
             </Chip>
           )}
+          {/* « détail » et non « ouvrir » : une course mène ailleurs qu'une séance — à sa
+              page de paliers, pas au journal de la ligne. Le mot dit où l'on va. */}
+          {row.kind === 'run' && (
+            <Chip
+              aria-label={`Voir le détail de la course du ${shortDate(row.date)}`}
+              onClick={onOpen}
+            >
+              détail
+            </Chip>
+          )}
           <Chip
             aria-label={`Corriger ${row.kind === 'run' ? 'la course' : 'la séance'} du ${shortDate(row.date)}`}
             onClick={onEdit}

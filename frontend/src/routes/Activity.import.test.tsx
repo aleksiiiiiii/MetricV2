@@ -55,6 +55,16 @@ const DRAFT = {
   avg_hr: 152,
   elevation_m: null,
   calories: 620,
+  // Le serveur rend toujours ces champs, y compris vides : une capture de résumé seul
+  // n'a pas de paliers, et « aucun palier » se dit par une liste vide, pas par une
+  // absence de champ.
+  total_calories: null,
+  start_time: null,
+  end_time: null,
+  split_length_km: null,
+  splits: [],
+  splits_trusted: true,
+  splits_doubts: [],
   missing: ['elevation_m'],
   duplicate: null,
 };

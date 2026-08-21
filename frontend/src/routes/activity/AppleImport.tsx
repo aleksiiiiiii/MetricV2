@@ -59,13 +59,18 @@ function numberText(value: number | null): string {
   return value === null ? '' : String(value).replace('.', ',');
 }
 
+/** Les paliers pleins — le reliquat de fin n'en est pas un, et ne se compte pas avec eux. */
+function fullSplits(draft: AppleDraft): number {
+  return draft.splits.filter((split) => !split.partial).length;
+}
+
 export function AppleImport({ today }: { today: string | undefined }) {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [preview, setPreview] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [draft, setDraft] = useState<AppleDraft | null>(null);
   const [fields, setFields] = useState<ImportFields>(EMPTY_IMPORT);
   // Ce qui vient de la capture et n'a pas encore été retouché.
@@ -79,25 +84,27 @@ export function AppleImport({ today }: { today: string | undefined }) {
     setError(null);
   }
 
-  function choose(chosen: File | null) {
-    setPreview((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return chosen ? URL.createObjectURL(chosen) : null;
+  function choose(chosen: File[]) {
+    setPreviews((current) => {
+      // Les anciennes URL sont révoquées **avant** d'en créer d'autres : sans cela,
+      // recommencer trois fois laisse trois images vivantes dans la mémoire de l'onglet.
+      for (const url of current) URL.revokeObjectURL(url);
+      return chosen.map((shot) => URL.createObjectURL(shot));
     });
-    setFile(chosen);
-    // Un brouillon appartient à la capture qui l'a produit.
+    setFiles(chosen);
+    // Un brouillon appartient aux captures qui l'ont produit.
     reset();
   }
 
   useEffect(() => {
-    if (preview === null) return;
+    if (previews.length === 0) return;
     return () => {
-      URL.revokeObjectURL(preview);
+      for (const url of previews) URL.revokeObjectURL(url);
     };
-  }, [preview]);
+  }, [previews]);
 
   const analyse = useMutation({
-    mutationFn: (screenshot: File) => importsApi.analyze(screenshot),
+    mutationFn: (screenshots: File[]) => importsApi.analyze(screenshots),
     onSuccess: (result) => {
       setDraft(result);
       setFields({
@@ -131,6 +138,21 @@ export function AppleImport({ today }: { today: string | undefined }) {
         avg_hr: fields.avg_hr || null,
         elevation_m: fields.elevation_m || null,
         calories: fields.calories || null,
+        // Ce que l'analyse a lu et qu'aucun champ ne montre : il traverse tel quel.
+        // Le retoucher au pouce donnerait à l'écran les moyens de fausser ce que le
+        // serveur vient de vérifier.
+        total_calories: draft?.total_calories ?? null,
+        start_time: draft?.start_time ?? null,
+        end_time: draft?.end_time ?? null,
+        split_length_km: draft?.split_length_km ?? null,
+        splits: (draft?.splits ?? []).map((split) => ({
+          index: split.index,
+          duration_s: split.duration_s,
+          pace_min_km: split.pace_min_km,
+          cadence_spm: split.cadence_spm,
+          avg_hr: split.avg_hr,
+          elevation_m: split.elevation_m,
+        })),
       }),
     onSuccess: (result) => {
       invalidate();
@@ -140,7 +162,7 @@ export function AppleImport({ today }: { today: string | undefined }) {
           : `Séance importée — ${duration(result.duration_min)}.`,
         'effort',
       );
-      choose(null);
+      choose([]);
       if (fileInput.current) fileInput.current.value = '';
     },
     onError: (caught: unknown) => {
@@ -176,28 +198,38 @@ export function AppleImport({ today }: { today: string | undefined }) {
           id="apple-screenshot"
           type="file"
           accept="image/jpeg,image/png,image/webp"
+          multiple
           className="sr-only"
           onChange={(event) => {
-            choose(event.target.files?.[0] ?? null);
+            choose(Array.from(event.target.files ?? []));
           }}
         />
-        {preview !== null ? (
-          <img className={styles.shot} src={preview} alt="Aperçu de la capture" />
+        {previews.length > 0 ? (
+          <div className={styles.shots}>
+            {previews.map((url, index) => (
+              <img
+                className={styles.shot}
+                src={url}
+                key={url}
+                alt={`Aperçu de la capture ${String(index + 1)}`}
+              />
+            ))}
+          </div>
         ) : (
           <label htmlFor="apple-screenshot" className={styles.drop}>
-            choisir une capture d&apos;écran
+            choisir une ou deux captures
           </label>
         )}
 
-        {file !== null && draft === null && (
+        {files.length > 0 && draft === null && (
           <Button
             variant="ghost"
             busy={analyse.isPending}
             onClick={() => {
-              analyse.mutate(file);
+              analyse.mutate(files);
             }}
           >
-            Lire la capture
+            {files.length > 1 ? `Lire les ${String(files.length)} captures` : 'Lire la capture'}
           </Button>
         )}
 
@@ -224,6 +256,28 @@ export function AppleImport({ today }: { today: string | undefined }) {
                 )}
               </p>
             </AiBlock>
+
+            {/* Les paliers ne se corrigent pas au champ près — on les valide en bloc ou
+                on les laisse. L'écran dit donc ce qu'ils sont, et surtout ce que la
+                relecture serveur en pense : une somme qui ne tombe pas les marque
+                douteux, elle ne les refuse pas. */}
+            {draft.splits.length > 0 && (
+              <p className={styles.duplicate} role="status">
+                {draft.splits_trusted ? (
+                  <>
+                    <Badge tone="effort">{fullSplits(draft)} paliers</Badge> relevés
+                    {draft.splits.length > fullSplits(draft) && ' et un reliquat de fin'}. La somme
+                    de leurs temps redonne la durée de la séance — ils seront enregistrés avec la
+                    course.
+                  </>
+                ) : (
+                  <>
+                    <Badge tone="load">paliers douteux</Badge> {draft.splits_doubts.join(' ; ')}.
+                    Ils seront enregistrés tels quels : compare à ta capture avant d&apos;importer.
+                  </>
+                )}
+              </p>
+            )}
 
             {draft.duplicate !== null && (
               <p className={styles.duplicate} role="status">

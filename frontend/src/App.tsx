@@ -4,6 +4,7 @@ import { RequireAuth } from '@/app/RequireAuth';
 import { Shell } from '@/app/Shell';
 import { Activity } from '@/routes/Activity';
 import { Catalogue } from '@/routes/activity/Catalogue';
+import { Run } from '@/routes/activity/Run';
 import { Stats } from '@/routes/activity/Stats';
 import { Assiduity } from '@/routes/Assiduity';
 import { Assistant } from '@/routes/Assistant';
@@ -51,6 +52,12 @@ export function App() {
             avec la séance ouverte au lieu de quitter l'application. */}
         <Route path="/activite/catalogue" element={<Catalogue />} />
         <Route path="/activite/statistiques" element={<Stats />} />
+        {/* Deux adresses, un seul écran. Sans paramètre, c'est la dernière course —
+            l'adresse que le plan nomme. Avec, celle qu'on ouvre depuis l'historique :
+            s'en tenir à la première aurait rendu les paliers de toutes les courses
+            précédentes invisibles, c'est-à-dire écrits pour rien. */}
+        <Route path="/activite/course" element={<Run />} />
+        <Route path="/activite/course/:id" element={<Run />} />
         <Route path="/planning" element={<Planning />} />
         <Route path="/objectif" element={<Goals />} />
         {/* Sans entrée de navigation : la barre demandait déjà 806 px pour 695

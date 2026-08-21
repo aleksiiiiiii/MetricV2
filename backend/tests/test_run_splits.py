@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import json
 from datetime import date
+from typing import Any
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -72,6 +73,18 @@ def model_payload(**overrides: object) -> dict[str, object]:
     return payload
 
 
+def splits_of(payload: dict[str, object]) -> list[dict[str, Any]]:
+    """Les paliers d'une réponse, typés.
+
+    Le scénario les remanie — en retire un, en double un, ment sur leur drapeau — et
+    `dict[str, object]` ne se laisse pas indexer. Un accesseur plutôt qu'un `type: ignore`
+    par cas : les trois disaient des choses différentes du même besoin.
+    """
+    found = payload["splits"]
+    assert isinstance(found, list)
+    return found
+
+
 def png() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (400, 900), "black").save(buffer, format="PNG")
@@ -100,7 +113,7 @@ def test_the_model_does_not_get_to_decide_which_split_is_partial() -> None:
     ligne, et la lecture rend malgré tout le bon reliquat.
     """
     lying = model_payload()
-    for position, split in enumerate(lying["splits"]):  # type: ignore[arg-type]
+    for position, split in enumerate(splits_of(lying)):
         split["partial"] = position != 8  # tout sauf le vrai reliquat
 
     draft = read_draft(lying, today=TODAY)
@@ -230,7 +243,7 @@ def test_two_coherent_captures_are_trusted() -> None:
 def test_a_sum_that_does_not_fall_marks_the_splits_doubtful() -> None:
     """Une capture manquante au milieu se voit sur la somme, jamais sur une ligne."""
     missing = model_payload()
-    missing["splits"] = missing["splits"][:5]  # type: ignore[index]
+    missing["splits"] = splits_of(missing)[:5]
 
     draft = read_draft(missing, today=TODAY)
 
@@ -243,7 +256,7 @@ def test_a_sum_that_does_not_fall_marks_the_splits_doubtful() -> None:
 def test_a_gap_in_the_numbering_is_noticed_even_when_the_model_denies_it() -> None:
     """La contiguïté se constate sur les index, elle ne se croit pas sur parole."""
     gapped = model_payload(splits_contiguous=True)
-    del gapped["splits"][3]  # type: ignore[index]
+    del splits_of(gapped)[3]
 
     draft = read_draft(gapped, today=TODAY)
 
@@ -253,7 +266,7 @@ def test_a_gap_in_the_numbering_is_noticed_even_when_the_model_denies_it() -> No
 def test_a_split_read_out_of_bounds_loses_its_field_not_the_run() -> None:
     """Une cadence de 1 852 est une mauvaise lecture, pas une raison de tout jeter."""
     absurd = model_payload()
-    absurd["splits"][2]["cadence_spm"] = "1852"  # type: ignore[index]
+    splits_of(absurd)[2]["cadence_spm"] = "1852"
 
     draft = read_draft(absurd, today=TODAY)
 
@@ -265,7 +278,7 @@ def test_a_split_read_out_of_bounds_loses_its_field_not_the_run() -> None:
 def test_a_split_without_a_readable_time_is_dropped_rather_than_filled() -> None:
     """C'est la durée qui porte tout : le reliquat s'y voit, la somme s'y contrôle."""
     broken = model_payload()
-    broken["splits"][4]["time"] = "—"  # type: ignore[index]
+    splits_of(broken)[4]["time"] = "—"
 
     draft = read_draft(broken, today=TODAY)
 
@@ -274,7 +287,7 @@ def test_a_split_without_a_readable_time_is_dropped_rather_than_filled() -> None
 
 def test_the_same_index_seen_on_two_overlapping_captures_is_kept_once() -> None:
     doubled = model_payload()
-    doubled["splits"] = [*doubled["splits"], doubled["splits"][0]]  # type: ignore[index]
+    doubled["splits"] = [*splits_of(doubled), splits_of(doubled)[0]]
 
     draft = read_draft(doubled, today=TODAY)
 

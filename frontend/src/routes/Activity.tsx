@@ -19,6 +19,7 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 
 import { LinkButton, PageHead, Rule } from '@/components/ui';
 import { activityApi, type ActivityItem } from '@/features/activity/api';
@@ -40,6 +41,7 @@ export function Activity() {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
   const ai = useAiStatus();
+  const navigate = useNavigate();
 
   const [picked, setPicked] = useState<Session | null>(null);
   const [sheet, setSheet] = useState<SheetTarget | null>(null);
@@ -156,6 +158,12 @@ export function Activity() {
         isPending={isPending}
         removing={remove.isPending}
         onOpen={(row) => {
+          // Une course n'a pas de journal à ouvrir en place : son détail est une page,
+          // avec ses paliers et sa dérive. Une séance, elle, se choisit ici même.
+          if (row.kind === 'run') {
+            void navigate(`/activite/course/${String(row.id)}`);
+            return;
+          }
           // Choisir, pas charger. Le journal relit la séance lui-même et affiche en
           // place ce que le serveur refuse.
           setPicked({ id: row.id, date: row.date, label: row.label });
