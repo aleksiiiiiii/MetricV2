@@ -5,7 +5,10 @@ assiduité, assistant IA. **FastAPI + CSV sur Nextcloud** d'un côté, **React +
 de l'autre. Un seul utilisateur, ses vraies données de santé, et **aucune annulation nulle
 part** — ce dernier point explique la moitié des règles qui suivent.
 
-Tout est en français : le code, les commentaires, les messages d'erreur, les commits.
+Tout le code est en anglais : les identifiants, les commentaires, les noms de fichiers.
+Les **messages d'erreur** et les **commits** restent en français — ils s'adressent à
+l'utilisateur et au relecteur, pas au compilateur. Le §2 et le §6 en portent la règle
+détaillée.
 
 ---
 
