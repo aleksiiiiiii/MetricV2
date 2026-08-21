@@ -224,7 +224,6 @@ function Graph({ shipped }: { shipped: SeriesView }) {
               unit: series.unit,
               format: (value) => num(value, 1),
             }}
-            labelEvery={Math.max(1, Math.ceil(series.points.length / 8))}
           />
           <div className={styles.seriesStats}>
             {/* Tous ces chiffres viennent du serveur : le client n'en dérive aucun. */}

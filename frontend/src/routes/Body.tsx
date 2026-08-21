@@ -453,7 +453,6 @@ export function Body() {
                 dashed: true,
               },
             ]}
-            labelEvery={Math.max(1, Math.ceil(series.length / 6))}
           />
         )}
       </Card>

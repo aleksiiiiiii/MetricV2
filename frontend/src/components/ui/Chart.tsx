@@ -30,6 +30,7 @@ import type { ReactNode } from 'react';
 import { cx } from '@/lib/cx';
 
 import type { Tone } from './primitives';
+import { axisLabels } from './chart-axis';
 import styles from './Chart.module.css';
 
 const TONE_VAR: Record<Tone, string> = {
@@ -93,7 +94,14 @@ export interface ChartProps {
   context?: Series | undefined;
   /** Bande inférieure, en barres. */
   band?: BandSeries | undefined;
-  /** Une étiquette d'axe sur `labelEvery` points, pour ne pas les entasser. */
+  /**
+   * **Plancher** du pas entre deux étiquettes d'axe, jamais un plafond.
+   *
+   * Par défaut `1` : le composant en dessine autant que la place le permet, et calcule
+   * lui-même le pas qui les empêche de se toucher. Ne le passer que pour en vouloir
+   * *moins* — un appelant ne peut pas en vouloir plus sans risquer le chevauchement,
+   * puisqu'il ne connaît ni la largeur d'une étiquette ni l'écart entre deux points.
+   */
   labelEvery?: number | undefined;
   note?: ReactNode | undefined;
 }
@@ -115,7 +123,7 @@ export function Chart({
   overlays = [],
   context,
   band,
-  labelEvery = 6,
+  labelEvery = 1,
   note,
 }: ChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -239,22 +247,23 @@ export function Chart({
             </g>
           ))}
 
-          {/* La première étiquette s'aligne par sa gauche et la dernière par sa droite :
-              centrées, elles débordaient d'un côté sur les graduations verticales et de
-              l'autre hors du cadre. Les autres restent centrées sur leur point. */}
-          {labels.map((label, index) =>
-            index % labelEvery === 0 ? (
-              <text
-                key={label}
-                x={x(index)}
-                y={BOTTOM + 24}
-                textAnchor={index === 0 ? 'start' : index === count - 1 ? 'end' : 'middle'}
-                className={styles.axis}
-              >
-                {label}
-              </text>
-            ) : null,
-          )}
+          {/* Quelles étiquettes, et par quel bord : `axisLabels` décide, parce qu'il est
+              le seul à connaître la géométrie. Les écrans passaient jusqu'ici un
+              `labelEvery` estimé sur le nombre de points, et « 28/05 » se peignait
+              par-dessus « 11/06 ». La première s'aligne par sa gauche et la dernière par
+              sa droite : centrées, elles débordaient d'un côté sur les graduations et de
+              l'autre hors du cadre. */}
+          {axisLabels(labels, count, x, labelEvery).map(({ index, anchor }) => (
+            <text
+              key={`${String(index)}-${labels[index] ?? ''}`}
+              x={x(index)}
+              y={BOTTOM + 24}
+              textAnchor={anchor}
+              className={styles.axis}
+            >
+              {labels[index]}
+            </text>
+          ))}
 
           <polygon
             points={`${primaryPoints} ${RIGHT},${BOTTOM} ${LEFT},${BOTTOM}`}
