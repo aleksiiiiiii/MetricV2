@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING
 
 from app.core.dates import today_local, week_start
 from app.core.exceptions import AiUnreadableError, ValidationFailedError
-from app.domains.aggregates.service import METRICS
+from app.domains.aggregates.metrics import METRICS
 from app.domains.ai.service import AiService
 from app.domains.app_settings.service import SettingsService
 from app.domains.goals import weekly

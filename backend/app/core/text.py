@@ -1,4 +1,4 @@
-"""Comparaison de noms écrits à la main.
+"""Texte français partagé : comparaison de noms, et écriture des nombres.
 
 Un seul repli, dans un seul module, parce que **deux replis donneraient deux verdicts pour
 la même paire de noms** — et que l'un d'eux décide de fusionner deux exercices dans
@@ -33,3 +33,20 @@ def fold(value: str) -> str:
     without_accents = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
     keepable = "".join(c for c in without_accents.casefold() if c.isalnum() or c.isspace())
     return " ".join(keepable.split())
+
+
+def fr(value: float) -> str:
+    """Un nombre tel qu'il se lit en français, sans décimale inutile.
+
+    Une décimale sous cent, aucune au-delà : « 2,4 séances » et « 78,5 kg » ont besoin de
+    la leur, « 1 857,1 ml » n'a besoin de rien. La virgule est décimale — ces chaînes
+    s'affichent telles quelles (`API-07`), elles ne sont pas un format d'échange.
+
+    **Il vit ici et non dans `goals/progress.py`, où il est né**, pour la raison écrite en
+    tête de ce module : les agrégats en ont besoin pour dire ce qu'il reste à boire, et
+    `goals` importe déjà `aggregates` pour le registre des métriques. L'y laisser aurait
+    posé un cycle, ou une seconde virgule décimale quelque part.
+    """
+    rounded = round(value, 0 if abs(value) >= 100 else 1)
+    text = f"{rounded:g}"
+    return text.replace(".", ",")

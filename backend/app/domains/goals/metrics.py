@@ -1,7 +1,7 @@
 """Les cinq métriques sur lesquelles un objectif peut porter (`GOAL-04`).
 
 **Ce module ne définit aucune métrique.** Il en désigne cinq parmi celles du registre
-`app.domains.aggregates.service.METRICS`, et leur ajoute la seule chose que le registre
+`app.domains.aggregates.metrics.METRICS`, et leur ajoute la seule chose que le registre
 n'a pas à savoir : comment réduire une série en une valeur *courante*, et entre quelles
 bornes une cible reste plausible.
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.domains.aggregates.service import METRICS
+from app.domains.aggregates.metrics import METRICS
 from app.domains.goals.progress import Reduction
 
 

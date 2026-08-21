@@ -41,6 +41,11 @@ from typing import Literal
 
 from app.core.dates import week_start
 
+# `fr` est né ici et vit désormais dans `core/text.py` — les agrégats en ont besoin, et
+# `goals` importe déjà `aggregates`. Réexporté sous son nom : c'est l'adresse que trois
+# modules connaissent, et la déplacer n'apporterait rien à personne.
+from app.core.text import fr
+
 #: Comment une série devient une valeur courante. Le type vit ici et non dans
 #: `metrics.py` pour que ce module ne dépende de rien d'autre que du découpage du temps :
 #: importer le registre des métriques pour une annotation lui coûterait sa pureté.
@@ -140,18 +145,6 @@ def ratio(baseline: float | None, current: float | None, target: float) -> float
 
 
 # ── Mise en mots ──────────────────────────────────────
-
-
-def fr(value: float) -> str:
-    """Un nombre tel qu'il se lit en français, sans décimale inutile.
-
-    Une décimale sous cent, aucune au-delà : « 2,4 séances » et « 78,5 kg » ont besoin de
-    la leur, « 1 857,1 ml » n'a besoin de rien. La virgule est décimale — ces chaînes
-    s'affichent telles quelles (`API-07`), elles ne sont pas un format d'échange.
-    """
-    rounded = round(value, 0 if abs(value) >= 100 else 1)
-    text = f"{rounded:g}"
-    return text.replace(".", ",")
 
 
 def summary(current: float | None, target: float, unit: str) -> str:
