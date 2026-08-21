@@ -172,9 +172,12 @@ describe('tableau de bord', () => {
 
     await screen.findByText('Sept derniers jours');
 
-    expect(screen.getByText('23/07')).toBeInTheDocument();
-    expect(screen.getByTitle('aucune donnée')).toBeInTheDocument();
-    expect(screen.getByTitle('poids, repas, hydratation')).toBeInTheDocument();
+    // Le quantième seul : sous un titre « Sept derniers jours », le mois est le même six
+    // fois sur sept et n'apprend rien — et `26/07` en chasse fixe demandait 36 px, soit
+    // sept cases de 42 px pour 294 disponibles à 360. L'infobulle garde la date entière.
+    expect(screen.getByText('23')).toBeInTheDocument();
+    expect(screen.getByTitle('23/07 — aucune donnée')).toBeInTheDocument();
+    expect(screen.getByTitle('27/07 — poids, repas, hydratation')).toBeInTheDocument();
   });
 
   it('signale un dépassement du plafond de sucres', async () => {

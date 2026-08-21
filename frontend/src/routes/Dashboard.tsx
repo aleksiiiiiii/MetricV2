@@ -25,6 +25,7 @@ import {
 } from '@/features/aggregates/api';
 import {
   dayMonth,
+  dayOfMonth,
   delta,
   hoursMinutes,
   integer,
@@ -278,13 +279,13 @@ function Assiduity({ streak }: { streak: Streak }) {
           <div
             key={day.date}
             className={day.active ? styles.dayOn : styles.dayOff}
-            title={
+            title={`${dayMonth(day.date)} — ${
               day.sources.length > 0
                 ? day.sources.map((source) => SOURCE_LABELS[source] ?? source).join(', ')
                 : 'aucune donnée'
-            }
+            }`}
           >
-            <span className={styles.dayLabel}>{dayMonth(day.date)}</span>
+            <span className={styles.dayLabel}>{dayOfMonth(day.date)}</span>
             <span className={styles.daySources}>
               {day.active ? integer(day.sources.length) : '—'}
             </span>

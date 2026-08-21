@@ -104,6 +104,19 @@ export function dayMonth(value: Date | string): string {
   return asDate(value).toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit' });
 }
 
+/**
+ * `26`, le quantième seul.
+ *
+ * Pour une bande de sept jours consécutifs, où le mois est le même six fois sur sept et
+ * n'apprend rien. Ce n'est pas qu'une question de goût : `26/07` demande 36 px en chasse
+ * fixe, et sept cases de 42 px réclament **330 px là où un téléphone de 360 en offre
+ * 294** — la page se mettait à défiler horizontalement. Mesuré, à la largeur que l'audit
+ * ne regarde pas.
+ */
+export function dayOfMonth(value: Date | string): string {
+  return asDate(value).toLocaleDateString(LOCALE, { day: '2-digit' });
+}
+
 /** `26/07/2026`. */
 export function shortDate(value: Date | string): string {
   return asDate(value).toLocaleDateString(LOCALE, {
