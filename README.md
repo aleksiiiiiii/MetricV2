@@ -10,10 +10,10 @@ Il n'y a pas de base de données.
 
 | Fichier | Contenu |
 |---|---|
-| [backlogV2.md](backlogV2.md) | Backlog fonctionnel complet (13 sections) |
-| [heat_backlog.md](heat_backlog.md) | Spec `HEAT` v2 — moteur d'assiduité multi-pistes |
-| [GuidelinesUI.html](GuidelinesUI.html) | Charte graphique, tokens et composants |
-| [ROADMAP.md](ROADMAP.md) | Lots de livraison, versioning, décisions arrêtées |
+| [docs/backlogV2.md](docs/backlogV2.md) | Backlog fonctionnel complet (13 sections) |
+| [docs/heat_backlog.md](docs/heat_backlog.md) | Spec `HEAT` v2 — moteur d'assiduité multi-pistes |
+| [docs/GuidelinesUI.html](docs/GuidelinesUI.html) | Charte graphique, tokens et composants |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Lots de livraison, versioning, décisions arrêtées |
 | [docs/etat-du-projet.md](docs/etat-du-projet.md) | **Reprise à froid** — invariants, état, prochaine étape |
 | [docs/patron-domaine.md](docs/patron-domaine.md) | Patron à recopier pour ajouter un domaine |
 | [docs/front.md](docs/front.md) | **Carte du front** — les onze pages, les cinq couches, par où passer pour modifier |

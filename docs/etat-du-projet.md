@@ -49,7 +49,7 @@ peut pas vérifier**, accumulé lot après lot, avec ce qu'on lance et ce qui co
 l'interface, avec ce qu'une refonte a le droit de changer et ce qu'elle ne doit pas casser.
 
 En cas de contradiction entre les deux backlogs, `heat_backlog.md` gagne. Les
-contradictions connues sont **tranchées et consignées** au [§3 du ROADMAP](../ROADMAP.md#3-points-de-spécification-à-trancher)
+contradictions connues sont **tranchées et consignées** au [§3 du ROADMAP](ROADMAP.md#3-points-de-spécification-à-trancher)
 (décisions D1 à D11, validées le 2026-07-26). Ne pas les rouvrir sans raison.
 
 ---
@@ -322,7 +322,7 @@ la forme du besoin qui l'a justifiée ici, pas la commodité.
 | L15 | `v0.17.0` | PWA installable, service worker, Web Push, rappels ordonnancés — **ouvre le jalon V** |
 
 Le détail de chaque lot — tâches cochées, écarts assumés, décisions — est dans
-[`ROADMAP.md`](../ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
+[`ROADMAP.md`](ROADMAP.md). Le journal des changements avec le *pourquoi* est dans
 [`CHANGELOG.md`](../CHANGELOG.md).
 
 ### Écrans disponibles

@@ -25,7 +25,8 @@ Ne pas tout lire. Ouvrir ce qui correspond à la tâche.
 | L'assistant qui écrit dans les données | [`docs/assistant-agent.md`](docs/assistant-agent.md) |
 | L'ergonomie de `/activite` | [`docs/activite-ux.md`](docs/activite-ux.md) |
 
-`GuidelinesUI.html` reste la **référence exclusive** de la charte visuelle.
+[`docs/GuidelinesUI.html`](docs/GuidelinesUI.html) reste la **référence exclusive** de la
+charte visuelle.
 
 **Écrire un plan avant de coder** dès que le lot dépasse un correctif. Les documents
 ci-dessus sont tous des plans écrits avant. Un plan dit ce qui change, pourquoi, et ce que

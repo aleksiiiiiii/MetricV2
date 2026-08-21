@@ -71,10 +71,10 @@ metric/
 │       ├── features/<domaine>/
 │       ├── lib/             # api client, queryClient, auth, formats
 │       └── routes/
-├── docs/
+├── docs/            # ROADMAP  backlogV2  heat_backlog  GuidelinesUI  et les guides
 ├── docker-compose.yml
 ├── CHANGELOG.md
-└── ROADMAP.md
+└── README.md
 ```
 
 Un dossier par domaine, avec la même structure quadruple. C'est ce qui rend `API-01`
@@ -319,7 +319,7 @@ domaines suivants recopieront.
 
 **DoD** — `make check` vert (169 tests backend, 49 frontend) ; le CSV produit est lisible
 dans un tableur, BOM compris ; le patron est écrit dans
-[`docs/patron-domaine.md`](docs/patron-domaine.md). **Stockage vérifié contre le vrai
+[`docs/patron-domaine.md`](patron-domaine.md). **Stockage vérifié contre le vrai
 Nextcloud** : écriture, relecture identique et `304` honoré — le cache et la garde
 anti-conflit tiennent sur l'instance réelle.
 
@@ -788,7 +788,7 @@ l'écran. Le retrait individuel est vérifié sur la charge utile réellement en
 clé est testée — mais **aucun client de calendrier réel ne s'y est abonné**. C'est
 exactement la situation du L12 : un `.ics` peut satisfaire la spec et être refusé par
 Apple Calendar sans un mot. Le geste, et ce qui compte comme échec, sont au §0 de
-[`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+[`docs/verifications-manuelles.md`](verifications-manuelles.md).
 
 > **Décision — le flux `.ics` est public, protégé par une clé et non par le JWT.** Un
 > abonnement Apple Calendar va chercher son fichier tout seul, périodiquement, sans
@@ -864,7 +864,7 @@ données ; le résumé envoyé au modèle est vérifiable et borné.
 > condensé ligne à ligne. La première demande un vrai modèle **et** six semaines : un
 > objectif ne se juge « atteint » qu'une fois son échéance passée, sur des données qui
 > n'existent pas encore. Le geste exact est au §2 de
-> [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+> [`docs/verifications-manuelles.md`](verifications-manuelles.md).
 
 > **Décision — les cinq métriques de `GOAL-04` sont entrées dans le registre `METRICS`,
 > pas dans le domaine Objectifs.** Il en manquait trois : séances par semaine, kilomètres
@@ -975,7 +975,7 @@ dit d'important sur sa santé est proposé, validé, et réutilisé au tour suiv
 > personnelle de repas n'atteint pas la consigne. La première demande un vrai modèle — la
 > simulation ne peut pas dire si une réponse *s'appuie* réellement sur les chiffres qu'on
 > lui a donnés, ni si ce qu'il propose de retenir vaut d'être retenu. Le geste est au §3 de
-> [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md), et l'appel réel se
+> [`docs/verifications-manuelles.md`](verifications-manuelles.md), et l'appel réel se
 > demande avant.
 
 > **Défaut d'usage réel — un fichier de planning rempli de travers levait au lieu de se
@@ -1052,9 +1052,9 @@ application fermée. *(Dépend de HTTPS : à valider avec `L17-01`.)*
 >
 > Ce qui reste ne se teste pas en CI : **installer depuis Safari iOS et recevoir un rappel
 > application fermée**, derrière un vrai HTTPS. Le geste, et ce qui compte comme échec, sont
-> au §0bis de [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+> au §0bis de [`docs/verifications-manuelles.md`](verifications-manuelles.md).
 
-**Le plan du lot est dans [`docs/pwa-notifications.md`](docs/pwa-notifications.md)**, écrit
+**Le plan du lot est dans [`docs/pwa-notifications.md`](pwa-notifications.md)**, écrit
 avant de coder : les deux décisions qui gouvernent le lot, ce qu'il n'est pas, et l'ordre
 d'exécution.
 
@@ -1124,7 +1124,7 @@ d'exécution.
 > s'affichait tronqué à `Mozilla/5.0 (iPhone; CPU iPhone O…` ; et le message du serveur
 > répétait la règle que l'écran énonce quatre cents pixels plus bas. Le détail et ce que
 > chacun enseigne sont au §7 de
-> [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md).
+> [`docs/verifications-manuelles.md`](verifications-manuelles.md).
 
 > **Défaut relevé et laissé — un import circulaire entre `planning` et `goals`.**
 > `planning/service.py` importe `GoalService`, `goals/router.py` importe
@@ -1155,7 +1155,7 @@ l'archive d'export s'ouvre sans l'app.
 ## L17 · `v1.0.0` — Durcissement, déploiement, documentation
 
 - [ ] `L17-01` Conteneurisation backend + frontend derrière reverse-proxy à certificat automatique (`OPS-01`)
-- [~] `L17-02` Documentation d'exploitation : installation, mise à jour, sauvegarde, restauration (`OPS-02`) · **écrite en [`docs/deploiement.md`](docs/deploiement.md)** — installation, unité systemd, réglages NPM, sauvegarde et table des symptômes. **Jamais exécutée de bout en bout** : elle est écrite depuis le code et vérifiée contre lui, pas depuis un serveur installé. Le script de mise à jour a son cahier des charges dans [`docs/prompt-mise-a-jour.md`](docs/prompt-mise-a-jour.md) et n'est pas écrit
+- [~] `L17-02` Documentation d'exploitation : installation, mise à jour, sauvegarde, restauration (`OPS-02`) · **écrite en [`docs/deploiement.md`](deploiement.md)** — installation, unité systemd, réglages NPM, sauvegarde et table des symptômes. **Jamais exécutée de bout en bout** : elle est écrite depuis le code et vérifiée contre lui, pas depuis un serveur installé. Le script de mise à jour a son cahier des charges dans [`docs/prompt-mise-a-jour.md`](prompt-mise-a-jour.md) et n'est pas écrit
 - [ ] `L17-03` Revue de sécurité : en-têtes, CSP, expiration JWT, limitation de débit, service des photos, secrets
 - [ ] `L17-04` Passe accessibilité : focus visible, contrastes, navigation clavier, `aria-pressed` des bascules, `prefers-reduced-motion`
 - [ ] `L17-05` Passe performance : budget de chargement, découpage de code, coût réel des grilles `HEAT`

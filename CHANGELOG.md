@@ -1,7 +1,7 @@
 # Journal des modifications
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
-Versionnement : une version mineure par lot de la [feuille de route](ROADMAP.md).
+Versionnement : une version mineure par lot de la [feuille de route](docs/ROADMAP.md).
 
 ## [0.16.0] — 2026-08-06
 
@@ -1259,7 +1259,7 @@ déjà la langue visuelle de Metric. Aucune fonctionnalité métier.
 ### Décidé
 
 - Les **11 points de spécification** relevés entre `backlogV2.md` et `heat_backlog.md`
-  sont arrêtés et consignés au [§3 de la feuille de route](ROADMAP.md#3-points-de-spécification-à-trancher).
+  sont arrêtés et consignés au [§3 de la feuille de route](docs/ROADMAP.md#3-points-de-spécification-à-trancher).
 - `httpx2` remplace `httpx` dans tout le projet : starlette 1.x déprécie `httpx` pour
   son `TestClient`, et le client WebDAV du lot L01 doit parler la même bibliothèque que
   les tests.
