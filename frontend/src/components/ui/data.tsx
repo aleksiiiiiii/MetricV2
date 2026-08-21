@@ -109,6 +109,27 @@ export function Stat({
   );
 }
 
+/**
+ * Une largeur CSS, et non un pourcentage à lire.
+ *
+ * **Les deux ne s'écrivent pas pareil, et la confusion coûtait cher.** `percent()` rend
+ * « 56 % » — l'espace avant le signe est la typographie française, et c'est ce qu'il faut
+ * dans une phrase ou un `aria-label`. Posé en `style.width`, c'est une valeur **invalide**
+ * que le navigateur jette sans rien dire : la jauge retombait alors sur sa largeur par
+ * défaut, c'est-à-dire **pleine**. Toutes les barres de l'application, `Progress` comme
+ * `Bars`, se peignaient donc à 100 % quelle que soit leur valeur — y compris une semaine
+ * à zéro, qui s'affichait comme une semaine complète.
+ *
+ * Trouvé en mesurant la page, jamais par un test : le DOM porte bien un `<div>` de barre,
+ * il lui manquait seulement un attribut, et aucune assertion ne regardait sa largeur.
+ */
+function width(ratio: number): string {
+  // Arrondi au centième de point : `0,56 × 100` vaut `56.00000000000001` en virgule
+  // flottante, et une largeur à quinze décimales dans le DOM ne rend service à personne.
+  const clamped = Math.max(0, Math.min(1, ratio));
+  return `${String(Math.round(clamped * 10000) / 100)}%`;
+}
+
 // ── Barres ────────────────────────────────────────────
 
 export interface BarRow {
@@ -138,7 +159,7 @@ export function Bars({ rows }: { rows: readonly BarRow[] }) {
             <div
               className={styles.fill}
               style={{
-                width: percent(Math.max(0, Math.min(1, row.ratio))),
+                width: width(row.ratio),
                 background: TONE_VAR[row.tone ?? 'signal'],
               }}
             />
@@ -169,7 +190,7 @@ export function Progress({
       <div className={styles.track}>
         <div
           className={styles.fill}
-          style={{ width: percent(ratio), background: TONE_VAR[tone ?? automatic] }}
+          style={{ width: width(ratio), background: TONE_VAR[tone ?? automatic] }}
         />
       </div>
       <span className={styles.progressCount}>
