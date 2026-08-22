@@ -129,6 +129,9 @@ class Progress:
     #: Bornes de l'axe des volumes mensuels, le plus petit d'abord — un volume se lit dans
     #: le sens habituel, à l'inverse d'une allure.
     volume_domain_km: tuple[float, float] | None = None
+    #: Bornes de l'axe des **distances**, pour le nuage de points qui croise distance et
+    #: allure. Le plus court d'abord : une distance se lit dans le sens habituel.
+    distance_domain_km: tuple[float, float] | None = None
 
 
 def _round(value: float | None, digits: int = 2) -> float | None:
@@ -177,6 +180,7 @@ def analyse(sorties: list[Sortie]) -> Progress:
         window=_window(ordered),
         pace_domain_min_km=_domain([item.pace_min_km or 0.0 for item in paced], inverted=True),
         volume_domain_km=_domain([month.distance_km for month in _months(ordered)], inverted=False),
+        distance_domain_km=_domain([item.distance_km for item in ordered], inverted=False),
     )
 
 

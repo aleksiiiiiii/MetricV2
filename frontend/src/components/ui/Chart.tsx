@@ -399,7 +399,11 @@ export function Chart({
                     height={height}
                     rx="2"
                     fill={alerting ? TONE_VAR.recover : TONE_VAR[band.tone]}
-                    fillOpacity={alerting ? 0.9 : 0.55}
+                    // 0,55 délavait la barre jusqu'au beige : sur fond blanc, l'ambre
+                    // `#a45a00` y ressortait en `#cda473`, à quelques unités de l'argile
+                    // qu'il remplaçait. Changer le token ne se voyait donc pas. À 0,85 la
+                    // barre porte sa couleur, tout en restant en retrait du tracé.
+                    fillOpacity={alerting ? 0.9 : 0.85}
                   />
                 );
               })}

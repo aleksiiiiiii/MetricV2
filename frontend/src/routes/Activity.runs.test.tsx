@@ -113,6 +113,7 @@ const PROGRESS = {
   },
   pace_domain_min_km: [5.5, 5.035],
   volume_domain_km: [12.0, 18.6],
+  distance_domain_km: [3.2, 12.0],
 };
 
 /** Une première sortie : rien à comparer, et la page ne doit rien inventer. */
@@ -282,16 +283,25 @@ describe('page Toutes tes courses', () => {
     expect(screen.getByText(/des kilomètres sont des kilomètres/)).toBeInTheDocument();
   });
 
-  it('avertit que la courbe d’allure mélange les distances', async () => {
+  it('porte la distance en abscisse au lieu de la reléguer en avertissement', async () => {
     stub(PROGRESS);
     renderRuns();
 
+    // La courbe d'allure au fil du temps a été remplacée : elle mélangeait les distances
+    // et le disait en trois lignes de mise en garde. Le nuage met la distance sur un axe,
+    // donc la réserve **est** le graphique et il n'y a plus rien à avertir.
     expect(
-      await screen.findByRole('heading', { name: 'Allure sortie par sortie' }),
+      await screen.findByRole('heading', { name: 'Chaque sortie, à sa distance' }),
     ).toBeInTheDocument();
-    // Sans cette phrase, un creux se lirait comme un mauvais jour alors que c'est
-    // généralement une sortie longue.
-    expect(screen.getByText(/Cette courbe mélange les distances/)).toBeInTheDocument();
+    expect(screen.queryByText(/Cette courbe mélange les distances/)).not.toBeInTheDocument();
+    expect(screen.getByText(/celui du haut est le meilleur/)).toBeInTheDocument();
+  });
+
+  it('marque la dernière sortie, qu’un nuage ne laisse pas retrouver seul', async () => {
+    stub(PROGRESS);
+    renderRuns();
+
+    expect(await screen.findByText('L’anneau marque ta dernière sortie.')).toBeInTheDocument();
   });
 
   it('dit la panne au lieu de laisser la page vide', async () => {

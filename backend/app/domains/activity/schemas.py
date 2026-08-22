@@ -463,8 +463,12 @@ class RunProgress(BaseModel):
     months: list[MonthTotals] = Field(default_factory=list)
     window: RunWindow = Field(default_factory=RunWindow)
 
+    #: Bornes d'allure, **le plus lent d'abord** : l'axe part retourné, comme partout où
+    #: ce dépôt trace une allure.
     pace_domain_min_km: tuple[float, float] | None = None
     volume_domain_km: tuple[float, float] | None = None
+    #: Bornes de distance, le plus court d'abord — l'abscisse du nuage de points.
+    distance_domain_km: tuple[float, float] | None = None
 
 
 class RunDetail(BaseModel):

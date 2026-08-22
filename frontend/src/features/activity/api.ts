@@ -214,8 +214,11 @@ export interface RunProgress {
   /** Du plus ancien au plus récent. Les mois sans course sont **absents**. */
   months: MonthTotals[];
   window: RunWindow;
+  /** Bornes d'allure, **le plus lent d'abord** : l'axe arrive retourné. */
   pace_domain_min_km: [number, number] | null;
   volume_domain_km: [number, number] | null;
+  /** Bornes de distance, le plus court d'abord — l'abscisse du nuage de points. */
+  distance_domain_km: [number, number] | null;
 }
 
 /** Une course et ses paliers. `run` à `null` = aucune course, ce qui n'est pas une panne. */

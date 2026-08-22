@@ -297,6 +297,7 @@ class RunService:
             ),
             pace_domain_min_km=computed.pace_domain_min_km,
             volume_domain_km=computed.volume_domain_km,
+            distance_domain_km=computed.distance_domain_km,
         )
 
     async def _detail_of(self, row: Row[RunRow]) -> RunDetail:

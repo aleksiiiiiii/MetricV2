@@ -36,6 +36,7 @@ import {
   LinkButton,
   PageHead,
   Rule,
+  Scatter,
   Stat,
   Table,
 } from '@/components/ui';
@@ -284,32 +285,29 @@ export function Runs() {
           </Card>
 
           {/* ── La courbe qui porte la réserve ───────── */}
-          {timeline.length >= 2 && (
+          {timeline.length >= 2 && data.pace_domain_min_km && data.distance_domain_km && (
             <Card>
-              <h3>Allure sortie par sortie</h3>
+              <h3>Chaque sortie, à sa distance</h3>
               <p className={styles.note}>
-                L’axe est inversé : plus le point est haut, plus la sortie a été rapide. Cette
-                courbe mélange les distances — les barres du bas les rappellent, et un creux est
-                souvent une sortie longue plutôt qu’un mauvais jour. Pour une comparaison qui tient,
-                ce sont les records par bande, au-dessus.
+                Un point par course : sa distance en abscisse, son allure en ordonnée. Deux points
+                voisins en abscisse sont deux sorties comparables — et celui du haut est le
+                meilleur. Les points pâlissent avec l’âge : si les francs sont au-dessus des pâles,
+                tu cours plus vite qu’avant sur les mêmes distances.
               </p>
-              <Chart
-                labels={timeline.map((run) => shortDate(run.date))}
-                primary={{
-                  label: 'Allure',
-                  unit: 'min/km',
-                  values: timeline.map((run) => run.pace_min_km ?? 0),
-                  tone: 'signal',
-                  format: (value) => pace(value),
-                  ...(data.pace_domain_min_km ? { domain: data.pace_domain_min_km } : {}),
-                }}
-                band={{
-                  label: 'Distance',
-                  unit: 'km',
-                  values: timeline.map((run) => run.distance_km),
-                  tone: 'load',
-                  format: (value) => num(value, 1),
-                }}
+              <Scatter
+                points={timeline.map((run) => ({
+                  x: run.distance_km,
+                  y: run.pace_min_km ?? 0,
+                  label: shortDate(run.date),
+                  detail: `${num(run.distance_km, 2)} km · ${pace(run.pace_min_km ?? 0)} /km`,
+                }))}
+                xDomain={data.distance_domain_km}
+                yDomain={data.pace_domain_min_km}
+                xLabel="Distance"
+                yLabel="Allure"
+                formatX={(value) => `${num(value, 1)} km`}
+                formatY={(value) => pace(value)}
+                note="L’anneau marque ta dernière sortie."
               />
             </Card>
           )}

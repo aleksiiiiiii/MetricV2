@@ -1,0 +1,104 @@
+/* Nuage de points. Mêmes conventions que `Chart.module.css` — même gouttière, même
+   graduation, même infobulle : deux graphiques d'une même page qui ne se ressembleraient
+   pas donneraient l'impression de deux unités différentes. */
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--ink-mid);
+  margin-top: var(--s4);
+}
+
+.legendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: block;
+}
+
+.legendSep {
+  color: var(--ink-low);
+}
+
+.wrap {
+  position: relative;
+  margin-top: 18px;
+}
+
+.svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  /* Comme pour `Chart` : l'infobulle doit pouvoir sortir du cadre. Les graduations, elles,
+     tiennent dans la gouttière — c'est ce que `LEFT` garantit. */
+  overflow: visible;
+  touch-action: none;
+}
+
+.axis {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 26px;
+  fill: var(--ink-low);
+  letter-spacing: 0.08em;
+}
+
+@media (min-width: 600px) {
+  .axis {
+    font-size: 18px;
+  }
+}
+
+@media (min-width: 960px) {
+  .axis {
+    font-size: 16px;
+  }
+}
+
+/* Le point grossit sous le doigt plutôt que de changer de couleur : sur un nuage, la
+   couleur porte déjà la fraîcheur. */
+.dot {
+  transition:
+    r 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.tip {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(12px, -50%);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  line-height: 1.7;
+  white-space: nowrap;
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  z-index: 2;
+}
+
+/* Un point de la moitié droite verrait son infobulle sortir de la carte. Elle bascule
+   de l'autre côté — le même réflexe que `Chart`, pour la même raison. */
+.tipLeft {
+  transform: translate(-100%, -50%) translateX(-12px);
+}
+
+.tipDate {
+  display: block;
+  color: var(--ink-low);
+  letter-spacing: 0.1em;
+  margin-bottom: 3px;
+  font-weight: 400;
+}
+
+.note {
+  margin-top: var(--s4);
+  font-size: var(--t-sub);
+  color: var(--ink-mid);
+}
