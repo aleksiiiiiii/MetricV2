@@ -533,6 +533,45 @@ export function Segmented<T extends string>({
  * Un état vide n'est pas une erreur : il dit ce que coûte le prochain geste.
  * « Deux chiffres suffisent pour que la journée compte. »
  */
+/**
+ * Fil d'étapes d'un parcours en plusieurs temps (`L03-04`).
+ *
+ * **Les numéros seuls, et le libellé de l'étape courante en dessous.** Quatre libellés
+ * côte à côte demandent 300 px en chasse fixe, là où un téléphone en offre 294 : ils se
+ * couperaient tous les quatre. Le numéro dit où l'on en est, le libellé dit ce qu'on y
+ * fait, et l'un des deux suffit à chaque instant.
+ *
+ * Les étapes franchies portent une coche plutôt que leur numéro : on ne revient pas
+ * dessus en les comptant, on vérifie qu'elles sont derrière.
+ */
+export function Steps({ steps, current }: { steps: readonly string[]; current: number }) {
+  return (
+    <div className={styles.steps}>
+      <ol className={styles.stepList}>
+        {steps.map((step, index) => {
+          const done = index < current;
+          const here = index === current;
+          return (
+            <li
+              key={step}
+              className={cx(styles.step, done && styles.stepDone, here && styles.stepHere)}
+              aria-current={here ? 'step' : undefined}
+            >
+              {/* Le libellé reste dans le document pour la synthèse vocale : sans lui,
+                  une étape ne s'annoncerait que par son rang. */}
+              <span className="sr-only">{step}</span>
+              <span aria-hidden="true">{done ? '✓' : index + 1}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <p className={styles.stepLabel}>
+        Étape {current + 1} sur {steps.length} · {steps[current]}
+      </p>
+    </div>
+  );
+}
+
 export function Empty({
   title,
   children,

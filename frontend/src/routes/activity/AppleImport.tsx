@@ -1,19 +1,36 @@
 /**
  * Import d'une capture Apple Fitness (`IMP-01` → `IMP-06`).
  *
- * Trois états successifs, et la frontière entre les deux derniers est le contrat du lot :
- * choisir une capture, la faire **lire**, puis — après correction — l'**écrire**. Rien ne
- * passe de la deuxième à la troisième sans un appui.
+ * ## Quatre étapes, et elles se nomment
  *
- * Le pré-remplissage n'est pas un formulaire en lecture seule qu'on validerait en bloc :
- * chaque valeur est un pas-à-pas, corrigeable au pouce (`IMP-02`). Une valeur qu'on ne
- * peut pas retoucher est une valeur qu'on adopte faute de mieux.
+ * Le parcours était le même mais **muet** : la carte se dépliait toute seule au fil des
+ * appuis, sans jamais dire où l'on en était ni ce qui restait à faire. Elle l'annonce
+ * maintenant — ouvrir, ajouter les captures, vérifier ce qui a été ajouté, valider ce que
+ * le modèle a lu.
+ *
+ * **La troisième étape est celle qui manquait.** Les vignettes apparaissaient au même
+ * instant que le bouton de lecture, si bien qu'on lançait le modèle sans avoir regardé ce
+ * qu'on lui donnait — et une capture de travers ne se voyait qu'après l'appel. Elle a
+ * maintenant son temps propre : on voit ce qui part, on peut en retirer une, et **c'est
+ * le seul écran où l'on peut encore le faire**.
+ *
+ * L'étape courante se **déduit** de l'état plutôt que d'être stockée à côté de lui : un
+ * compteur qu'on incrémente à la main finit toujours par désigner une étape que la donnée
+ * ne porte plus.
+ *
+ * ## Ce que les étapes ne changent pas
+ *
+ * La frontière entre lire et écrire reste le contrat du lot (`IMP-01`) : rien ne passe de
+ * la lecture à l'écriture sans un appui. Et le pré-remplissage n'est pas un formulaire en
+ * lecture seule qu'on validerait en bloc — chaque valeur est un pas-à-pas, corrigeable au
+ * pouce (`IMP-02`). Une valeur qu'on ne peut pas retoucher est une valeur qu'on adopte
+ * faute de mieux.
  */
 
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
-import { AiBlock, Badge, Button, Card, Field, Segmented, Stepper } from '@/components/ui';
+import { AiBlock, Badge, Button, Card, Field, Segmented, Stepper, Steps } from '@/components/ui';
 import { importsApi, type AppleDraft } from '@/features/imports/api';
 import { ApiError } from '@/lib/api';
 import { duration, km, shortDate } from '@/lib/format';
@@ -55,6 +72,12 @@ const FIELD_NAMES: Record<string, string> = {
   calories: 'les calories',
 };
 
+/**
+ * Les quatre temps du parcours. L'ordre **est** le parcours : l'écran en déduit où il en
+ * est, il ne tient pas de compteur en parallèle.
+ */
+const STEPS = ['Ouvrir', 'Ajouter les captures', 'Vérifier', 'Valider'] as const;
+
 function numberText(value: number | null): string {
   return value === null ? '' : String(value).replace('.', ',');
 }
@@ -69,6 +92,8 @@ export function AppleImport({ today }: { today: string | undefined }) {
   const { notify } = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // La seule chose que le parcours ait besoin de retenir : le reste se déduit.
+  const [open, setOpen] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [draft, setDraft] = useState<AppleDraft | null>(null);
@@ -92,6 +117,11 @@ export function AppleImport({ today }: { today: string | undefined }) {
       return chosen.map((shot) => URL.createObjectURL(shot));
     });
     setFiles(chosen);
+    // Choisir une capture **engage** le parcours, même si l'on n'est pas passé par le
+    // bouton d'ouverture — un glisser-déposer ou un champ natif rappelé par le système
+    // y mènent aussi. Sans cela, retirer la dernière capture repliait toute la carte
+    // au lieu de revenir à l'étape d'ajout, et l'on perdait l'intention d'importer.
+    if (chosen.length > 0) setOpen(true);
     // Un brouillon appartient aux captures qui l'ont produit.
     reset();
   }
@@ -163,6 +193,10 @@ export function AppleImport({ today }: { today: string | undefined }) {
         'effort',
       );
       choose([]);
+      // Le parcours se referme sur lui-même : la course est écrite, et laisser la carte
+      // dépliée sur une étape 2 vide donnerait l'impression qu'il reste quelque chose à
+      // faire. Elle se rouvre d'un appui.
+      setOpen(false);
       if (fileInput.current) fileInput.current.value = '';
     },
     onError: (caught: unknown) => {
@@ -178,6 +212,20 @@ export function AppleImport({ today }: { today: string | undefined }) {
 
   const missing = draft?.missing.filter((field) => field in FIELD_NAMES) ?? [];
 
+  /** Retire une capture avant lecture — le seul écran où c'est encore possible. */
+  function drop(index: number) {
+    const kept = files.filter((_, position) => position !== index);
+    choose(kept);
+    // Le champ natif garde sa liste : sans ce vidage, rechoisir le **même** fichier
+    // n'émettrait aucun `change` et l'écran resterait sur une capture qu'on vient
+    // d'écarter.
+    if (fileInput.current) fileInput.current.value = '';
+  }
+
+  // L'étape se lit dans la donnée, elle ne se compte pas à côté. Un brouillon existe :
+  // on valide. Des fichiers sans brouillon : on vérifie. Ouvert sans fichier : on ajoute.
+  const step = draft !== null ? 3 : files.length > 0 ? 2 : open ? 1 : 0;
+
   return (
     <Card>
       <h3>Import d&apos;une capture</h3>
@@ -186,11 +234,27 @@ export function AppleImport({ today }: { today: string | undefined }) {
         telle quelle. Tout reste modifiable avant l&apos;import.
       </p>
 
+      {/* Le fil n'apparaît qu'une fois le parcours engagé : sur une carte repliée, il
+          annoncerait quatre étapes à quelqu'un qui n'en a demandé aucune. */}
+      {open && <Steps steps={STEPS} current={step} />}
+
       <div className={styles.form}>
         {error !== null && (
           <p className={styles.error} role="alert">
             {error.message}
           </p>
+        )}
+
+        {/* ── Étape 1 — ouvrir ─────────────────────── */}
+        {!open && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setOpen(true);
+            }}
+          >
+            Importer une capture
+          </Button>
         )}
 
         <input
@@ -204,33 +268,73 @@ export function AppleImport({ today }: { today: string | undefined }) {
             choose(Array.from(event.target.files ?? []));
           }}
         />
-        {previews.length > 0 ? (
-          <div className={styles.shots}>
-            {previews.map((url, index) => (
-              <img
-                className={styles.shot}
-                src={url}
-                key={url}
-                alt={`Aperçu de la capture ${String(index + 1)}`}
-              />
-            ))}
-          </div>
-        ) : (
-          <label htmlFor="apple-screenshot" className={styles.drop}>
-            choisir une ou deux captures
-          </label>
+        {/* ── Étape 2 — ajouter les captures ───────── */}
+        {open && files.length === 0 && (
+          <>
+            <label htmlFor="apple-screenshot" className={styles.drop}>
+              choisir une ou plusieurs captures
+            </label>
+            <p className={styles.note}>
+              Le résumé de la séance, et la liste « Splits » si tu l&apos;as : les paliers ne se
+              lisent que sur cette seconde capture.
+            </p>
+          </>
+        )}
+
+        {/* ── Étape 3 — vérifier ce qui a été ajouté ──
+            Elle n'existait pas : les vignettes arrivaient en même temps que le bouton de
+            lecture, et l'on envoyait au modèle des captures qu'on n'avait pas regardées.
+            C'est aussi le dernier moment où l'on peut en retirer une. */}
+        {previews.length > 0 && (
+          <>
+            <p className={styles.note} role="status">
+              {previews.length > 1
+                ? `${String(previews.length)} captures prêtes à être lues.`
+                : 'Une capture prête à être lue.'}
+              {draft === null && ' Vérifie qu’elles sont nettes et complètes.'}
+            </p>
+            <div className={styles.shots}>
+              {previews.map((url, index) => (
+                <figure className={styles.shotBox} key={url}>
+                  <img
+                    className={styles.shot}
+                    src={url}
+                    alt={`Aperçu de la capture ${String(index + 1)}`}
+                  />
+                  {draft === null && (
+                    <button
+                      type="button"
+                      className={styles.shotDrop}
+                      onClick={() => {
+                        drop(index);
+                      }}
+                    >
+                      {/* Une addition se défait sans confirmation : c'est la suppression
+                          que l'utilisateur ferait, et rien n'est encore écrit. */}
+                      Retirer<span className="sr-only"> la capture {index + 1}</span>
+                    </button>
+                  )}
+                </figure>
+              ))}
+            </div>
+          </>
         )}
 
         {files.length > 0 && draft === null && (
-          <Button
-            variant="ghost"
-            busy={analyse.isPending}
-            onClick={() => {
-              analyse.mutate(files);
-            }}
-          >
-            {files.length > 1 ? `Lire les ${String(files.length)} captures` : 'Lire la capture'}
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              busy={analyse.isPending}
+              onClick={() => {
+                analyse.mutate(files);
+              }}
+            >
+              {files.length > 1 ? `Lire les ${String(files.length)} captures` : 'Lire la capture'}
+            </Button>
+            <label htmlFor="apple-screenshot" className={styles.drop}>
+              ajouter d&apos;autres captures
+            </label>
+          </>
         )}
 
         {draft !== null && (

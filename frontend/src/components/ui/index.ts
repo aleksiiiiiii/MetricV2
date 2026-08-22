@@ -37,6 +37,7 @@ export {
   Rule,
   Segmented,
   Stepper,
+  Steps,
   SwipeRow,
 } from './primitives';
 export type { ButtonVariant, SegmentedOption, Tone } from './primitives';

@@ -789,3 +789,80 @@
 .pageHead + :global(.rule) {
   margin-top: 0;
 }
+
+/* ── Fil d'étapes ──────────────────────────────────────
+ *
+ * Les pastilles font `--tap` de large sur la ligne, mais ce ne sont **pas** des cibles :
+ * on n'y appuie pas, elles disent où l'on en est. Le parcours avance par ses propres
+ * boutons, ce qui évite qu'un appui de travers saute une étape. */
+.steps {
+  margin-block: var(--s4);
+}
+
+.stepList {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Le trait qui relie deux pastilles : un pseudo-élément qui s'étire, plutôt qu'un
+   élément de plus dans le document. Il ne dit rien qu'une synthèse vocale doive lire. */
+.step + .step::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 1;
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--ink-low);
+}
+
+.step > span[aria-hidden] {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+/* C'est la **première** pastille qui ne grandit pas, et non la dernière : elle est la
+   seule sans trait devant elle, si bien qu'un `flex: 1` lui donnerait un segment de vide
+   à la place. Les trois autres se partagent l'espace à parts égales, et leurs traits
+   font donc la même longueur.
+
+   L'inverse — dernière figée — a été essayé : son trait, seul à ne rien avoir à étirer,
+   disparaissait, et le fil s'arrêtait entre la troisième et la quatrième. */
+.step:first-child {
+  flex: none;
+}
+
+.stepDone > span[aria-hidden] {
+  border-color: rgb(var(--effort-rgb) / 0.5);
+  color: var(--effort);
+}
+
+.stepHere > span[aria-hidden] {
+  border-color: var(--signal);
+  color: var(--signal);
+  background: rgb(var(--signal-rgb) / 0.12);
+}
+
+.stepLabel {
+  margin-top: var(--s3);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--ink-mid);
+}

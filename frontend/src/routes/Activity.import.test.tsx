@@ -327,6 +327,76 @@ describe('import Apple', () => {
     expect(screen.getByText(/La date et la durée manquent/)).toBeInTheDocument();
   });
 
+  // ── Les quatre étapes (`IMP-02`) ────────────────
+  //
+  // Le parcours faisait déjà ces quatre gestes, il ne les **disait** pas. Ces tests
+  // gardent ce qu'il annonce, et surtout l'étape qui manquait : voir ce qu'on envoie
+  // avant de l'envoyer.
+
+  it('reste replié tant qu’on ne l’a pas ouvert', async () => {
+    stub();
+    renderActivity();
+
+    await screen.findByText("Import d'une capture");
+    // Une carte dépliée d'emblée annoncerait quatre étapes à qui n'en a demandé aucune.
+    expect(screen.getByRole('button', { name: 'Importer une capture' })).toBeInTheDocument();
+    expect(screen.queryByText(/choisir une ou plusieurs captures/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Étape 1 sur 4/)).not.toBeInTheDocument();
+  });
+
+  it('annonce où l’on en est à chaque étape', async () => {
+    stub();
+    renderActivity();
+
+    await screen.findByText("Import d'une capture");
+    await userEvent.click(screen.getByRole('button', { name: 'Importer une capture' }));
+    expect(screen.getByText(/Étape 2 sur 4 · Ajouter les captures/)).toBeInTheDocument();
+
+    await chooseScreenshot();
+    expect(screen.getByText(/Étape 3 sur 4 · Vérifier/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Lire la capture' }));
+    await screen.findByText(/Les champs en pointillé/);
+    expect(screen.getByText(/Étape 4 sur 4 · Valider/)).toBeInTheDocument();
+  });
+
+  it('montre ce qui a été ajouté avant de le faire lire', async () => {
+    stub();
+    renderActivity();
+    await chooseScreenshot();
+
+    // L'étape qui n'existait pas : les vignettes arrivaient en même temps que le bouton
+    // de lecture, et l'on envoyait au modèle des captures qu'on n'avait pas regardées.
+    expect(screen.getByText(/Une capture prête à être lue/)).toBeInTheDocument();
+    expect(screen.getByText(/Vérifie qu’elles sont nettes/)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Aperçu de la capture 1' })).toBeInTheDocument();
+  });
+
+  it('laisse retirer une capture, et seulement avant la lecture', async () => {
+    stub();
+    renderActivity();
+    await chooseScreenshot();
+
+    // Une addition se défait sans confirmation : rien n'est encore écrit, et c'est la
+    // suppression que l'utilisateur ferait lui-même.
+    await userEvent.click(screen.getByRole('button', { name: /Retirer/ }));
+
+    expect(screen.queryByRole('img', { name: 'Aperçu de la capture 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Lire la capture' })).not.toBeInTheDocument();
+    // On retombe à l'étape d'ajout, pas à la carte repliée : on voulait bien importer.
+    expect(screen.getByText(/Étape 2 sur 4 · Ajouter les captures/)).toBeInTheDocument();
+  });
+
+  it('ne laisse plus retirer une capture une fois la lecture faite', async () => {
+    stub();
+    renderActivity();
+    await readScreenshot();
+
+    // Le brouillon appartient aux captures qui l'ont produit : en retirer une derrière
+    // laisserait à l'écran des valeurs qu'aucune image ne justifie plus.
+    expect(screen.queryByRole('button', { name: /Retirer/ })).not.toBeInTheDocument();
+  });
+
   it('permet de basculer une course en séance', async () => {
     // Le brouillon propose, il n'impose pas — y compris sur la nature de l'activité.
     stub();
