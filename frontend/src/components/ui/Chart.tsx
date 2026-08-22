@@ -42,7 +42,26 @@ const TONE_VAR: Record<Tone, string> = {
 
 // Géométrie reprise de la charte.
 const VIEW_W = 720;
-const VIEW_H = 320;
+
+/**
+ * Hauteurs du viewBox, **selon qu'il y a une bande ou non**.
+ *
+ * Il n'y en avait qu'une, 320, et un graphique sans bande réservait quand même la place
+ * de la bande : près d'un tiers de sa hauteur en blanc sous les étiquettes de dates. Sur
+ * un écran large, où le `<svg>` s'étire à toute la largeur de la carte, cela donnait
+ * 430 px de haut pour une courbe qui en occupait 250.
+ *
+ * Le tracé lui-même est aplati de 170 à 150 unités. **La bande, elle, ne bouge pas** :
+ * ses deux graduations font 26 unités chacune, et les 54 unités qui les séparent sont
+ * exactement ce qu'il leur faut. Un premier essai les avait ramenées à 40 — les deux
+ * étiquettes se chevauchaient sur téléphone, ce qui ne s'est vu qu'à l'écran.
+ *
+ * Les deux hauteurs sont les seules valeurs à changer pour régler la taille encore.
+ * Attention : c'est un **rapport**, donc raccourcir pour un écran large raccourcit
+ * autant sur téléphone, où la place manque déjà.
+ */
+const VIEW_H_BAND = 274;
+const VIEW_H_PLAIN = 212;
 /**
  * Gouttière de gauche : la place réservée aux graduations verticales.
  *
@@ -64,11 +83,39 @@ const VIEW_H = 320;
  * une graduation n'a pas à porter son unité, que la légende écrit déjà.
  */
 const LEFT = 118;
+
+/**
+ * Largeur maximale d'une barre de bande, en unités de viewBox.
+ *
+ * Sans plafond, quatre sorties donnaient des barres de 143 unités — un quart de la largeur
+ * du tracé chacune. Ce ne sont plus des barres mais des dalles, et c'est ce qui rendait le
+ * débordement spectaculaire au lieu d'imperceptible.
+ */
+const MAX_BAND_BAR = 56;
+
+/**
+ * Centre d'une barre de bande, ramené dans le tracé.
+ *
+ * **Les points sont posés sur les bords** : `x(0)` vaut `LEFT` et `x(count - 1)` vaut
+ * `RIGHT`. Une barre centrée sur eux déborde donc de la moitié de sa largeur, par-dessus
+ * la gouttière des graduations à gauche, et hors du `<svg>` à droite — où `overflow:
+ * visible`, voulu pour l'infobulle, la laisse se peindre sur la page.
+ *
+ * Les barres des extrémités sont **décalées vers l'intérieur** plutôt que rognées. Rogner
+ * les aurait laissées à demi-largeur, et une bande sert à comparer des valeurs entre
+ * elles : deux barres deux fois plus étroites que les autres se lisent comme deux valeurs
+ * plus faibles, alors que c'est la hauteur qui porte la mesure. Le décalage vaut au plus
+ * une demi-barre, soit 28 unités sur 588.
+ */
+function bandCentre(centre: number, width: number): number {
+  const half = width / 2;
+  return Math.min(Math.max(centre, LEFT + half), RIGHT - half);
+}
 const RIGHT = 706;
-const TOP = 26;
-const BOTTOM = 196;
-const BAND_TOP = 228;
-const BAND_BOTTOM = 282;
+const TOP = 22;
+const BOTTOM = 172;
+const BAND_TOP = 204;
+const BAND_BOTTOM = 258;
 
 export interface Series {
   label: string;
@@ -156,6 +203,14 @@ export function Chart({
   const formatContext = context?.format ?? identity;
   const formatBand = band?.format ?? identity;
 
+  // Largeur d'une barre de bande. **`count - 1` et non `count`** : les points sont posés
+  // *sur* les bords du tracé, il y a donc un intervalle de moins que de points. L'ancienne
+  // division par `count` donnait des barres plus larges que l'écart réel, ce qui ne se
+  // voyait pas à quatorze points et sautait aux yeux à quatre.
+  const viewH = band ? VIEW_H_BAND : VIEW_H_PLAIN;
+  const bandStep = (RIGHT - LEFT) / Math.max(1, count - 1);
+  const bandWidth = Math.max(2, Math.min(bandStep - 4, MAX_BAND_BAR));
+
   const primaryPoints = primary.values
     .map((value, index) => `${x(index)},${yPrimary(value)}`)
     .join(' ');
@@ -171,7 +226,7 @@ export function Chart({
   }
 
   const tipLeft = active === null ? 0 : (x(active) / VIEW_W) * 100;
-  const tipTop = active === null ? 0 : (yPrimary(primary.values[active] ?? 0) / VIEW_H) * 100;
+  const tipTop = active === null ? 0 : (yPrimary(primary.values[active] ?? 0) / viewH) * 100;
 
   return (
     <>
@@ -221,7 +276,7 @@ export function Chart({
         <svg
           ref={svgRef}
           className={styles.svg}
-          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          viewBox={`0 0 ${VIEW_W} ${viewH}`}
           role="img"
           aria-label={`${primary.label}${context ? `, ${context.label}` : ''}${band ? `, ${band.label}` : ''}`}
           onPointerMove={(event) => {
@@ -334,14 +389,13 @@ export function Chart({
                   3,
                   ((value - bandDomain[0]) / span) * (BAND_BOTTOM - BAND_TOP),
                 );
-                const width = (RIGHT - LEFT) / count - 4;
                 const alerting = band.alertBelow !== undefined && value < band.alertBelow;
                 return (
                   <rect
                     key={index}
-                    x={x(index) - width / 2}
+                    x={bandCentre(x(index), bandWidth) - bandWidth / 2}
                     y={BAND_BOTTOM - height}
-                    width={width}
+                    width={bandWidth}
                     height={height}
                     rx="2"
                     fill={alerting ? TONE_VAR.recover : TONE_VAR[band.tone]}

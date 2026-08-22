@@ -34,7 +34,7 @@
   /* ── Charte — 4 couleurs de signal ─────────────── */
   --signal: #7fa8b4; /* primaire — cyan ardoise, mesure / neutre */
   --effort: #8aa37b; /* sauge — activité, série tenue */
-  --load: #c39b6e; /* argile — charge, seuil approché */
+  --load: #e2a659; /* ambre — charge, seuil approché */
   --recover: #a9748a; /* mauve — repos, alerte, dette */
 
   /* ── Charte — texte ───────────────────────────── */
@@ -58,7 +58,7 @@
      quatre variantes par couleur. */
   --signal-rgb: 127 168 180;
   --effort-rgb: 138 163 123;
-  --load-rgb: 195 155 110;
+  --load-rgb: 226 166 89;
   --recover-rgb: 169 116 138;
   --ink-rgb: 227 232 238;
 
@@ -242,7 +242,7 @@
      Même sémantique, même ordre, teintes conservées : 192° / 99° / 33° / 338°. */
   --signal: #2b6b7b; /* cyan ardoise — mesure / neutre */
   --effort: #4a6b38; /* sauge — activité, série tenue */
-  --load: #8a5a1f; /* argile — charge, seuil approché */
+  --load: #a45a00; /* ambre — charge, seuil approché */
   --recover: #8c3f5b; /* mauve — repos, alerte, dette */
 
   /* ── Texte ───────────────────────────────────── */
@@ -255,7 +255,7 @@
      d'une autre. `tokens.test.ts` le vérifie sur les deux thèmes. */
   --signal-rgb: 43 107 123;
   --effort-rgb: 74 107 56;
-  --load-rgb: 138 90 31;
+  --load-rgb: 164 90 0;
   --recover-rgb: 140 63 91;
   --ink-rgb: 19 27 36;
 
