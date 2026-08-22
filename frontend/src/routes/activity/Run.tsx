@@ -662,7 +662,10 @@ export function Run() {
                       unit: 'm/pas',
                       values: strided.map((split) => split.stride_m ?? 0),
                       tone: 'load',
-                      format: (value) => `${num(value, 2)} m`,
+                      // Le nombre seul : la légende écrit « Foulée (m/pas) », l'infobulle
+                      // recolle l'unité, et une graduation de six caractères sortait de
+                      // la gouttière par la gauche.
+                      format: (value) => num(value, 2),
                     }}
                     context={{
                       label: 'Cadence',

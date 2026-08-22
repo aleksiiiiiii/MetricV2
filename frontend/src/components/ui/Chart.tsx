@@ -48,13 +48,22 @@ const VIEW_H = 320;
  *
  * La charte donnait 54, calibrés sur des étiquettes de 9 unités. Depuis que le texte des
  * axes est dimensionné pour être **lu** — 26 unités sur téléphone, parce que le SVG est
- * réduit d'un facteur 0,47 —, « 6:12 » en occupe ~62 : les graduations sortaient du
- * cadre par la gauche et la première étiquette de dates leur passait dessus.
+ * réduit d'un facteur 0,47 —, une graduation coûte bien davantage.
  *
- * 78 est la largeur de la plus longue graduation qu'on écrive — cinq caractères de chasse
- * fixe — plus les 10 unités qui la séparent de l'axe.
+ * **Le chiffre est mesuré, plus estimé.** `getComputedTextLength()` sur les étiquettes
+ * réellement rendues donne **17,68 unités par caractère**, letter-spacing compris et à
+ * la virgule près sur tous les échantillons. La valeur précédente, 78, prétendait tenir
+ * « cinq caractères de chasse fixe » : cinq en demandent 88,4, plus 10 de gouttière, soit
+ * 98. Elle n'en tenait pas quatre — « 5:11 » débordait déjà de 2,4 unités —, et une
+ * étiquette de six comme « 1,25 m » sortait de 38, soit 17 px de la carte sur un
+ * téléphone. `overflow: visible` sur le `<svg>` — voulu, pour l'infobulle — laissait le
+ * texte se peindre par-dessus le rembourrage de la carte, vers le bord de la page.
+ *
+ * 118 tient **six caractères** : 6 × 17,68 = 106, plus les 10 unités qui séparent la
+ * graduation de l'axe, et une unité de battement. Au-delà de six, l'étiquette ressortira :
+ * une graduation n'a pas à porter son unité, que la légende écrit déjà.
  */
-const LEFT = 78;
+const LEFT = 118;
 const RIGHT = 706;
 const TOP = 26;
 const BOTTOM = 196;

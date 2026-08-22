@@ -238,7 +238,9 @@ export function Runs() {
                   unit: 'km',
                   values: months.map((month) => month.distance_km),
                   tone: 'effort',
-                  format: (value) => `${num(value, 1)} km`,
+                  // Le nombre seul, comme partout : la légende porte l'unité et
+                  // l'infobulle la recolle.
+                  format: (value) => num(value, 1),
                   ...(data.volume_domain_km ? { domain: data.volume_domain_km } : {}),
                 }}
                 band={{
