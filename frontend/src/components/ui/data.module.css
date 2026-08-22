@@ -356,3 +356,53 @@
   font-size: var(--t-meta);
   color: var(--ink-mid);
 }
+
+/* ── Barres divergentes ────────────────────────────────
+ *
+ * Le rail est le même que celui de `Bars` — même hauteur, même rayon, même fond : deux
+ * échelles de barres dans une page qui ne se ressembleraient pas donneraient l'impression
+ * de deux unités différentes là où il n'y en a qu'une. */
+.divergingTrack {
+  position: relative;
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* L'axe, posé une fois au centre. Deux bordures se rejoignant l'auraient dessiné deux
+ * fois plus épais au milieu qu'ailleurs. */
+.axis {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--line);
+}
+
+.divergingFill {
+  position: absolute;
+  inset-block: 0;
+  border-radius: 4px;
+  transition: width var(--t);
+  animation: metric-fill 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Une valeur extrapolée s'affiche en retrait de celles qui sont mesurées. C'est la même
+ * distinction que le `Badge` de la ligne, dite une seconde fois là où l'œil lit le
+ * nombre — un badge en début de ligne se rate quand on balaie la colonne de droite. */
+.mutedValue {
+  color: var(--ink-low);
+}
+
+/* Le sens de croissance suit le côté : une barre qui part de l'axe doit y rester
+ * accrochée pendant l'animation. Sans ces deux-là, `metric-fill` la fait grandir depuis
+ * son propre centre et elle traverse l'axe avant de revenir se poser. */
+.growLeft {
+  transform-origin: right center;
+}
+
+.growRight {
+  transform-origin: left center;
+}

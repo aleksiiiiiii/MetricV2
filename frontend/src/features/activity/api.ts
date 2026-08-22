@@ -24,6 +24,8 @@ export interface Run {
   source: string;
   /** Identifiant stable, celui auquel les paliers se rattachent. Vide sur une saisie. */
   run_id: string;
+  /** Kilocalories **actives** : la dépense de la séance seule. */
+  active_calories: number | null;
   /** Kilocalories **totales**, métabolisme de base compris — jamais « calories » tout court. */
   total_calories: number | null;
   /** `19:40:00`, telle que le serveur la rend. Situe la séance, ne la date pas. */
@@ -53,6 +55,23 @@ export interface RunSplit {
   partial: boolean;
   /** Part de la barre de cadence, servie par le serveur : aucun `Math.max` à l'écran. */
   cadence_ratio: number | null;
+  /** L'autre lecture de l'allure, pour qui lit en km/h. */
+  speed_kmh: number | null;
+  /** Mètres par pas — `distance ÷ (cadence × durée)`. Absente sans cadence relevée. */
+  stride_m: number | null;
+  /** Écart à l'allure moyenne des paliers pleins. **Négatif = plus rapide.** */
+  delta_s_per_km: number | null;
+  /**
+   * Part **signée** de la barre divergente, entre -1 et 1.
+   *
+   * Le signe porte le côté et la valeur absolue la longueur : l'écran ne cherche ni
+   * maximum ni sens dans la liste — les deux seraient un calcul métier sur une collection
+   * de mesures.
+   */
+  deviation_ratio: number | null;
+  /** Écart à la cadence moyenne, en pas par minute, et sa barre signée. */
+  cadence_delta_spm: number | null;
+  cadence_deviation_ratio: number | null;
 }
 
 export interface RunSplits {
@@ -73,12 +92,73 @@ export interface RunSplits {
   /** Bornes de l'axe d'allure, **le plus lent d'abord** : l'axe arrive déjà retourné. */
   pace_domain_min_km: [number, number] | null;
   cadence_max_spm: number | null;
+
+  /**
+   * Allure de référence des paliers pleins, celle contre laquelle les écarts se mesurent.
+   * Elle diffère de l'allure de la course, qui inclut le reliquat.
+   */
+  average_pace_min_km: number | null;
+  fastest_pace_min_km: number | null;
+  slowest_pace_min_km: number | null;
+  pace_spread_s_per_km: number | null;
+  /** Écart-type des allures, en s/km — la régularité de la course en une valeur. */
+  pace_sd_s_per_km: number | null;
+  negative_split: boolean | null;
+
+  cadence_avg_spm: number | null;
+  cadence_min_spm: number | null;
+  /**
+   * **Positive = la foulée s'accélère** — le signe inverse de celui de `drift_s_per_km`.
+   * Deux sens opposés pour deux dérives : l'écran nomme chacun en toutes lettres.
+   */
+  cadence_drift_spm: number | null;
+  stride_avg_m: number | null;
+  stride_min_m: number | null;
+  stride_max_m: number | null;
+  deviation_max_s_per_km: number | null;
+  cadence_deviation_max_spm: number | null;
+}
+
+/** Une course de l'historique, réduite à ce qu'une courbe de tendance en montre. */
+export interface RunMark {
+  id: number;
+  date: string;
+  distance_km: number;
+  pace_min_km: number | null;
+  /** Celle qu'on regarde. Le serveur la désigne — l'écran ne compare pas d'identifiants. */
+  current: boolean;
+}
+
+/**
+ * Ce que l'historique dit de cette course-ci.
+ *
+ * **Un rang n'est pas un classement absolu.** Comparer l'allure d'un 8 km à celle d'un
+ * 3 km est bancal : `runs_compared` accompagne toujours le rang, pour que l'écran écrive
+ * « 2ᵉ sur 14 » et non « 2ᵉ ». Vide quand il n'y a qu'une course — une première sortie ne
+ * se compare à rien, et un rang de 1 sur 1 ressemblerait à un record.
+ */
+export interface RunContext {
+  runs_compared: number;
+  pace_rank: number | null;
+  distance_rank: number | null;
+  best_pace_min_km: number | null;
+  longest_distance_km: number | null;
+  average_pace_min_km: number | null;
+  average_distance_km: number | null;
+  /** Écart de cette course aux moyennes. Négatif sur l'allure = plus rapide. */
+  pace_delta_s_per_km: number | null;
+  distance_delta_km: number | null;
+  /** Les dernières sorties, la plus ancienne d'abord. */
+  recent: RunMark[];
+  /** Bornes de l'axe de tendance, le plus lent d'abord — servies, jamais dérivées ici. */
+  pace_domain_min_km: [number, number] | null;
 }
 
 /** Une course et ses paliers. `run` à `null` = aucune course, ce qui n'est pas une panne. */
 export interface RunDetail {
   run: Run | null;
   splits: RunSplits;
+  context: RunContext;
 }
 
 export interface ExerciseEntry {

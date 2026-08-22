@@ -38,5 +38,5 @@ export {
 } from './primitives';
 export type { ButtonVariant, SegmentedOption, Tone } from './primitives';
 
-export { Bars, Check, CheckGroup, Progress, Ring, Sparkline, Stat, Table } from './data';
-export type { BarRow, Column } from './data';
+export { Bars, Check, CheckGroup, Deviation, Progress, Ring, Sparkline, Stat, Table } from './data';
+export type { BarRow, Column, DeviationRow } from './data';

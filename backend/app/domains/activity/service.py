@@ -27,7 +27,9 @@ from app.domains.activity.schemas import (
     ExercisePayload,
     NoteDraft,
     Run,
+    RunContext,
     RunDetail,
+    RunMark,
     RunPayload,
     RunSplit,
     RunSplits,
@@ -82,6 +84,7 @@ class RunService:
             note=model.note,
             source=model.source,
             run_id=model.run_id,
+            active_calories=model.active_calories,
             total_calories=model.total_calories,
             start_time=model.start_time,
             end_time=model.end_time,
@@ -119,6 +122,7 @@ class RunService:
             note=payload.note,
             source=source,
             run_id=run_id,
+            active_calories=payload.active_calories,
             total_calories=payload.total_calories,
             start_time=payload.start_time,
             end_time=payload.end_time,
@@ -214,6 +218,7 @@ class RunService:
         return RunDetail(
             run=self.to_schema(row, splits=len(stored)),
             splits=computed,
+            context=_context(await self._repo.read_all(), row),
         )
 
     async def _splits_of(self, run_id: str) -> list[RunSplitRow]:
@@ -274,6 +279,82 @@ def _split_rows(run_id: str, payload: RunPayload) -> list[RunSplitRow]:
     ]
 
 
+#: Nombre de sorties que la courbe de tendance montre. Douze tient sur 390 px sans que les
+#: points se touchent, et couvre un cycle d'entraînement plutôt qu'une semaine.
+TREND_RUNS = 12
+
+
+def _context(rows: list[Row[RunRow]], current: Row[RunRow]) -> RunContext:
+    """Replace une course parmi les autres (`ACT-19`).
+
+    **Une course seule ne se compare à rien**, et le rang de 1 sur 1 qu'on rendrait alors
+    ressemblerait à un record. En dessous de deux courses, tout reste vide et l'écran
+    n'affiche simplement pas la section.
+
+    Le rang d'allure est rendu **avec** le nombre de courses comparées, jamais seul :
+    comparer l'allure d'un 8 km à celle d'un 3 km est bancal, et c'est à l'écran de le
+    dire — pas au service de choisir à la place de l'utilisateur ce qui est comparable.
+    """
+    if len(rows) < 2:
+        return RunContext(runs_compared=len(rows))
+
+    def pace_of(row: Row[RunRow]) -> float | None:
+        return row.model.pace_min_km or pace_min_per_km(
+            row.model.distance_km, row.model.duration_min
+        )
+
+    mine = pace_of(current)
+    paces = [value for value in (pace_of(row) for row in rows) if value]
+    distances = [row.model.distance_km for row in rows if row.model.distance_km > 0]
+
+    # Le rang se compte sur les valeurs **strictement** meilleures : deux courses à la
+    # même allure partagent leur rang, plutôt que l'une devançant l'autre sur sa position
+    # de ligne — qui n'est pas un mérite.
+    pace_rank = sum(1 for value in paces if value < mine) + 1 if mine and paces else None
+    distance_rank = (
+        sum(1 for value in distances if value > current.model.distance_km) + 1
+        if distances
+        else None
+    )
+
+    average_pace = sum(paces) / len(paces) if paces else None
+    average_distance = sum(distances) / len(distances) if distances else None
+
+    ordered = sorted(rows, key=lambda row: (row.model.date, row.index))
+    trend = [value for value in (pace_of(row) for row in ordered[-TREND_RUNS:]) if value]
+    return RunContext(
+        runs_compared=len(rows),
+        pace_rank=pace_rank,
+        distance_rank=distance_rank,
+        best_pace_min_km=_round(min(paces), 3) if paces else None,
+        longest_distance_km=_round(max(distances)) if distances else None,
+        average_pace_min_km=_round(average_pace, 3),
+        average_distance_km=_round(average_distance),
+        pace_delta_s_per_km=(
+            round((mine - average_pace) * 60, 1) if mine and average_pace else None
+        ),
+        distance_delta_km=(
+            _round(current.model.distance_km - average_distance) if average_distance else None
+        ),
+        recent=[
+            RunMark(
+                id=row.index,
+                date=row.model.date,
+                distance_km=row.model.distance_km,
+                pace_min_km=_round(pace_of(row), 3),
+                current=row.index == current.index,
+            )
+            for row in ordered[-TREND_RUNS:]
+        ],
+        # Le plus lent d'abord : l'axe part retourné, comme celui des paliers. Deux
+        # graphiques d'allure dans la même page qui ne se liraient pas dans le même sens
+        # seraient pires que pas de second graphique du tout.
+        pace_domain_min_km=(
+            (round(max(trend), 4), round(min(trend), 4)) if len(trend) >= 2 else None
+        ),
+    )
+
+
 def _analysed(stored: list[RunSplitRow], run: RunRow) -> RunSplits:
     """Traduit les paliers rangés en ce que la page affiche.
 
@@ -299,9 +380,41 @@ def _analysed(stored: list[RunSplitRow], run: RunRow) -> RunSplits:
     ]
     analysis = splits.analyse(computed)
     ceiling = analysis.cadence_max_spm
+    average = analysis.average_pace_min_km
+    widest = analysis.deviation_max_s_per_km
 
-    return RunSplits(
-        splits=[
+    def deviation(pace: float | None) -> tuple[float | None, float | None]:
+        """Écart à la moyenne, et la part **signée** de la barre qui le dessine.
+
+        Le signe voyage avec la valeur plutôt que d'être redécidé à l'écran : une barre
+        divergente qui déciderait elle-même de son côté referait ici un calcul métier.
+        """
+        if pace is None or average is None:
+            return None, None
+        delta = round((pace - average) * 60, 1)
+        if not widest:
+            return delta, 0.0
+        return delta, round(delta / widest, 4)
+
+    # La cadence se compare à sa propre moyenne, et non à son maximum : de 158 à 174 pas
+    # par minute, des parts du maximum tiennent toutes entre 91 % et 100 % du rail et ne
+    # montrent rien de la variation qu'on vient regarder.
+    beat = analysis.cadence_avg_spm
+    widest_beat = analysis.cadence_deviation_max_spm
+
+    def cadence_deviation(value: int | None) -> tuple[float | None, float | None]:
+        if value is None or beat is None:
+            return None, None
+        delta = round(value - beat, 1)
+        if not widest_beat:
+            return delta, 0.0
+        return delta, round(delta / widest_beat, 4)
+
+    rendered: list[RunSplit] = []
+    for row, split in zip(stored, computed, strict=True):
+        delta, ratio = deviation(row.pace_min_km)
+        beat_delta, beat_ratio = cadence_deviation(row.cadence_spm)
+        rendered.append(
             RunSplit(
                 index=row.index,
                 duration_s=row.duration_s,
@@ -314,9 +427,20 @@ def _analysed(stored: list[RunSplitRow], run: RunRow) -> RunSplits:
                 cadence_ratio=(
                     round(row.cadence_spm / ceiling, 4) if row.cadence_spm and ceiling else None
                 ),
+                speed_kmh=_round(splits.speed_kmh(row.pace_min_km)),
+                stride_m=_round(splits.stride_m(split), 3),
+                # Un reliquat n'a pas d'écart à montrer : son allure est extrapolée, et la
+                # comparer à une moyenne de mesures donnerait une barre qui ment.
+                delta_s_per_km=None if row.partial else delta,
+                deviation_ratio=None if row.partial else ratio,
+                # Le reliquat garde les siens : sa cadence est mesurée, pas extrapolée.
+                cadence_delta_spm=beat_delta,
+                cadence_deviation_ratio=beat_ratio,
             )
-            for row in stored
-        ],
+        )
+
+    return RunSplits(
+        splits=rendered,
         full_count=analysis.full_count,
         partial_count=analysis.partial_count,
         drift_s_per_km=analysis.drift_s_per_km,
@@ -326,6 +450,19 @@ def _analysed(stored: list[RunSplitRow], run: RunRow) -> RunSplits:
         slowest_index=analysis.slowest_index,
         pace_domain_min_km=analysis.pace_domain_min_km,
         cadence_max_spm=analysis.cadence_max_spm,
+        average_pace_min_km=analysis.average_pace_min_km,
+        fastest_pace_min_km=analysis.fastest_pace_min_km,
+        slowest_pace_min_km=analysis.slowest_pace_min_km,
+        pace_spread_s_per_km=analysis.pace_spread_s_per_km,
+        pace_sd_s_per_km=analysis.pace_sd_s_per_km,
+        negative_split=analysis.negative_split,
+        cadence_avg_spm=analysis.cadence_avg_spm,
+        cadence_min_spm=analysis.cadence_min_spm,
+        cadence_drift_spm=analysis.cadence_drift_spm,
+        stride_avg_m=analysis.stride_avg_m,
+        stride_min_m=analysis.stride_min_m,
+        stride_max_m=analysis.stride_max_m,
+        deviation_max_s_per_km=analysis.deviation_max_s_per_km,
     )
 
 

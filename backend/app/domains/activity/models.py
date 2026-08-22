@@ -74,8 +74,13 @@ class RunRow(CsvModel):
     #: Calories **totales**, métabolisme de base compris. `calories` tout court n'existe
     #: pas ici, et c'est délibéré : une capture Apple en affiche deux — 439 actives, 492
     #: totales — et un champ sans qualificatif finirait par mélanger les deux d'une course
-    #: à l'autre. Les actives restent hors de `runs.csv` tant qu'aucun écran ne les demande.
+    #: à l'autre.
     total_calories: int | None = None
+    #: Calories **actives**, la dépense de la séance seule. Le lot C08 les laissait hors du
+    #: fichier « tant qu'aucun écran ne les demande » ; la page Course les demande, et les
+    #: lisait déjà sur la capture pour les jeter ensuite. Colonne en fin d'en-tête, comme
+    #: les précédentes : les lignes d'avant portent une cellule vide (`STO-04`).
+    active_calories: int | None = None
     #: Bornes horaires de la séance, telles que la capture les affiche. Elles ne servent
     #: pas à dater la course — c'est `date` qui le fait — mais à la situer dans la journée.
     start_time: time | None = None

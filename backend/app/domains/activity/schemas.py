@@ -145,6 +145,8 @@ class RunPayload(BaseModel):
     #: qu'affiche une capture Apple. Le nom porte le qualificatif parce que « calories »
     #: tout court désignerait tantôt l'un tantôt l'autre.
     total_calories: Calories | None = None
+    #: Calories **actives** — la dépense de la séance seule, sans le métabolisme de base.
+    active_calories: Calories | None = None
     #: Bornes horaires de la séance. Acceptent `7:40 PM` comme `19:40`.
     start_time: time | None = None
     end_time: time | None = None
@@ -240,6 +242,9 @@ class Run(BaseModel):
     #: Identifiant stable, celui auquel les paliers se rattachent. Vide sur une course
     #: enregistrée avant le lot C08 : elle n'a pas de paliers, et `id` suffit à la corriger.
     run_id: str = ""
+    #: Les deux chiffres de calories d'une capture Apple, distincts et nommés : 439
+    #: actives, 492 totales. « Calories » sans qualificatif voudrait dire les deux.
+    active_calories: int | None = None
     total_calories: int | None = None
     start_time: time | None = None
     end_time: time | None = None
@@ -268,6 +273,24 @@ class RunSplit(BaseModel):
     #: Part de la barre de cadence, entre 0 et 1 — calculée ici pour que l'écran n'ait
     #: aucun `Math.max` à faire sur une collection de mesures.
     cadence_ratio: float | None = None
+    #: L'autre lecture de l'allure, pour qui lit en km/h plutôt qu'en minutes par km.
+    speed_kmh: float | None = None
+    #: Longueur de foulée, en mètres par pas — `distance ÷ (cadence × durée)`.
+    stride_m: float | None = None
+    #: Écart à l'allure moyenne des paliers pleins, en secondes par kilomètre.
+    #: **Négatif = plus rapide que la moyenne.**
+    delta_s_per_km: float | None = None
+    #: Part **signée** de la barre divergente, entre -1 et 1. Le signe porte le sens et la
+    #: valeur absolue la longueur : l'écran ne cherche ni maximum ni sens dans la liste.
+    deviation_ratio: float | None = None
+    #: Écart à la cadence moyenne, en pas par minute, et sa barre signée.
+    #:
+    #: **Une part de la cadence maximale ne montrait rien.** De 158 à 174 pas par minute,
+    #: les barres tenaient toutes entre 91 % et 100 % de leur rail : neuf barres pleines,
+    #: visuellement identiques, pour une variation de seize pas qui est précisément ce
+    #: qu'on venait regarder. L'écart à la moyenne, lui, se voit.
+    cadence_delta_spm: float | None = None
+    cadence_deviation_ratio: float | None = None
 
 
 class RunSplits(BaseModel):
@@ -293,6 +316,73 @@ class RunSplits(BaseModel):
     pace_domain_min_km: tuple[float, float] | None = None
     cadence_max_spm: int | None = None
 
+    # ── Régularité ────────────────────────────────────
+    #
+    # Une course de 8 km à 5'02" peut être huit kilomètres identiques ou quatre sprints et
+    # quatre marches. La moyenne ne les distingue pas ; ces trois-là si.
+
+    average_pace_min_km: float | None = None
+    fastest_pace_min_km: float | None = None
+    slowest_pace_min_km: float | None = None
+    pace_spread_s_per_km: float | None = None
+    pace_sd_s_per_km: float | None = None
+    negative_split: bool | None = None
+
+    # ── Cadence et foulée ─────────────────────────────
+
+    cadence_avg_spm: int | None = None
+    cadence_min_spm: int | None = None
+    #: **Positive = la foulée s'accélère** — le signe inverse de celui de la dérive
+    #: d'allure. Deux sens opposés pour deux dérives : l'écran nomme chacun.
+    cadence_drift_spm: float | None = None
+    stride_avg_m: float | None = None
+    stride_min_m: float | None = None
+    stride_max_m: float | None = None
+    deviation_max_s_per_km: float | None = None
+
+
+class RunMark(BaseModel):
+    """Une course de l'historique, réduite à ce qu'une courbe de tendance en montre."""
+
+    id: int
+    date: date
+    distance_km: float
+    pace_min_km: float | None = None
+    #: Celle qu'on regarde. C'est le serveur qui la désigne — l'écran ne compare pas des
+    #: identifiants pour retrouver le point à mettre en avant.
+    current: bool = False
+
+
+class RunContext(BaseModel):
+    """Ce que l'historique dit de cette course-ci (`ACT-19`).
+
+    **Un rang n'est pas un classement absolu.** Comparer l'allure d'un 8 km à celle d'un
+    3 km est bancal, et le taire serait pire que le dire : `runs_compared` accompagne
+    toujours le rang, pour que l'écran puisse écrire « 2ᵉ sur 14 » et non « 2ᵉ ».
+    """
+
+    #: Nombre de courses de l'historique, celle-ci comprise.
+    runs_compared: int = 0
+    #: Rang d'allure, `1` = la plus rapide. `None` quand la course n'a pas d'allure.
+    pace_rank: int | None = None
+    distance_rank: int | None = None
+    #: Meilleure allure de tout l'historique, et distance la plus longue.
+    best_pace_min_km: float | None = None
+    longest_distance_km: float | None = None
+    #: Moyennes de l'historique, celle-ci comprise — le repère auquel la comparer.
+    average_pace_min_km: float | None = None
+    average_distance_km: float | None = None
+    #: Écarts de cette course aux moyennes. Négatif sur l'allure = plus rapide.
+    pace_delta_s_per_km: float | None = None
+    distance_delta_km: float | None = None
+    #: Les dernières sorties, la plus ancienne d'abord, pour une courbe de tendance.
+    recent: list[RunMark] = Field(default_factory=list)
+    #: Bornes de l'axe d'allure de cette tendance, **le plus lent d'abord** comme celles
+    #: des paliers. Servies plutôt que dérivées : chercher les extrêmes d'une collection
+    #: de mesures à l'écran est le calcul que l'invariant interdit, et la page Activité en
+    #: porte déjà deux qui restent à retirer.
+    pace_domain_min_km: tuple[float, float] | None = None
+
 
 class RunDetail(BaseModel):
     """Ce que la page Course affiche : une course et ses paliers.
@@ -305,6 +395,10 @@ class RunDetail(BaseModel):
 
     run: Run | None = None
     splits: RunSplits = Field(default_factory=RunSplits)
+    #: La même course, replacée parmi les autres. Vide quand il n'y en a pas d'autre —
+    #: une première course ne se compare à rien, et l'écran le dit plutôt que d'afficher
+    #: un rang de 1 sur 1 qui ressemblerait à un record.
+    context: RunContext = Field(default_factory=RunContext)
 
 
 # ── Séances ───────────────────────────────────────────

@@ -28,15 +28,87 @@ function json(status: number, body: unknown): Response {
 
 /** Les neuf paliers de la course de référence, tels que le serveur les rend. */
 const SPLITS = [
-  { index: 1, duration_s: 306, pace_min_km: 5.1, cadence_spm: 166, ratio: 0.954 },
-  { index: 2, duration_s: 299, pace_min_km: 4.983, cadence_spm: 167, ratio: 0.9598 },
-  { index: 3, duration_s: 305, pace_min_km: 5.083, cadence_spm: 158, ratio: 0.908 },
-  { index: 4, duration_s: 306, pace_min_km: 5.1, cadence_spm: 169, ratio: 0.9713 },
-  { index: 5, duration_s: 311, pace_min_km: 5.183, cadence_spm: 172, ratio: 0.9885 },
-  { index: 6, duration_s: 300, pace_min_km: 5.0, cadence_spm: 173, ratio: 0.9943 },
-  { index: 7, duration_s: 293, pace_min_km: 4.883, cadence_spm: 174, ratio: 1 },
-  { index: 8, duration_s: 295, pace_min_km: 4.917, cadence_spm: 173, ratio: 0.9943 },
-  { index: 9, duration_s: 44, pace_min_km: 5.1, cadence_spm: 163, ratio: 0.9368 },
+  {
+    index: 1,
+    duration_s: 306,
+    pace_min_km: 5.1,
+    cadence_spm: 166,
+    ratio: 0.954,
+    stride: 1.181,
+    delta: 4.1,
+  },
+  {
+    index: 2,
+    duration_s: 299,
+    pace_min_km: 4.983,
+    cadence_spm: 167,
+    ratio: 0.9598,
+    stride: 1.201,
+    delta: -2.9,
+  },
+  {
+    index: 3,
+    duration_s: 305,
+    pace_min_km: 5.083,
+    cadence_spm: 158,
+    ratio: 0.908,
+    stride: 1.245,
+    delta: 3.1,
+  },
+  {
+    index: 4,
+    duration_s: 306,
+    pace_min_km: 5.1,
+    cadence_spm: 169,
+    ratio: 0.9713,
+    stride: 1.16,
+    delta: 4.1,
+  },
+  {
+    index: 5,
+    duration_s: 311,
+    pace_min_km: 5.183,
+    cadence_spm: 172,
+    ratio: 0.9885,
+    stride: 1.122,
+    delta: 9.1,
+  },
+  {
+    index: 6,
+    duration_s: 300,
+    pace_min_km: 5.0,
+    cadence_spm: 173,
+    ratio: 0.9943,
+    stride: 1.156,
+    delta: -1.9,
+  },
+  {
+    index: 7,
+    duration_s: 293,
+    pace_min_km: 4.883,
+    cadence_spm: 174,
+    ratio: 1,
+    stride: 1.177,
+    delta: -8.9,
+  },
+  {
+    index: 8,
+    duration_s: 295,
+    pace_min_km: 4.917,
+    cadence_spm: 173,
+    ratio: 0.9943,
+    stride: 1.175,
+    delta: -6.9,
+  },
+  {
+    index: 9,
+    duration_s: 44,
+    pace_min_km: 5.1,
+    cadence_spm: 163,
+    ratio: 0.9368,
+    stride: 1.171,
+    delta: 0,
+  },
 ].map((split) => ({
   index: split.index,
   duration_s: split.duration_s,
@@ -47,6 +119,15 @@ const SPLITS = [
   elevation_m: null,
   partial: split.index === 9,
   cadence_ratio: split.ratio,
+  speed_kmh: Math.round((60 / split.pace_min_km) * 100) / 100,
+  stride_m: split.stride,
+  // Écart à 5,031 min/km, l'allure moyenne des paliers pleins. Le reliquat n'en a pas :
+  // son allure est extrapolée, et la comparer à une moyenne de mesures mentirait.
+  delta_s_per_km: split.index === 9 ? null : split.delta,
+  deviation_ratio: split.index === 9 ? null : Math.round((split.delta / 9.1) * 10000) / 10000,
+  // La cadence garde les siens sur le reliquat : elle y est mesurée, pas extrapolée.
+  cadence_delta_spm: Math.round((split.cadence_spm - 168) * 10) / 10,
+  cadence_deviation_ratio: Math.round(((split.cadence_spm - 168) / 10) * 10000) / 10000,
 }));
 
 const DETAIL = {
@@ -64,6 +145,7 @@ const DETAIL = {
     note: null,
     source: 'apple',
     run_id: 'a1b2c3',
+    active_calories: 439,
     total_calories: 492,
     start_time: '19:40:00',
     end_time: '20:21:00',
@@ -81,12 +163,47 @@ const DETAIL = {
     slowest_index: 5,
     pace_domain_min_km: [5.1833, 4.8833],
     cadence_max_spm: 174,
+    average_pace_min_km: 5.031,
+    fastest_pace_min_km: 4.883,
+    slowest_pace_min_km: 5.183,
+    pace_spread_s_per_km: 18,
+    pace_sd_s_per_km: 5.8,
+    negative_split: true,
+    cadence_avg_spm: 168,
+    cadence_min_spm: 158,
+    cadence_drift_spm: 8,
+    stride_avg_m: 1.177,
+    stride_min_m: 1.122,
+    stride_max_m: 1.245,
+    deviation_max_s_per_km: 9.1,
+    cadence_deviation_max_spm: 10,
+  },
+  // Une seule course dans l'historique : rien à comparer, et la section n'existe pas.
+  context: {
+    runs_compared: 1,
+    pace_rank: null,
+    distance_rank: null,
+    best_pace_min_km: null,
+    longest_distance_km: null,
+    average_pace_min_km: null,
+    average_distance_km: null,
+    pace_delta_s_per_km: null,
+    distance_delta_km: null,
+    recent: [],
+    pace_domain_min_km: null,
   },
 };
 
 /** Une course saisie au clavier : aucune valeur inventée, aucun palier. */
 const BARE = {
-  run: { ...DETAIL.run, run_id: '', total_calories: null, elevation_m: null, splits: 0 },
+  run: {
+    ...DETAIL.run,
+    run_id: '',
+    active_calories: null,
+    total_calories: null,
+    elevation_m: null,
+    splits: 0,
+  },
   splits: {
     splits: [],
     full_count: 0,
@@ -98,10 +215,25 @@ const BARE = {
     slowest_index: null,
     pace_domain_min_km: null,
     cadence_max_spm: null,
+    average_pace_min_km: null,
+    fastest_pace_min_km: null,
+    slowest_pace_min_km: null,
+    pace_spread_s_per_km: null,
+    pace_sd_s_per_km: null,
+    negative_split: null,
+    cadence_avg_spm: null,
+    cadence_min_spm: null,
+    cadence_drift_spm: null,
+    stride_avg_m: null,
+    stride_min_m: null,
+    stride_max_m: null,
+    deviation_max_s_per_km: null,
+    cadence_deviation_max_spm: null,
   },
+  context: DETAIL.context,
 };
 
-const EMPTY = { run: null, splits: BARE.splits };
+const EMPTY = { run: null, splits: BARE.splits, context: DETAIL.context };
 
 function stub(body: unknown, status = 200) {
   vi.stubGlobal(
@@ -230,5 +362,131 @@ describe('page Course', () => {
     // L'en-tête est rendu d'emblée : un « chargement… » seul ne dit pas où l'on est.
     expect(screen.getByRole('heading', { name: 'Course' })).toBeInTheDocument();
     expect(await screen.findByText('8,14')).toBeInTheDocument();
+  });
+});
+
+describe('page Course — ce que les paliers disent de plus', () => {
+  it('nomme la régularité plutôt que de laisser lire un écart-type nu', async () => {
+    stub(DETAIL);
+    renderRun();
+
+    expect(await screen.findByText('Écart-type')).toBeInTheDocument();
+    // 5,8 s/km sur huit kilomètres : le mot fait le travail que le nombre ne fait pas.
+    expect(screen.getByText('course très régulière')).toBeInTheDocument();
+    expect(screen.getByText('Amplitude')).toBeInTheDocument();
+  });
+
+  it('désigne le kilomètre le plus rapide et le plus lent par leur numéro', async () => {
+    stub(DETAIL);
+    renderRun();
+
+    expect(await screen.findByText('Kilomètre le plus rapide')).toBeInTheDocument();
+    // `getAllBy` : les barres d'écart nomment les mêmes kilomètres juste en dessous, et
+    // c'est voulu — la tuile dit lequel, la barre dit de combien.
+    expect(screen.getAllByText('km 7').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('km 5').length).toBeGreaterThan(0);
+  });
+
+  it('lit les deux dérives dans leur sens propre, qui sont opposés', async () => {
+    stub(DETAIL);
+    renderRun();
+
+    // L'allure baisse et la cadence monte : même constat, signes contraires. Les deux
+    // phrases sont la seule chose qui empêche d'en conclure l'inverse.
+    expect(await screen.findByText('Accélération')).toBeInTheDocument();
+    expect(screen.getByText('Foulée plus fréquente')).toBeInTheDocument();
+  });
+
+  it('mesure les écarts contre la moyenne des paliers pleins, et non contre la course', async () => {
+    stub(DETAIL);
+    renderRun();
+
+    // Le repère est l'allure des huit paliers pleins (5,031 min/km), et non celle de la
+    // course entière (5,035) qui inclut le reliquat. Les deux tombent sur 5:02 à
+    // l'affichage — la distinction se joue dans le calcul, pas dans ce que l'œil lit.
+    const note = await screen.findByText(/Chaque barre part de l’allure moyenne/);
+    expect(note).toHaveTextContent('5:02 au kilomètre');
+  });
+
+  it('ne donne aucun écart au reliquat, dont l’allure est extrapolée', async () => {
+    stub(DETAIL);
+    renderRun();
+
+    await screen.findByText(/Chaque barre part de l’allure moyenne/);
+    // Huit barres portent un écart signé ; la neuvième dit ce qu'elle est.
+    expect(screen.getByText('extrapolé')).toBeInTheDocument();
+    expect(screen.getByText('+9,1 s')).toBeInTheDocument();
+    expect(screen.getByText('-8,9 s')).toBeInTheDocument();
+  });
+
+  it('affiche la foulée, que la capture ne portait nulle part', async () => {
+    stub(DETAIL);
+    renderRun();
+
+    expect(await screen.findByText('Foulée moyenne')).toBeInTheDocument();
+    // La tuile et la colonne du tableau portent la même valeur : c'est la moyenne d'un
+    // côté, le septième palier de l'autre, et leur coïncidence à deux décimales est un
+    // hasard de cette course-ci.
+    expect(screen.getAllByText('1,18').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: 'Longueur de foulée' })).toBeInTheDocument();
+  });
+
+  it('tait toute la section « parmi tes courses » quand il n’y en a qu’une', async () => {
+    stub(DETAIL);
+    renderRun();
+
+    await screen.findByText('Écart-type');
+    // Un « 1ᵉʳ sur 1 » serait exact et se lirait comme un record.
+    expect(screen.queryByText(/Parmi tes/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Rang d’allure')).not.toBeInTheDocument();
+  });
+
+  it('accompagne toujours le rang du nombre de courses qui le qualifie', async () => {
+    stub({
+      ...DETAIL,
+      context: {
+        runs_compared: 3,
+        pace_rank: 2,
+        distance_rank: 2,
+        best_pace_min_km: 4.8,
+        longest_distance_km: 10,
+        average_pace_min_km: 5.28,
+        average_distance_km: 7.71,
+        pace_delta_s_per_km: -14.7,
+        distance_delta_km: 0.43,
+        recent: [
+          { id: 1, date: '2026-08-10', distance_km: 5, pace_min_km: 6, current: false },
+          { id: 2, date: '2026-08-15', distance_km: 10, pace_min_km: 4.8, current: false },
+          { id: 0, date: '2026-08-21', distance_km: 8.14, pace_min_km: 5.035, current: true },
+        ],
+        pace_domain_min_km: [6, 4.8],
+      },
+    });
+    renderRun();
+
+    expect(await screen.findByText('Parmi tes 3 courses')).toBeInTheDocument();
+    // Comparer un 8 km à un 3 km est bancal : le compte laisse l'utilisateur en juger.
+    expect(screen.getAllByText('sur 3').length).toBe(2);
+    expect(screen.getByText('15 s/km plus vite que ta moyenne')).toBeInTheDocument();
+  });
+
+  it('ne trace la tendance qu’avec les bornes servies par le serveur', async () => {
+    stub({
+      ...DETAIL,
+      context: {
+        ...DETAIL.context,
+        runs_compared: 2,
+        recent: [
+          { id: 1, date: '2026-08-10', distance_km: 5, pace_min_km: 6, current: false },
+          { id: 0, date: '2026-08-21', distance_km: 8.14, pace_min_km: 5.035, current: true },
+        ],
+        pace_domain_min_km: [6, 5.035],
+      },
+    });
+    renderRun();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Allure des dernières sorties' }),
+    ).toBeInTheDocument();
   });
 });

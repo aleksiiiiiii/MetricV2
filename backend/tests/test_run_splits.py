@@ -529,3 +529,182 @@ def _import_reference(client: TestClient, auth: dict[str, str]) -> None:
         },
         headers=auth,
     )
+
+
+# ── Ce que les paliers disent de plus (`ACT-19`, lot C09) ──
+#
+# Rien de ce qui suit n'est sur la capture. Tout se déduit de ce qui y est, et c'est la
+# raison d'être de la page : une application qui affiche 5'02" de moyenne ne dit pas si
+# la course a été régulière.
+
+
+def reference_analysis() -> splits.Analysis:
+    """L'analyse de la course des captures, sans repasser par l'import."""
+    draft = read_draft(model_payload(), today=TODAY)
+    return splits.analyse(
+        [
+            splits.Split(
+                index=split.index,
+                duration_s=split.duration_s,
+                distance_km=split.distance_km,
+                pace_min_km=split.pace_min_km,
+                cadence_spm=split.cadence_spm,
+                partial=split.partial,
+            )
+            for split in draft.splits
+        ]
+    )
+
+
+def test_the_regularity_of_the_run_is_one_number() -> None:
+    """Écart-type des allures : 5,8 s/km sur la course de référence.
+
+    Huit kilomètres entre 4'53" et 5'11" tiennent dans dix-huit secondes d'amplitude.
+    C'est ce qu'une moyenne de 5'02" ne dit pas — la même moyenne sortirait de quatre
+    sprints et quatre marches.
+    """
+    analysis = reference_analysis()
+
+    assert analysis.pace_sd_s_per_km == 5.8
+    assert analysis.pace_spread_s_per_km == 18.0
+    assert analysis.fastest_pace_min_km == 4.883
+    assert analysis.slowest_pace_min_km == 5.183
+
+
+def test_the_average_pace_ignores_the_remainder() -> None:
+    """5,031 min/km sur les huit paliers pleins, et non l'allure de la course entière.
+
+    Les deux diffèrent : la course affiche 5'02" reliquat compris. C'est la moyenne des
+    paliers pleins qui sert de référence aux écarts, sans quoi chaque barre serait
+    mesurée contre un repère qu'aucun palier plein n'a produit.
+    """
+    assert reference_analysis().average_pace_min_km == 5.031
+
+
+def test_a_run_that_accelerated_is_a_negative_split() -> None:
+    """Le drapeau suit la dérive, il ne se calcule pas deux fois."""
+    analysis = reference_analysis()
+
+    assert analysis.negative_split is True
+    assert analysis.drift_s_per_km is not None
+    assert analysis.drift_s_per_km < 0
+
+
+def test_the_stride_crosses_two_independent_measurements() -> None:
+    """1,18 m par pas — l'ordre de grandeur d'un coureur à 5'/km.
+
+    C'est la seule grandeur du lot qui croise distance et pas comptés, et le troisième
+    kilomètre le montre : 158 SPM contre 174 au septième, pour des allures voisines. La
+    foulée y est la plus longue de la course, ce qu'aucune moyenne ne laissait voir.
+    """
+    analysis = reference_analysis()
+
+    assert analysis.stride_avg_m == 1.177
+    assert analysis.stride_max_m == 1.245  # 3ᵉ km, cadence la plus basse
+    assert analysis.stride_min_m == 1.122  # 5ᵉ km, cadence haute et allure lente
+
+
+def test_the_two_drifts_do_not_read_in_the_same_direction() -> None:
+    """L'allure baisse et la cadence monte : deux signes opposés pour un même constat.
+
+    C'est exactement pourquoi l'écran nomme chacun en toutes lettres plutôt que de
+    montrer deux nombres signés côte à côte.
+    """
+    analysis = reference_analysis()
+
+    assert analysis.drift_s_per_km == -4.2  # plus rapide
+    assert analysis.cadence_drift_spm == 8.0  # foulée plus fréquente
+
+
+def test_a_cadence_drift_needs_four_full_splits_like_the_pace_one() -> None:
+    """Même découpage que la dérive d'allure, donc même plancher.
+
+    Les calculer sur des découpages différents donnerait deux phrases qui semblent se
+    contredire sur la même course.
+    """
+    three = [
+        splits.Split(index=index, duration_s=300, distance_km=1.0, pace_min_km=5.0, cadence_spm=170)
+        for index in range(1, 4)
+    ]
+
+    assert splits.analyse(three).cadence_drift_spm is None
+
+
+def test_the_deviation_bars_arrive_signed_and_normalised() -> None:
+    """Le signe porte le sens, la valeur absolue la longueur.
+
+    Une barre divergente qui déciderait elle-même de son côté referait à l'écran le
+    calcul que le serveur vient de faire — et le referait sur une collection, ce que
+    l'invariant interdit deux fois plutôt qu'une.
+    """
+    analysis = reference_analysis()
+
+    assert analysis.deviation_max_s_per_km == 9.1  # le 5ᵉ km, le plus lent
+
+
+# ── Le contexte : cette course parmi les autres ───────
+
+
+def test_a_first_run_is_compared_to_nothing(store_client: TestClient, auth: dict[str, str]) -> None:
+    """Un rang de 1 sur 1 ressemblerait à un record. On ne rend rien.
+
+    C'est la même règle que l'état vide de l'écran : mieux vaut ne rien dire que dire
+    quelque chose que la donnée ne porte pas.
+    """
+    _import_reference(store_client, auth)
+
+    context = store_client.get("/api/activity/runs/latest", headers=auth).json()["context"]
+
+    assert context["runs_compared"] == 1
+    assert context["pace_rank"] is None
+    assert context["recent"] == []
+
+
+def test_a_run_is_ranked_among_the_others_with_the_count_that_qualifies_it(
+    store_client: TestClient, auth: dict[str, str]
+) -> None:
+    """« 2ᵉ sur 3 » et jamais « 2ᵉ ».
+
+    Comparer l'allure d'un 8 km à celle d'un 3 km est bancal. Le rang seul le tairait ;
+    le rang accompagné du nombre de courses laisse l'utilisateur en juger.
+    """
+    _import_reference(store_client, auth)
+    for day, distance, duration in (("2026-08-10", "5", "30:00"), ("2026-08-15", "10", "48:00")):
+        store_client.post(
+            "/api/activity/runs",
+            headers=auth,
+            json={"date": day, "distance_km": distance, "duration_min": duration},
+        )
+
+    context = store_client.get("/api/activity/runs/latest", headers=auth).json()["context"]
+
+    assert context["runs_compared"] == 3
+    # 4'48"/km sur le 10 km, 5'02" sur la référence, 6'00" sur le 5 km.
+    assert context["pace_rank"] == 2
+    assert context["distance_rank"] == 2
+    assert context["best_pace_min_km"] == 4.8
+    assert context["longest_distance_km"] == 10.0
+
+
+def test_the_trend_marks_the_run_being_looked_at(
+    store_client: TestClient, auth: dict[str, str]
+) -> None:
+    """L'écran ne compare pas des identifiants pour retrouver son point.
+
+    Le serveur désigne celui qui est mis en avant — sans quoi la courbe referait à
+    l'écran un choix qui appartient à la donnée.
+    """
+    _import_reference(store_client, auth)
+    store_client.post(
+        "/api/activity/runs",
+        headers=auth,
+        json={"date": "2026-08-10", "distance_km": "5", "duration_min": "30:00"},
+    )
+
+    context = store_client.get("/api/activity/runs/latest", headers=auth).json()["context"]
+
+    marked = [mark for mark in context["recent"] if mark["current"]]
+    assert len(marked) == 1
+    assert marked[0]["distance_km"] == 8.14
+    # La plus ancienne d'abord : une courbe de tendance se lit dans le sens du temps.
+    assert [mark["date"] for mark in context["recent"]] == ["2026-08-10", "2026-08-21"]

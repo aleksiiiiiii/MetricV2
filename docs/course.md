@@ -255,3 +255,56 @@ chiffre, et les barres juste au-dessus portent déjà la même information en en
 
 **Non vérifié à l'œil** : la grille d'aperçus de l'écran d'import à deux captures. Elle
 n'entre dans le DOM qu'après un choix de fichier, ce qu'aucune sonde du dépôt ne fait.
+
+---
+
+## 7. Lot C09 — la page de plein droit
+
+Plan écrit avant de coder. Le lot C08 a posé les paliers et une page qui les montre ; ce
+lot-ci en fait **la** page d'une course. La contrainte n'a pas bougé et c'est elle qui
+dicte tout le découpage : **aucun de ces chiffres ne peut naître dans un `.tsx`**.
+
+### 7.1 Ce que les paliers permettent encore de dire
+
+Rien de ce qui suit n'est sur la capture. Tout se déduit de ce qui y est.
+
+| Chiffre | Ce qu'il dit | Comment |
+|---|---|---|
+| **Écart-type d'allure** | la régularité, en une valeur | écart-type des allures des paliers pleins |
+| **Amplitude** | le plus lent moins le plus rapide | en s/km |
+| **Écart à la moyenne**, par palier | quel kilomètre a coûté | allure du palier − allure moyenne |
+| **Négative split** | seconde moitié plus rapide | vrai/faux, pas un pourcentage |
+| **Vitesse**, par palier | l'autre lecture de l'allure | `60 ÷ allure` |
+| **Longueur de foulée** | mètres par pas | `distance ÷ (cadence × durée)` |
+| **Dérive de cadence** | la foulée s'accélère-t-elle | même méthode que la dérive d'allure |
+
+**La foulée mérite sa ligne.** `distance ÷ (cadence × durée)` donne 1,18 m par pas sur le
+premier kilomètre de la course de référence. C'est la seule grandeur du lot qui combine
+deux mesures indépendantes, et c'est aussi celle qu'aucune application n'affiche : elle
+dit si un kilomètre plus rapide a été couru en allongeant ou en accélérant la foulée.
+
+### 7.2 Ce que l'historique permet de dire
+
+Une course seule ne se compare à rien. Le service relit `runs.csv` et rend un **contexte** :
+rang d'allure et de distance parmi toutes les courses, meilleure allure jamais courue,
+moyennes, et les douze dernières sorties pour une courbe de tendance.
+
+**Comparer des allures sur des distances différentes est bancal**, et l'écran doit le dire
+plutôt que le taire : le rang s'affiche avec le nombre de courses comparées, jamais comme
+un classement absolu.
+
+### 7.3 Ce que l'écran gagne
+
+Un graphique combiné — allure en courbe, moyenne en repère, cadence en contexte —, des
+barres divergentes pour l'écart à la moyenne, la foulée par palier, et la tendance des
+douze dernières courses.
+
+**Une primitive nouvelle** : `Deviation`, des barres qui partent d'un centre. `Bars` ne
+sait afficher qu'une part de 0 à 1, et un écart signé dessiné avec elle perdrait son
+signe. Elle va dans `data.tsx` et son module, jamais en style en ligne (§2).
+
+### 7.4 Ce que ce lot ne fait toujours pas
+
+Pas de prédiction de temps de course : extrapoler un 10 km depuis huit kilomètres est un
+modèle, pas une mesure, et cette page ne montre que ce qui a eu lieu. Pas de zones de
+fréquence cardiaque tant qu'aucune capture n'en porte. Pas de trace GPS.

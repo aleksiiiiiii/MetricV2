@@ -171,6 +171,73 @@ export function Bars({ rows }: { rows: readonly BarRow[] }) {
   );
 }
 
+// ── Barres divergentes ────────────────────────────────
+
+export interface DeviationRow {
+  label: string;
+  /**
+   * Part **signée** de la barre, entre -1 et 1. Le signe porte le côté, la valeur absolue
+   * la longueur — les deux viennent du serveur, jamais d'une comparaison faite ici.
+   */
+  ratio: number | null;
+  value: ReactNode;
+  /** Le ton du côté négatif, puis du positif. Aucun défaut n'irait : « négatif » n'est
+   * pas « mauvais » — une allure négative est une accélération. C'est à l'appelant, qui
+   * connaît la grandeur, de dire lequel des deux côtés est la bonne nouvelle. */
+  tones: readonly [Tone, Tone];
+  /** Ligne sans écart à montrer — un reliquat, dont l'allure est extrapolée. */
+  muted?: boolean;
+}
+
+/**
+ * Barres qui partent d'un axe central, un côté par signe.
+ *
+ * **`Bars` ne pouvait pas rendre ce service.** Elle dessine une part de 0 à 1 depuis le
+ * bord gauche : un écart signé y perdrait précisément ce qui l'intéresse, le sens. Le
+ * dessiner en valeur absolue et le colorer par le signe aurait marché de loin, mais deux
+ * kilomètres à ±9 s/km auraient alors la même barre — l'œil compare des longueurs, pas
+ * des teintes.
+ *
+ * L'axe est un trait posé au milieu, et non une bordure sur chaque moitié : deux bordures
+ * se rejoignant donnent un trait deux fois plus épais au centre qu'aux extrémités.
+ */
+export function Deviation({ rows }: { rows: readonly DeviationRow[] }) {
+  return (
+    <div className={styles.bars}>
+      {rows.map((row) => {
+        const ratio = row.ratio ?? 0;
+        const negative = ratio < 0;
+        return (
+          <div className={styles.barRow} key={row.label}>
+            <span className={styles.barLabel} title={row.label}>
+              {row.label}
+            </span>
+            <div className={styles.divergingTrack}>
+              <span className={styles.axis} aria-hidden="true" />
+              {row.ratio !== null && (
+                <div
+                  className={cx(
+                    styles.divergingFill,
+                    negative ? styles.growLeft : styles.growRight,
+                  )}
+                  style={{
+                    width: width(Math.abs(ratio) / 2),
+                    background: TONE_VAR[row.tones[negative ? 0 : 1]],
+                    // Le côté se pose en `left`/`right` plutôt qu'en marge : une barre
+                    // nulle reste alors collée à l'axe au lieu de sauter d'un côté.
+                    [negative ? 'right' : 'left']: '50%',
+                  }}
+                />
+              )}
+            </div>
+            <span className={cx(styles.barValue, row.muted && styles.mutedValue)}>{row.value}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Barre de progression simple, avec son compte. */
 export function Progress({
   done,

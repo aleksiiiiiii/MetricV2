@@ -28,7 +28,7 @@ ambiguïté.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from statistics import median
+from statistics import median, pstdev
 
 #: Longueur d'un palier quand la capture ne dit pas laquelle. Un kilomètre : c'est ce que
 #: l'application affiche par défaut, et le seul repli qui ne déforme pas une distance.
@@ -82,6 +82,71 @@ class Analysis:
     #: accélère se lit à l'envers — c'est l'axe qu'on retourne, pas la donnée.
     pace_domain_min_km: tuple[float, float] | None = None
     cadence_max_spm: int | None = None
+
+    # ── Régularité (`ACT-19`) ─────────────────────────
+    #
+    # Une course de 8 km à 5'02" de moyenne peut être huit kilomètres identiques ou quatre
+    # sprints et quatre marches. La moyenne ne les distingue pas ; ces trois-là si.
+
+    #: Allure de référence des paliers pleins : temps total sur distance totale. Elle
+    #: diffère de l'allure de la course, qui inclut le reliquat.
+    average_pace_min_km: float | None = None
+    fastest_pace_min_km: float | None = None
+    slowest_pace_min_km: float | None = None
+    #: Le plus lent moins le plus rapide, en secondes par kilomètre.
+    pace_spread_s_per_km: float | None = None
+    #: Écart-type des allures, en secondes par kilomètre. **Population et non échantillon** :
+    #: ces paliers sont la course entière, pas un tirage dans quelque chose de plus grand.
+    pace_sd_s_per_km: float | None = None
+    #: Seconde moitié plus rapide que la première. `None` quand la dérive ne se calcule pas.
+    negative_split: bool | None = None
+
+    # ── Cadence et foulée ─────────────────────────────
+
+    cadence_avg_spm: int | None = None
+    cadence_min_spm: int | None = None
+    #: Dérive de cadence, en pas par minute : seconde moitié moins première. **Positive =
+    #: la foulée s'accélère**, à l'inverse de la dérive d'allure — les deux signes ne se
+    #: lisent pas dans le même sens, et l'écran doit le dire pour chacun.
+    cadence_drift_spm: float | None = None
+    #: Longueur de foulée moyenne, en mètres par pas.
+    stride_avg_m: float | None = None
+    stride_min_m: float | None = None
+    stride_max_m: float | None = None
+    #: Amplitude des écarts à la moyenne, en s/km — de quoi normaliser des barres signées
+    #: sans qu'un écran ait à chercher un maximum dans une collection de mesures.
+    deviation_max_s_per_km: float | None = None
+    #: Même chose sur la cadence, en pas par minute. La cadence compte **tous** les
+    #: paliers, reliquat compris : 163 pas par minute sur 44 secondes est une mesure, là
+    #: où l'allure du même palier est une extrapolation.
+    cadence_deviation_max_spm: float | None = None
+
+
+def speed_kmh(pace_min_km: float | None) -> float | None:
+    """L'autre lecture d'une allure. `5'00"/km` fait 12 km/h."""
+    return None if not pace_min_km or pace_min_km <= 0 else 60 / pace_min_km
+
+
+def stride_m(split: Split) -> float | None:
+    """Longueur de foulée d'un palier, en mètres par pas.
+
+        foulée = distance ÷ (cadence × durée)
+
+    La seule grandeur de ce module qui **croise deux mesures indépendantes** — la distance
+    parcourue et les pas comptés —, et c'est ce qui la rend intéressante : à allure égale,
+    une foulée plus longue et moins fréquente n'est pas la même course qu'une foulée courte
+    et rapide. Aucune application du marché ne l'affiche, et elle se déduit pourtant de ce
+    que toutes montrent.
+
+    La cadence d'Apple compte **les deux pieds** : 166 SPM sur 5 min 06 fait 846 pas pour
+    un kilomètre, soit 1,18 m par pas — l'ordre de grandeur attendu d'un coureur à 5'/km.
+    """
+    if not split.cadence_spm or split.cadence_spm <= 0:
+        return None
+    if split.distance_km is None or split.distance_km <= 0 or split.duration_s <= 0:
+        return None
+    steps = split.cadence_spm * (split.duration_s / 60)
+    return None if steps <= 0 else split.distance_km * 1000 / steps
 
 
 def mark_partials(splits: list[Split]) -> list[Split]:
@@ -182,6 +247,18 @@ def analyse(splits: list[Split]) -> Analysis:
     )
 
     cadences = [split.cadence_spm for split in splits if split.cadence_spm]
+    strides = [value for value in (stride_m(split) for split in splits) if value is not None]
+
+    # La régularité se mesure sur les paliers pleins seuls : un reliquat de 44 secondes
+    # ferait exploser un écart-type sans que la course ait varié d'un pas.
+    values = [pace for _, pace in paces]
+    average = _mean_pace(full)
+    spread = round((max(values) - min(values)) * 60, 1) if len(values) >= 2 else None
+    deviation = (
+        round(max(abs(pace - average) for pace in values) * 60, 1)
+        if average is not None and values
+        else None
+    )
 
     return Analysis(
         full_count=len(full),
@@ -193,7 +270,46 @@ def analyse(splits: list[Split]) -> Analysis:
         slowest_index=slowest,
         pace_domain_min_km=domain,
         cadence_max_spm=max(cadences) if cadences else None,
+        average_pace_min_km=_round(average),
+        fastest_pace_min_km=_round(min(values)) if values else None,
+        slowest_pace_min_km=_round(max(values)) if values else None,
+        pace_spread_s_per_km=spread,
+        # `pstdev` et non `stdev` : ces paliers **sont** la course, pas un échantillon
+        # tiré d'une population plus large dont on estimerait la dispersion.
+        pace_sd_s_per_km=round(pstdev(values) * 60, 1) if len(values) >= 2 else None,
+        negative_split=drift < 0 if drift is not None else None,
+        cadence_avg_spm=round(sum(cadences) / len(cadences)) if cadences else None,
+        cadence_min_spm=min(cadences) if cadences else None,
+        cadence_drift_spm=_cadence_drift(full),
+        stride_avg_m=round(sum(strides) / len(strides), 3) if strides else None,
+        stride_min_m=round(min(strides), 3) if strides else None,
+        stride_max_m=round(max(strides), 3) if strides else None,
+        deviation_max_s_per_km=deviation,
+        cadence_deviation_max_spm=(
+            round(max(abs(value - sum(cadences) / len(cadences)) for value in cadences), 1)
+            if cadences
+            else None
+        ),
     )
+
+
+def _cadence_drift(full: list[Split]) -> float | None:
+    """Dérive de cadence entre les deux moitiés, en pas par minute.
+
+    Même découpage que la dérive d'allure — mêmes moitiés, même palier du milieu écarté —
+    pour que les deux chiffres parlent du **même** partage de la course. Les calculer sur
+    des découpages différents donnerait deux phrases qui semblent se contredire.
+
+    Le signe se lit à l'envers de celui de l'allure : positif, la foulée s'est accélérée.
+    """
+    usable = [split for split in full if split.cadence_spm]
+    if len(usable) < 4:
+        return None
+
+    half = len(usable) // 2
+    first = [split.cadence_spm or 0 for split in usable[:half]]
+    second = [split.cadence_spm or 0 for split in usable[len(usable) - half :]]
+    return round(sum(second) / len(second) - sum(first) / len(first), 1)
 
 
 def _halves(full: list[Split]) -> tuple[float | None, float | None]:

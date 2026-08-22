@@ -143,6 +143,7 @@ class AppleImportService:
                     elevation_m=payload.elevation_m,
                     cadence_spm=payload.cadence_spm,
                     note=payload.note,
+                    active_calories=payload.calories,
                     total_calories=payload.total_calories,
                     start_time=payload.start_time,
                     end_time=payload.end_time,
