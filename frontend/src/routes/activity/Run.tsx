@@ -241,7 +241,9 @@ function Context({ context }: { context: RunContext }) {
               unit: 'km',
               values: trend.map((mark) => mark.distance_km),
               tone: 'load',
-              format: (value) => `${num(value, 1)} km`,
+              // L'infobulle colle `format` et `unit` : rendre l'unité dans les deux
+              // donnait « 8,1 km km ».
+              format: (value) => num(value, 1),
             }}
             // Sans cette phrase, la courbe ne dit pas lequel de ses points est la course
             // ouverte. C'est sans conséquence sur la dernière — elle ferme la courbe —,
@@ -360,8 +362,8 @@ export function Run() {
         eyebrow="Domaine Activité"
         title="Course"
         actions={
-          <LinkButton variant="quiet" to="/activite">
-            Retour à l’activité
+          <LinkButton variant="quiet" to="/activite/courses">
+            Toutes tes courses
           </LinkButton>
         }
       >

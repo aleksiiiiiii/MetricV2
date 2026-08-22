@@ -34,6 +34,7 @@ export const keys = {
     run: (id: number) => ['activity', 'runs', id] as const,
     /** La dernière course et ses paliers — ce que `/activite/course` ouvre par défaut. */
     latestRun: () => ['activity', 'runs', 'latest'] as const,
+    runProgress: () => ['activity', 'runs', 'progress'] as const,
     runSplits: (id: number) => ['activity', 'runs', id, 'splits'] as const,
     workouts: () => ['activity', 'workouts'] as const,
     workout: (id: number) => ['activity', 'workouts', id] as const,

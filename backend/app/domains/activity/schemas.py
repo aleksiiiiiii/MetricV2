@@ -384,6 +384,89 @@ class RunContext(BaseModel):
     pace_domain_min_km: tuple[float, float] | None = None
 
 
+class DistanceBand(BaseModel):
+    """Une bande de distance et son meilleur temps (`ACT-20`).
+
+    **La seule comparaison d'allures honnête de la page.** 5'30" sur 15 km est une
+    meilleure course que 5'10" sur 3 km ; à l'intérieur d'une bande, les sorties se
+    ressemblent assez pour qu'un record veuille dire quelque chose.
+    """
+
+    label: str
+    runs: int = 0
+    best_pace_min_km: float | None = None
+    #: La course qui détient le record, pour que l'écran puisse y mener.
+    best_index: int | None = None
+    best_day: date | None = None
+    average_pace_min_km: float | None = None
+    total_distance_km: float = 0.0
+
+
+class MonthTotals(BaseModel):
+    """Un mois de course. C'est ici que « progresser » se lit sans réserve à poser."""
+
+    #: `2026-08`. L'écran le met en forme, il ne le calcule pas.
+    month: str
+    runs: int = 0
+    distance_km: float = 0.0
+    minutes: float = 0.0
+    pace_min_km: float | None = None
+
+
+class RunWindow(BaseModel):
+    """Les N dernières sorties contre les N précédentes.
+
+    Comparer une course à une course ferait dire à la dernière séance de fractionné que
+    la forme s'est effondrée. La fenêtre lisse le mélange des distances sans le faire
+    disparaître — et l'écran le dit plutôt que de le taire.
+    """
+
+    size: int = 0
+    recent_pace_min_km: float | None = None
+    previous_pace_min_km: float | None = None
+    #: Secondes par kilomètre, récent moins précédent. **Négatif = plus rapide.**
+    pace_delta_s_per_km: float | None = None
+    recent_distance_km: float | None = None
+    previous_distance_km: float | None = None
+    distance_delta_km: float | None = None
+
+
+class RunProgress(BaseModel):
+    """La page « Toutes tes courses » (`ACT-20`) : la liste et ce qu'elle raconte.
+
+    Une seule requête : la liste des courses **et** les agrégats. Deux appels auraient
+    laissé l'écran assembler deux réponses de fraîcheurs différentes, et c'est exactement
+    le genre de recollage que le tableau de bord vient d'abandonner.
+    """
+
+    runs: list[Run] = Field(
+        default_factory=list, description="Toutes les courses, la plus récente d'abord"
+    )
+    total_runs: int = 0
+    total_distance_km: float = 0.0
+    total_minutes: float = 0.0
+    #: Distance totale sur temps total, et non la moyenne des allures — une sortie de 2 km
+    #: y pèserait autant qu'une de 20.
+    overall_pace_min_km: float | None = None
+
+    best_pace_min_km: float | None = None
+    best_pace_index: int | None = None
+    best_pace_day: date | None = None
+    longest_distance_km: float | None = None
+    longest_distance_index: int | None = None
+    longest_distance_day: date | None = None
+    longest_duration_min: float | None = None
+
+    bands: list[DistanceBand] = Field(default_factory=list)
+    #: Du plus ancien au plus récent. Les mois sans course sont **absents** : un zéro
+    #: inséré se lirait comme une mesure alors qu'il dit qu'on n'a rien enregistré.
+    months: list[MonthTotals] = Field(default_factory=list)
+    window: RunWindow = Field(default_factory=RunWindow)
+
+    pace_domain_min_km: tuple[float, float] | None = None
+    volume_domain_km: tuple[float, float] | None = None
+
+
 class RunDetail(BaseModel):
     """Ce que la page Course affiche : une course et ses paliers.
 

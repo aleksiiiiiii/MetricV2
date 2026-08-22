@@ -154,6 +154,70 @@ export interface RunContext {
   pace_domain_min_km: [number, number] | null;
 }
 
+/**
+ * Une bande de distance et son meilleur temps (`ACT-20`).
+ *
+ * **La seule comparaison d'allures honnête de la page.** 5'30" sur 15 km est une meilleure
+ * course que 5'10" sur 3 km ; à l'intérieur d'une bande, les sorties se ressemblent assez
+ * pour qu'un record veuille dire quelque chose.
+ */
+export interface DistanceBand {
+  label: string;
+  runs: number;
+  best_pace_min_km: number | null;
+  /** La course qui détient le record — l'écran y mène, il ne la cherche pas. */
+  best_index: number | null;
+  best_day: string | null;
+  average_pace_min_km: number | null;
+  total_distance_km: number;
+}
+
+/** Un mois de course. C'est ici que « progresser » se lit sans réserve à poser. */
+export interface MonthTotals {
+  /** `2026-08`. L'écran le met en forme, il ne le calcule pas. */
+  month: string;
+  runs: number;
+  distance_km: number;
+  minutes: number;
+  pace_min_km: number | null;
+}
+
+/** Les N dernières sorties contre les N précédentes. `size` à 0 = trop peu pour comparer. */
+export interface RunWindow {
+  size: number;
+  recent_pace_min_km: number | null;
+  previous_pace_min_km: number | null;
+  /** Secondes par kilomètre, récent moins précédent. **Négatif = plus rapide.** */
+  pace_delta_s_per_km: number | null;
+  recent_distance_km: number | null;
+  previous_distance_km: number | null;
+  distance_delta_km: number | null;
+}
+
+/** La page « Toutes tes courses » : la liste et ce qu'elle raconte, en une réponse. */
+export interface RunProgress {
+  /** Toutes les courses, la plus récente d'abord. */
+  runs: Run[];
+  total_runs: number;
+  total_distance_km: number;
+  total_minutes: number;
+  /** Distance totale sur temps total — et non la moyenne des allures. */
+  overall_pace_min_km: number | null;
+  best_pace_min_km: number | null;
+  best_pace_index: number | null;
+  best_pace_day: string | null;
+  longest_distance_km: number | null;
+  longest_distance_index: number | null;
+  longest_distance_day: string | null;
+  longest_duration_min: number | null;
+  bands: DistanceBand[];
+  /** Du plus ancien au plus récent. Les mois sans course sont **absents**. */
+  months: MonthTotals[];
+  window: RunWindow;
+  pace_domain_min_km: [number, number] | null;
+  volume_domain_km: [number, number] | null;
+}
+
 /** Une course et ses paliers. `run` à `null` = aucune course, ce qui n'est pas une panne. */
 export interface RunDetail {
   run: Run | null;
@@ -374,6 +438,7 @@ export const activityApi = {
     request<Run>('/api/activity/runs', { method: 'POST', body: payload }),
   readRun: (id: number) => request<Run>(`/api/activity/runs/${id}`),
   latestRun: () => request<RunDetail>('/api/activity/runs/latest'),
+  runProgress: () => request<RunProgress>('/api/activity/runs/progress'),
   runSplits: (id: number) => request<RunDetail>(`/api/activity/runs/${id}/splits`),
   updateRun: (id: number, token: string, payload: RunPayload) =>
     request<Run>(`/api/activity/runs/${id}`, {

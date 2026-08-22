@@ -26,6 +26,7 @@ from app.domains.activity.schemas import (
     Run,
     RunDetail,
     RunPayload,
+    RunProgress,
     Workout,
     WorkoutPayload,
 )
@@ -110,6 +111,24 @@ async def latest_run(store: StoreDep) -> RunDetail:
     « aucune course » plutôt qu'une erreur.
     """
     return await RunService(store).latest()
+
+
+@router.get(
+    "/runs/progress",
+    response_model=RunProgress,
+    summary="Toutes les courses et leur progression",
+)
+async def run_progress(store: StoreDep) -> RunProgress:
+    """La liste complète des courses et ce qu'elles racontent (`ACT-20`).
+
+    **Déclarée avant `/runs/{row_id}`** pour la même raison que `latest` : le motif
+    d'identifiant n'accepte qu'un entier et rendrait un `422` sur une adresse valide.
+
+    Une seule requête pour la liste **et** les agrégats. En scinder deux aurait laissé
+    l'écran assembler deux réponses de fraîcheurs différentes, et recoller des chiffres
+    est exactement ce que le tableau de bord vient d'abandonner.
+    """
+    return await RunService(store).progress()
 
 
 @router.get("/runs/{row_id}", response_model=Run, summary="Détail d'une course")

@@ -635,7 +635,8 @@ export function KitchenSink() {
             tone: 'effort',
             alertBelow: 6.5,
             domain: [5, 8],
-            format: (value) => `${Math.floor(value)} h`,
+            // `unit` dit « h », `format` le seul nombre : l'infobulle colle les deux.
+            format: (value) => String(Math.floor(value)),
           }}
           note={
             <>

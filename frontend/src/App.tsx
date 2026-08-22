@@ -5,6 +5,7 @@ import { Shell } from '@/app/Shell';
 import { Activity } from '@/routes/Activity';
 import { Catalogue } from '@/routes/activity/Catalogue';
 import { Run } from '@/routes/activity/Run';
+import { Runs } from '@/routes/activity/Runs';
 import { Stats } from '@/routes/activity/Stats';
 import { Assiduity } from '@/routes/Assiduity';
 import { Assistant } from '@/routes/Assistant';
@@ -56,6 +57,7 @@ export function App() {
             l'adresse que le plan nomme. Avec, celle qu'on ouvre depuis l'historique :
             s'en tenir à la première aurait rendu les paliers de toutes les courses
             précédentes invisibles, c'est-à-dire écrits pour rien. */}
+        <Route path="/activite/courses" element={<Runs />} />
         <Route path="/activite/course" element={<Run />} />
         <Route path="/activite/course/:id" element={<Run />} />
         <Route path="/planning" element={<Planning />} />

@@ -12,7 +12,7 @@ from datetime import date
 from app.core.exceptions import AiUnreadableError
 from app.core.parsing import estimate_one_rep_max, pace_min_per_km
 from app.core.text import fold
-from app.domains.activity import notes, splits
+from app.domains.activity import notes, progress, splits
 from app.domains.activity.models import (
     ExerciseLogRow,
     ExerciseRow,
@@ -21,18 +21,22 @@ from app.domains.activity.models import (
     WorkoutRow,
 )
 from app.domains.activity.schemas import (
+    DistanceBand,
     Exercise,
     ExerciseEntry,
     ExerciseEntryPayload,
     ExercisePayload,
+    MonthTotals,
     NoteDraft,
     Run,
     RunContext,
     RunDetail,
     RunMark,
     RunPayload,
+    RunProgress,
     RunSplit,
     RunSplits,
+    RunWindow,
     Workout,
     WorkoutPayload,
 )
@@ -211,6 +215,89 @@ class RunService:
         # ne sont pas toujours là.
         latest = max(rows, key=lambda row: (row.model.date, row.index))
         return await self._detail_of(latest)
+
+    async def progress(self) -> RunProgress:
+        """Toutes les courses et ce qu'elles racontent, en une requête (`ACT-20`).
+
+        Le fichier des paliers est lu **une fois** et compté par `run_id`, plutôt qu'une
+        fois par course affichée : à cinquante courses, `_splits_of` aurait relu le même
+        fichier cinquante fois pour en tirer cinquante nombres.
+        """
+        rows = await self._repo.read_all()
+        counts: dict[str, int] = {}
+        if any(row.model.run_id for row in rows):
+            for split in await self._splits.read_all():
+                key = split.model.run_id
+                counts[key] = counts.get(key, 0) + 1
+
+        computed = progress.analyse(
+            [
+                progress.Sortie(
+                    index=row.index,
+                    day=row.model.date,
+                    distance_km=row.model.distance_km,
+                    duration_min=row.model.duration_min,
+                    pace_min_km=row.model.pace_min_km
+                    or pace_min_per_km(row.model.distance_km, row.model.duration_min),
+                    cadence_spm=row.model.cadence_spm,
+                )
+                for row in rows
+            ]
+        )
+
+        return RunProgress(
+            # La plus récente d'abord : c'est celle qu'on vient voir, et la liste se lit
+            # du haut. L'ordre des agrégats, lui, est chronologique — une courbe se lit
+            # dans le sens du temps.
+            runs=[
+                self.to_schema(row, splits=counts.get(row.model.run_id, 0))
+                for row in sorted(rows, key=lambda row: (row.model.date, row.index), reverse=True)
+            ],
+            total_runs=computed.total_runs,
+            total_distance_km=computed.total_distance_km,
+            total_minutes=computed.total_minutes,
+            overall_pace_min_km=computed.overall_pace_min_km,
+            best_pace_min_km=computed.best_pace_min_km,
+            best_pace_index=computed.best_pace_index,
+            best_pace_day=computed.best_pace_day,
+            longest_distance_km=computed.longest_distance_km,
+            longest_distance_index=computed.longest_distance_index,
+            longest_distance_day=computed.longest_distance_day,
+            longest_duration_min=computed.longest_duration_min,
+            bands=[
+                DistanceBand(
+                    label=band.label,
+                    runs=band.runs,
+                    best_pace_min_km=band.best_pace_min_km,
+                    best_index=band.best_index,
+                    best_day=band.best_day,
+                    average_pace_min_km=band.average_pace_min_km,
+                    total_distance_km=band.total_distance_km,
+                )
+                for band in computed.bands
+            ],
+            months=[
+                MonthTotals(
+                    month=month.month,
+                    runs=month.runs,
+                    distance_km=month.distance_km,
+                    minutes=month.minutes,
+                    pace_min_km=month.pace_min_km,
+                )
+                for month in computed.months
+            ],
+            window=RunWindow(
+                size=computed.window.size,
+                recent_pace_min_km=computed.window.recent_pace_min_km,
+                previous_pace_min_km=computed.window.previous_pace_min_km,
+                pace_delta_s_per_km=computed.window.pace_delta_s_per_km,
+                recent_distance_km=computed.window.recent_distance_km,
+                previous_distance_km=computed.window.previous_distance_km,
+                distance_delta_km=computed.window.distance_delta_km,
+            ),
+            pace_domain_min_km=computed.pace_domain_min_km,
+            volume_domain_km=computed.volume_domain_km,
+        )
 
     async def _detail_of(self, row: Row[RunRow]) -> RunDetail:
         stored = await self._splits_of(row.model.run_id)

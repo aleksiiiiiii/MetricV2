@@ -693,3 +693,23 @@
   color: var(--ink-low);
   font-size: var(--t-meta);
 }
+
+/* La ligne de la liste des courses mène au détail.
+ *
+ * `display: flex` et non `inline` : un lien en ligne ne fait que la hauteur de son texte,
+ * soit 17 px là où le plancher est 44. La cible occupe donc toute la hauteur de sa
+ * cellule, et le `margin` négatif la fait déborder sur le rembourrage de la ligne pour
+ * qu'aucune bande morte ne subsiste entre deux courses. */
+.runLink {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  margin-block: calc(var(--s2) * -1);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.runLink:active {
+  color: var(--signal);
+}

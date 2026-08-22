@@ -125,6 +125,7 @@ export function Activity() {
         title={<>Courses &amp; séances</>}
         actions={
           <>
+            <LinkButton to="/activite/courses">Courses</LinkButton>
             <LinkButton to="/activite/catalogue">Catalogue</LinkButton>
             <LinkButton to="/activite/statistiques">Statistiques</LinkButton>
           </>
