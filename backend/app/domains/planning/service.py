@@ -21,6 +21,7 @@ from datetime import date, timedelta
 
 from app.core.dates import today_local, week_start
 from app.core.exceptions import AiUnreadableError
+from app.domains.activity import circuit_link
 from app.domains.activity.models import RunRow, WorkoutRow
 from app.domains.activity.stats import ActivityStats
 from app.domains.ai.service import AiService
@@ -92,6 +93,7 @@ class PlanningService:
             duration_min=model.duration_min,
             note=model.note or None,
             source=model.source or "manual",
+            workout_url=circuit_link.find_in_text(model.note),
         )
 
     async def _rows(self, *, fresh: bool = False) -> list[PlannedSession]:
@@ -195,8 +197,39 @@ class PlanningService:
         )
 
     async def create(self, payload: PlanPayload, *, source: str = "manual") -> PlannedSession:
-        row = await self._plan.append(self._to_row(payload, session_id=new_id(), source=source))
+        row = await self._plan.append(
+            self._to_row(await self._with_link(payload), session_id=new_id(), source=source)
+        )
         return self._to_schema(row)
+
+    async def _with_link(self, payload: PlanPayload) -> PlanPayload:
+        """La charge utile, note enrichie du lien de la séance Cadence demandée (**D5**).
+
+        Le lien est **ajouté à la note**, pas rangé dans une colonne. Trois conséquences,
+        toutes assumées :
+
+        * une note reste lisible seule, dans un tableur, sans rien à rejoindre ;
+        * supprimer le circuit ne casse pas la séance prévue — une URL Cadence porte la
+          séance entière, c'est le seul endroit où l'absence de base de données aide ;
+        * en contrepartie, le lien ne suit pas les corrections du circuit. Une séance
+          prévue la semaine dernière garde la version de la semaine dernière, ce qui est
+          défendable pour un plan.
+
+        Un `circuit_id` qui ne désigne rien est **ignoré en silence**. Refuser toute la
+        séance prévue parce qu'un modèle a nommé un circuit supprimé coûterait plus que
+        ça ne protège : ce qui compte — le jour, l'heure, le titre — est juste.
+        """
+        if not payload.circuit_id:
+            return payload
+
+        from app.domains.activity.service import CircuitService
+
+        circuit = await CircuitService(self._store).find(payload.circuit_id)
+        if circuit is None or circuit.url is None:
+            return payload
+
+        note = (payload.note or "").strip()
+        return payload.model_copy(update={"note": f"{note} {circuit.url}".strip()})
 
     async def update(self, index: int, token: str, payload: PlanPayload) -> PlannedSession:
         rows = await self._plan.read_all(fresh=True)

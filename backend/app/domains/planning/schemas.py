@@ -55,6 +55,16 @@ class PlanPayload(BaseModel):
     title: Label
     duration_min: DurationMin
     note: Note | None = None
+    #: La séance Cadence à joindre, par son identifiant **stable** (**D5**).
+    #:
+    #: Ce n'est pas une colonne de `plan.csv` : le serveur s'en sert pour ajouter le lien
+    #: **à la note**, puis l'oublie. C'est le raccourci assumé — aucune référence à tenir,
+    #: aucun orphelin possible, et une note qui reste lisible dans un tableur.
+    #:
+    #: Il existe surtout pour l'assistant. Le modèle nomme la séance qu'il veut joindre ;
+    #: c'est le serveur qui fabrique l'adresse. Une URL écrite par un modèle est du texte
+    #: non vérifié, et le suffixe `x` du format s'y perd en silence.
+    circuit_id: str | None = Field(default=None, max_length=40)
 
     _blank_time = field_validator("time", mode="before")(_empty_time_is_none)
 
@@ -73,6 +83,18 @@ class PlannedSession(BaseModel):
     note: str | None = None
     #: `manual` ou `ai` — l'origine reste lisible jusque dans le CSV (`PLAN-04`).
     source: str
+    #: L'adresse de séance Cadence **extraite de la note**, s'il y en a une (**D5**).
+    #:
+    #: Le lien vit dans la note et nulle part ailleurs : `plan.csv` ne gagne aucune
+    #: colonne. Mais reconnaître une adresse Cadence dans du texte libre est une règle du
+    #: format ; la laisser au client en ferait une seconde implémentation, qui divergerait
+    #: de celle du serveur au premier cas limite. Le serveur extrait, l'écran affiche un
+    #: bouton.
+    #:
+    #: Ce que le raccourci coûte, dit franchement : le lien ne suit pas les corrections du
+    #: circuit. Renommer une séance ne touche pas la note déjà écrite. En contrepartie,
+    #: supprimer le circuit ne casse rien — une URL Cadence porte la séance entière.
+    workout_url: str | None = None
 
 
 class DoneActivity(BaseModel):

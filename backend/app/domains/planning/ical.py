@@ -164,6 +164,15 @@ def event_lines(session: PlannedSession, *, stamp: datetime, tz: ZoneInfo) -> li
     lines += _property("SUMMARY", escape_text(_summary(session)))
     if session.note:
         lines += _property("DESCRIPTION", escape_text(session.note))
+    if session.workout_url:
+        # `URL` est une propriété standard d'un `VEVENT` (§3.8.4.6), et les calendriers
+        # l'affichent en lien ouvrable. Conséquence concrète : une séance prévue s'ouvre
+        # dans Cadence **depuis le calendrier iOS**, sans passer par Metric — c'est
+        # probablement le chemin le plus emprunté du lot, pour une ligne.
+        #
+        # Elle n'est pas échappée comme du texte : la RFC la type `URI`, où le
+        # point-virgule et la virgule ne sont pas des séparateurs.
+        lines += _property("URL", session.workout_url)
     lines += _property("CATEGORIES", escape_text(KIND_LABELS.get(session.kind, "Séance")))
     # Une séance planifiée n'occupe pas l'agenda comme un rendez-vous professionnel :
     # `TRANSP:TRANSPARENT` évite qu'elle fasse apparaître la journée comme indisponible.

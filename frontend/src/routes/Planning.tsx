@@ -9,6 +9,7 @@ import {
   Chip,
   ChipStrip,
   Empty,
+  ExternalLinkButton,
   Field,
   Rule,
   Segmented,
@@ -223,6 +224,26 @@ function MonthGrid({
 
 // ── Panneau du jour (`PLAN-01`, `PLAN-02`) ────────────
 
+/**
+ * La note d'une séance, **privée de l'adresse Cadence** qu'elle porte.
+ *
+ * Vu en capture : sous le bouton « Ouvrir dans Cadence », la note répétait l'URL en toutes
+ * lettres — deux lignes de `?w=Gainage~2~60~Plank:60s:30` illisibles, au milieu du texte
+ * que l'utilisateur avait vraiment écrit.
+ *
+ * **Ce n'est pas reconnaître le format côté client.** Le serveur a déjà fait ce travail et
+ * rend `workout_url` ; ici on retire une sous-chaîne exacte, connue, qu'on n'a pas
+ * identifiée soi-même. La règle reste d'un seul côté, seul l'affichage est ici.
+ *
+ * La note **stockée** n'est pas touchée : c'est elle qui porte le lien, et le formulaire de
+ * correction la recharge entière — sinon enregistrer une modification effacerait le lien.
+ */
+function humanNote(session: PlannedSession): string {
+  const note = session.note ?? '';
+  if (session.workout_url === null) return note.trim();
+  return note.replace(session.workout_url, '').replace(/\s+/g, ' ').trim();
+}
+
 function DayPanel({
   cell,
   onEdit,
@@ -276,8 +297,26 @@ function DayPanel({
                   {session.source === 'ai' && <Badge tone="signal">proposée</Badge>}
                 </div>
                 <span className={styles.meta}>{sessionLine(session)}</span>
-                {session.note !== null && session.note !== '' && (
-                  <span className={styles.note}>{session.note}</span>
+                {humanNote(session) !== '' && (
+                  <span className={styles.note}>{humanNote(session)}</span>
+                )}
+
+                {/* Une séance prévue qui porte un lien Cadence s'ouvre d'ici. L'adresse
+                    est **extraite par le serveur** : reconnaître le format côté client en
+                    ferait une seconde implémentation de la même règle.
+
+                    Elle est aussi dans le flux iCal, en propriété `URL` — la même séance
+                    s'ouvre donc depuis le calendrier du téléphone, sans passer par Metric.
+                    C'est probablement le chemin le plus emprunté des deux. */}
+                {session.workout_url !== null && (
+                  <ExternalLinkButton
+                    variant="primary"
+                    className={styles.openWorkout}
+                    href={session.workout_url}
+                    aria-label={`Ouvrir ${session.title} dans Cadence`}
+                  >
+                    Ouvrir dans Cadence
+                  </ExternalLinkButton>
                 )}
               </div>
 

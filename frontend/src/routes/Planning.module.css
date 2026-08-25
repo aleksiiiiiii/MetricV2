@@ -381,3 +381,14 @@
     border-color: var(--signal);
   }
 }
+
+/* Le lien vers Cadence d'une séance prévue.
+
+   `--tap-lg` : c'est l'action qui **termine** le geste — on ouvre son planning le matin
+   pour lancer la séance, pas pour la relire. Pleine largeur, parce qu'une case de jour est
+   étroite et qu'un bouton à moitié large s'y lit comme une étiquette. */
+.openWorkout {
+  min-height: var(--tap-lg);
+  width: 100%;
+  margin-top: var(--s2);
+}

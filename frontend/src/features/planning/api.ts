@@ -27,6 +27,15 @@ export interface PlannedSession {
   note: string | null;
   /** `manual` ou `ai` — d'où vient la ligne, pas ce qu'elle vaut. */
   source: string;
+  /**
+   * L'adresse de séance Cadence **extraite de la note par le serveur**.
+   *
+   * Le lien vit dans la note et nulle part ailleurs — `plan.csv` ne gagne aucune colonne.
+   * Mais reconnaître une adresse Cadence dans du texte libre est une règle du format, et
+   * la tenir ici en ferait une seconde implémentation, qui divergerait de celle du serveur
+   * au premier cas limite.
+   */
+  workout_url: string | null;
 }
 
 export interface DoneActivity {

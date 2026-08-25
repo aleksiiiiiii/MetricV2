@@ -58,6 +58,7 @@ function monthView(overrides: Partial<MonthView> = {}): MonthView {
               duration_min: 60,
               note: '5×5',
               source: 'manual',
+              workout_url: null,
             },
           ],
           done: [{ kind: 'run' as const, id: 3, label: '8,50 km', duration_min: 45 }],
@@ -125,7 +126,7 @@ function json(status: number, body: unknown): Response {
   return { ok: status < 400, status, json: () => Promise.resolve(body) } as Response;
 }
 
-function stub(options: { adherence?: AdherenceView; aiEnabled?: boolean } = {}) {
+function stub(options: { adherence?: AdherenceView; aiEnabled?: boolean; month?: MonthView } = {}) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     // `request` n'envoie que des chaînes : le typage de `fetch` est plus large que
     // l'usage, et `String(objet)` rendrait « [object Object] » sans le dire.
@@ -158,7 +159,7 @@ function stub(options: { adherence?: AdherenceView; aiEnabled?: boolean } = {}) 
     if (url.includes('/api/planning/sessions')) {
       return Promise.resolve(json(201, {}));
     }
-    return Promise.resolve(json(200, monthView()));
+    return Promise.resolve(json(200, options.month ?? monthView()));
   });
 
   vi.stubGlobal('fetch', fetchMock);
@@ -474,5 +475,58 @@ describe('abonnement calendrier', () => {
     const link = await screen.findByRole('link', { name: /Télécharger le planning/ });
 
     expect(link).toHaveAttribute('href', '/api/planning/export.ics');
+  });
+});
+
+// ── Le pont vers Cadence (**D5**) ─────────────────────
+
+describe('séance ouvrable dans Cadence', () => {
+  const URL_CADENCE = 'https://cadence.exemple.fr?w=Gainage~2~60~Plank:60s:30';
+
+  /** Le même mois, dont la séance prévue porte une adresse extraite par le serveur. */
+  function monthWithLink(): MonthView {
+    const view = monthView();
+    return {
+      ...view,
+      days: view.days.map((cell) => ({
+        ...cell,
+        planned: cell.planned.map((session) => ({
+          ...session,
+          note: `${session.note ?? ''} ${URL_CADENCE}`,
+          workout_url: URL_CADENCE,
+        })),
+      })),
+    };
+  }
+
+  it('ouvre la séance prévue d’un appui, sur l’adresse extraite par le serveur', async () => {
+    // L'écran ne reconnaît pas le format Cadence dans un texte : ce serait une seconde
+    // implémentation d'une règle qui vit côté serveur, et elles divergeraient.
+    stub({ month: monthWithLink() });
+    renderScreen();
+
+    const open = await screen.findByRole('link', { name: 'Ouvrir Haut du corps dans Cadence' });
+    expect(open).toHaveAttribute('href', URL_CADENCE);
+    expect(open).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('n’affiche pas l’adresse en toutes lettres sous le bouton', async () => {
+    // Vu en capture : la note répétait `?w=Gainage~2~60~Plank:60s:30` sur deux lignes, au
+    // milieu du texte réellement écrit. Le bouton dit déjà ce que le lien fait.
+    stub({ month: monthWithLink() });
+    renderScreen();
+
+    await screen.findByRole('link', { name: 'Ouvrir Haut du corps dans Cadence' });
+    expect(screen.queryByText(/cadence\.exemple\.fr/)).not.toBeInTheDocument();
+    // Ce que l'utilisateur a écrit, lui, reste.
+    expect(screen.getByText('5×5')).toBeInTheDocument();
+  });
+
+  it('n’affiche aucun bouton quand la note ne porte pas de séance', async () => {
+    stub();
+    renderScreen();
+
+    await screen.findByText('Haut du corps');
+    expect(screen.queryByRole('link', { name: /Cadence/ })).not.toBeInTheDocument();
   });
 });
