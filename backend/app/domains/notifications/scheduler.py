@@ -25,7 +25,8 @@ servent pas à la même chose :
 ── Ce que l'ordonnanceur ne fait pas ────────────────────────────────────────
 
 Il ne rattrape pas au-delà d'une heure, il n'envoie jamais deux fois le même créneau dans
-la même journée, et il ne démarre pas du tout sans clé VAPID. Les trois sont des décisions
+la même journée, il n'envoie pas plus de dix notifications par jour ni deux à moins de
+quinze minutes d'intervalle, et il ne démarre pas du tout sans clé VAPID. Les trois sont des décisions
 de conception, pas des optimisations : **un rappel qui arrive au mauvais moment se
 désinstalle en un geste et ne revient jamais.**
 """
@@ -45,6 +46,7 @@ from app.domains.notifications.push import PushSender
 from app.domains.notifications.reminders import (
     DaySnapshot,
     ReminderKind,
+    allowed,
     compose,
     parse_slot,
     pending,
@@ -117,6 +119,7 @@ class ReminderScheduler:
         # créneau est atteint.
         snapshot = await self._snapshot(moment.date())
         envoyes: list[ReminderKind] = []
+        partis, dernier = await service.budget_on(moment.date())
 
         for kind in attendus:
             reminder = compose(kind, snapshot)
@@ -126,11 +129,27 @@ class ReminderScheduler:
                 self._quiet.add((moment.date(), kind))
                 continue
 
+            # **Le budget se demande juste avant d'envoyer, jamais avant de composer.**
+            # Un rappel qui n'avait rien à dire est clos pour la journée ; un rappel
+            # repoussé doit revenir. Les distinguer après `compose` est la seule façon de
+            # ne pas taire le second par accident.
+            if not allowed(now=moment, sent_today=partis, last_sent=dernier):
+                # Rien n'est marqué : il redeviendra dû à la passe suivante, tant que
+                # `GRACE` n'est pas dépassée. Et on sort — les suivants sont soumis au
+                # même délai, les examiner ne ferait que relire la même réponse.
+                logger.info("rappel %s repoussé : budget du jour", kind.value)
+                break
+
             livres = await service.deliver(self._sender, reminder.payload())
             # Consigné même si aucun appareil n'était joignable : le créneau a bien été
             # traité pour la journée, et réessayer à la minute suivante enverrait en
             # rafale dès qu'un téléphone se rallume.
             await service.record(kind, moment=moment)
+            # Le budget est tenu **en mémoire pour le reste de la passe** : le relire du
+            # fichier après chaque envoi coûterait un aller-retour WebDAV par notification,
+            # pour une valeur qu'on vient d'écrire soi-même.
+            partis += 1
+            dernier = moment
             envoyes.append(kind)
             logger.info("rappel %s envoyé à %d appareil(s)", kind.value, livres)
 

@@ -17,13 +17,13 @@ du JSON en clair.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
 from app.domains.notifications.push import PushSender
-from app.domains.notifications.reminders import ReminderKind
+from app.domains.notifications.reminders import ReminderKind, allowed
 from app.domains.notifications.scheduler import ReminderScheduler
 from app.storage.files import FileStore
 from tests.conftest import TEST_ENDPOINT, subscription_payload
@@ -644,3 +644,87 @@ class TestOrdonnanceur:
 
         asyncio.run(scenario())
         assert passes >= 1
+
+
+# ── Le budget du jour (**N1**) ────────────────────────
+
+
+class TestBudget:
+    """Dix par jour au plus, quinze minutes entre deux.
+
+    Le plafond ne bride pas les rappels prévus — il y en a moins — il **borne ce qu'une
+    règle mal écrite pourrait produire**. Un déclencheur réactif se déclenche sur un état,
+    et un état peut rester vrai toute la journée.
+    """
+
+    def test_le_plafond_arrête_les_envois(self) -> None:
+        assert allowed(now=at(12), sent_today=9, last_sent=None) is True
+        assert allowed(now=at(12), sent_today=10, last_sent=None) is False
+        assert allowed(now=at(12), sent_today=42, last_sent=None) is False
+
+    def test_deux_notifications_gardent_quinze_minutes(self) -> None:
+        """Le problème n'est pas le nombre mais le groupement : trois notifications en
+        cinq minutes se balayent d'un seul geste, y compris celle qui comptait."""
+        assert allowed(now=at(12, 14), sent_today=1, last_sent=at(12)) is False
+        assert allowed(now=at(12, 15), sent_today=1, last_sent=at(12)) is True
+
+    def test_la_première_du_jour_ne_dépend_de_rien(self) -> None:
+        assert allowed(now=at(6), sent_today=0, last_sent=None) is True
+
+    def test_une_notification_dhier_espace_celle_de_cette_nuit(self) -> None:
+        """La comparaison porte sur un **instant**, pas sur une date : le téléphone ne
+        change pas de journée à minuit."""
+        veille = at(23, 55, day=JOUR - timedelta(days=1))
+        minuit = at(0, 5)
+
+        assert allowed(now=minuit, sent_today=0, last_sent=veille) is False
+
+
+class TestBudgetOrdonnanceur:
+    """Le budget vu depuis une passe : ce qui est repoussé revient, ce qui n'avait rien à
+    dire ne revient pas."""
+
+    def _seed_reminders(self, dav: FakeWebDav, **slots: str) -> None:
+        lignes = "".join(f"reminders_{kind},{slot}\n" for kind, slot in slots.items())
+        dav.seed(SETTINGS, f"key,value\n{lignes}")
+
+    def _seed_subscription(self, dav: FakeWebDav) -> None:
+        from tests.conftest import TEST_AUTH, TEST_P256DH
+
+        dav.seed(
+            SUBSCRIPTIONS,
+            "id,created,endpoint,p256dh,auth,user_agent\n"
+            f"app1,2026-08-01,{TEST_ENDPOINT},{TEST_P256DH},{TEST_AUTH},iPhone\n",
+        )
+
+    def test_deux_créneaux_simultanés_ne_partent_pas_ensemble(
+        self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
+    ) -> None:
+        """C'est le cas que N1 existe pour empêcher : deux rappels à la même minute."""
+        self._seed_reminders(dav, meals="12:00", hydration="12:00")
+        self._seed_subscription(dav)
+
+        envoyes = asyncio.run(ReminderScheduler(store, push_sender, now=lambda: at(12)).tick())
+
+        assert len(envoyes) == 1
+        assert webpush.count == 1
+
+    def test_le_repoussé_repart_à_la_passe_suivante(
+        self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
+    ) -> None:
+        """Repoussé n'est pas perdu : il redevient dû tant que `GRACE` n'est pas dépassée.
+
+        C'est pour ça que le budget se demande **après** `compose` : un rappel qui n'avait
+        rien à dire est clos pour la journée, un rappel repoussé doit revenir. Les
+        confondre en tairait un pour de bon.
+        """
+        self._seed_reminders(dav, meals="12:00", hydration="12:00")
+        self._seed_subscription(dav)
+
+        async def deux_passes() -> None:
+            await ReminderScheduler(store, push_sender, now=lambda: at(12)).tick()
+            await ReminderScheduler(store, push_sender, now=lambda: at(12, 20)).tick()
+
+        asyncio.run(deux_passes())
+
+        assert webpush.count == 2

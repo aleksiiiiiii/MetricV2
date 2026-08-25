@@ -249,6 +249,21 @@ class NotificationService:
             if row.model.date == day and row.model.kind in known
         )
 
+    async def budget_on(self, day: date) -> tuple[int, datetime | None]:
+        """Combien de notifications sont parties ce jour-là, et **quand la dernière**.
+
+        Deux chiffres et une seule lecture : l'ordonnanceur les demande à chaque passe, et
+        les séparer en deux méthodes ferait deux allers-retours WebDAV par minute.
+
+        Le compte porte sur **toutes** les lignes du jour, y compris un type inconnu du
+        code — une ligne écrite par une version ultérieure compte quand même dans le
+        plafond. C'est le sens du plafond : borner ce qui part vers le téléphone, pas ce
+        que cette version-ci sait nommer.
+        """
+        lignes = [row.model for row in await self._sent.read_all() if row.model.date == day]
+        moments = [model.sent_at for model in lignes if model.sent_at is not None]
+        return len(lignes), max(moments, default=None)
+
     async def record(self, kind: ReminderKind, *, moment: datetime) -> None:
         """Consigne un envoi. En ajout, jamais en réécriture (`STO-03`).
 

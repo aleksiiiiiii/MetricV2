@@ -37,7 +37,7 @@ Arbitrées avant écriture, en discussion du 25 août 2026.
 | | Décision |
 |---|---|
 | **N1** | **Dix notifications par jour au plus**, et **quinze minutes** minimum entre deux, tous types confondus |
-| **N2** | Hydratation et protéines deviennent **réactives** : c'est l'écart qui déclenche, pas l'heure seule |
+| **N2** | Hydratation et protéines deviennent **réactives** : c'est l'écart qui déclenche, pas l'heure seule. Trois contrôles d'hydratation — 14 h, 18 h, 22 h 30 |
 | **N3** | Une séance prévue rappelle **quinze minutes avant**, à l'heure du planning |
 | **N4** | Une séance prévue non notée rappelle **à 21 h, d'un ton sec** — sans jamais affirmer qu'elle n'a pas été faite |
 | **N5** | Les félicitations existent, **sur un fait chiffré**, et **quatre par semaine au plus** |
@@ -56,7 +56,7 @@ notifications de plus par jour pour dire ce que la carte dit mieux.
 
 ### Hydratation — deux points de contrôle
 
-**14 h et 18 h.** À chacun, on n'envoie que si le restant est important.
+**14 h, 18 h et 22 h 30.** À chacun, on n'envoie que si le restant est important.
 
 - 14 h, 1 400 sur 2 000 → rien
 - 14 h, 300 sur 2 000 → « 300 ml notés sur 2 000 »
@@ -66,8 +66,9 @@ horaire que personne n'a réglée : à quel rythme doit-on boire ? L'inventer se
 la valeur inventée que le §1 interdit. Deux instants où l'écart *se lit* — il reste
 l'après-midi, il reste la soirée — laissent l'urgence dans les chiffres sans qu'on juge.
 
-**Pourquoi pas 21 h.** À 21 h il ne reste plus de marge : le rappel ne servirait qu'à
-constater. Le dernier point utile est celui après lequel on peut encore agir.
+**Trois points et non deux.** J'avais écarté un contrôle tardif au motif qu'il ne
+resterait plus de marge — c'était faux : un verre se boit à 22 h 30. Le troisième point est
+donc **22 h 30**, et c'est le dernier. Au-delà, un rappel ne fait plus que constater.
 
 ### Protéines — 18 h 30
 
@@ -190,6 +191,7 @@ addition, elle se défait. « Séance faite » écrirait une durée que personne
 
 | # | Portée | Risque |
 |---|---|---|
+| 0 | ~~**N1** : plafond quotidien et espacement~~ **fait** | nul — une fonction pure, et un garde-fou qui doit exister avant les règles qu'il borne |
 | 1 | `payload()` : l'adresse par type | nul — trois lignes dans un module pur déjà testé |
 | 2 | `sent.csv` gagne son créneau, et le service qui le lit | faible |
 | 3 | `reminders.py` : l'écart, les nouveaux types, les textes | **c'est là que tout se joue** |
@@ -198,7 +200,16 @@ addition, elle se défait. « Séance faite » écrirait une durée que personne
 | 6 | Félicitations : lecture des records, priorité | moyen |
 | 7 | `make check`, puis le §0bis sur un vrai téléphone | — |
 
-La phase 1 part devant parce qu'elle est déjà utile seule : elle ne change aucune règle et
+**N1 est faite** (25 août 2026). Elle passe devant tout : c'est le garde-fou, et il doit
+exister *avant* les règles réactives qu'il borne — l'écrire après reviendrait à laisser une
+fenêtre où une règle mal réglée part vers un téléphone sans plafond.
+
+Deux choses valent d'être nommées. Le budget se demande **après `compose`**, jamais avant :
+un rappel qui n'avait rien à dire est clos pour la journée, un rappel repoussé doit revenir,
+et les confondre en tairait un pour de bon. Et la passe **s'arrête** au premier refus plutôt
+que d'examiner les suivants — ils sont soumis au même délai, la réponse serait la même.
+
+La phase 1 part ensuite parce qu'elle est déjà utile seule : elle ne change aucune règle et
 supprime deux gestes à chaque rappel.
 
 ---

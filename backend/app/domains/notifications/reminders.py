@@ -59,6 +59,50 @@ from enum import StrEnum
 GRACE = timedelta(minutes=60)
 
 
+#: Plafond quotidien, tous types confondus.
+#:
+#: Dix. Il ne sert pas à brider les rappels prévus — il y en a moins — mais à **borner ce
+#: qu'une règle mal écrite pourrait produire**. Un déclencheur réactif se déclenche sur un
+#: état, et un état peut rester vrai toute la journée : sans plafond, la faute ne se voit
+#: qu'au téléphone de quelqu'un, et elle s'y voit une fois.
+DAILY_CAP = 10
+
+#: Délai minimum entre deux notifications, tous types confondus.
+#:
+#: Quinze minutes. Le problème n'est pas le nombre mais le **groupement** : 18 h 30
+#: protéines, 19 h séance et 19 h 05 hydratation arrivent en grappe et se balayent d'un
+#: seul geste — les trois, y compris celle qui comptait.
+#:
+#: Ce qui est repoussé n'est pas perdu : il redevient dû à la passe suivante, tant que
+#: `GRACE` n'est pas dépassée. C'est la même mécanique que le rattrapage d'un redémarrage.
+SPACING = timedelta(minutes=15)
+
+
+def allowed(
+    *,
+    now: datetime,
+    sent_today: int,
+    last_sent: datetime | None,
+    cap: int = DAILY_CAP,
+    spacing: timedelta = SPACING,
+) -> bool:
+    """Le budget du jour permet-il d'envoyer **maintenant** ?
+
+    Séparé de `due` à dessein : `due` répond « y a-t-il quelque chose à dire », celle-ci
+    répond « a-t-on le droit de le dire tout de suite ». Les mélanger rendrait impossible
+    de distinguer un rappel qui n'avait rien à dire — définitivement clos pour la journée —
+    d'un rappel repoussé de quinze minutes, qui doit revenir.
+
+    Un `last_sent` d'un autre jour ne bloque rien : `sent_today` est compté sur le jour
+    local, et la comparaison d'espacement porte sur un instant, pas sur une date. Une
+    notification de 23 h 55 espace donc bien celle de 00 h 05, ce qui est voulu — le
+    téléphone, lui, ne change pas de journée à minuit.
+    """
+    if sent_today >= cap:
+        return False
+    return last_sent is None or now - last_sent >= spacing
+
+
 class ReminderKind(StrEnum):
     """Les quatre types de rappel de `NOT-02`.
 
@@ -259,10 +303,13 @@ def due(
 
 
 __all__ = [
+    "DAILY_CAP",
     "GRACE",
+    "SPACING",
     "DaySnapshot",
     "Reminder",
     "ReminderKind",
+    "allowed",
     "compose",
     "due",
     "parse_slot",
