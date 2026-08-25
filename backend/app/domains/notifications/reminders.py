@@ -49,7 +49,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from enum import StrEnum
 
 #: Au-delà de ce retard, un créneau manqué est **abandonné**, pas rattrapé.
@@ -91,6 +91,13 @@ SPACING = timedelta(minutes=15)
 #: n'a pas le même « il te reste beaucoup » que quelqu'un qui vise 1,5 L, et un seuil en
 #: millilitres ferait mentir l'un des deux.
 GAP_SHARE = 0.25
+
+#: De combien on annonce une séance prévue (**N3**).
+#:
+#: Un quart d'heure : de quoi enfiler des chaussures, pas de quoi oublier entre la
+#: notification et la séance. Plus tôt, on la lit puis on l'oublie ; plus tard, elle
+#: n'annonce plus rien.
+LEAD = timedelta(minutes=15)
 
 
 def gap_matters(done: float, target: float, share: float = GAP_SHARE) -> bool:
@@ -144,6 +151,12 @@ class ReminderKind(StrEnum):
     WORKOUT = "workout"
     #: L'écart aux protéines, au dernier moment où un repas peut le combler (**N2**).
     PROTEIN = "protein"
+    #: Une séance prévue qui commence dans un quart d'heure (**N3**).
+    #:
+    #: Un type à part et non une variante de `WORKOUT`, parce que les deux ne disent pas la
+    #: même chose : celui-ci annonce ce qui vient, l'autre constate en fin de journée qu'il
+    #: n'y a rien de noté. Un seul type aurait donné un message qui ment dans un des deux cas.
+    WORKOUT_SOON = "workout_soon"
 
 
 @dataclass(frozen=True)
@@ -170,6 +183,12 @@ class DaySnapshot:
     protein_target_g: float = 0.0
     #: Séances **prévues** au planning aujourd'hui (`PLAN-01`).
     workouts_planned: int = 0
+    #: Les séances prévues **qui portent une heure**, avec leur titre.
+    #:
+    #: L'heure est facultative dans `plan.csv` (`PLAN-02`), et une séance sans heure est un
+    #: cas courant. Elle n'a pas de « quinze minutes avant » : elle n'est pas ici, et ne
+    #: compte que dans le rappel de fin de journée.
+    sessions_at: tuple[tuple[time, str], ...] = ()
     #: Séances et courses notées aujourd'hui.
     workouts_logged: int = 0
 
@@ -209,6 +228,23 @@ class Checkpoint:
     at: time
 
 
+def shift(moment: time, delta: timedelta) -> time:
+    """Une heure décalée, en avant ou en arrière.
+
+    `time` ne sait pas s'additionner : il faut passer par un `datetime`. La date et le
+    fuseau de l'ancre n'ont aucune importance — seule l'heure du résultat est lue — mais
+    ils doivent exister. Une date fixe plutôt qu'« aujourd'hui », qui ferait dépendre une
+    fonction pure d'une horloge ; UTC plutôt que rien, parce qu'un instant sans fuseau est
+    exactement ce que le projet s'interdit ailleurs.
+
+    **Exportée, et employée des deux côtés** : l'ordonnanceur recule d'un quart d'heure ce
+    que `compose` avance du même quart d'heure. Deux implémentations se répondraient à une
+    minute près le jour où l'une changerait.
+    """
+    ancre = datetime(2000, 1, 1, moment.hour, moment.minute, tzinfo=UTC)
+    return (ancre + delta).time()
+
+
 def parse_slot(raw: str) -> time | None:
     """Lit un créneau `HH:MM`, ou rend `None`.
 
@@ -242,13 +278,18 @@ def _enumerate(names: tuple[str, ...]) -> str:
     return f"{', '.join(names[:3])} et {len(names) - 3} autre" + ("s" if len(names) > 4 else "")
 
 
-def compose(kind: ReminderKind, snapshot: DaySnapshot) -> Reminder | None:
+def compose(checkpoint: Checkpoint, snapshot: DaySnapshot) -> Reminder | None:
     """Le texte d'un rappel, ou `None` s'il n'y a rien à dire.
 
     Rendre `None` est le cas normal, pas une erreur : c'est ce qui fait qu'un rappel
     quotidien reste un signal. Un rappel qui part tous les jours, y compris quand tout est
     noté, cesse en trois semaines d'être lu — et emporte avec lui ceux qui comptaient.
+
+    **Le contrôle entier et non le type seul** (**N3**) : deux séances prévues le même jour
+    donnent deux contrôles, et le message doit nommer celle qui commence — pas l'autre.
     """
+    kind = checkpoint.kind
+
     match kind:
         case ReminderKind.SUPPLEMENTS:
             if not snapshot.supplements_pending:
@@ -304,6 +345,28 @@ def compose(kind: ReminderKind, snapshot: DaySnapshot) -> Reminder | None:
             if snapshot.meals_logged:
                 return None
             return Reminder(kind=kind, title="Repas", body="Rien de noté aujourd'hui.")
+
+        case ReminderKind.WORKOUT_SOON:
+            # Le contrôle est posé à `début - LEAD` : la séance qu'il annonce est celle qui
+            # commence un quart d'heure plus tard. Deux séances le même jour donnent deux
+            # contrôles, et chacun nomme la sienne.
+            debut = shift(checkpoint.at, LEAD)
+            titre = next((nom for heure, nom in snapshot.sessions_at if heure == debut), None)
+            if titre is None:
+                # La séance a quitté le planning entre la construction du contrôle et
+                # maintenant. Se taire est le seul choix honnête : on n'annonce pas une
+                # séance qui n'est plus prévue.
+                return None
+            if snapshot.workouts_logged >= snapshot.workouts_planned:
+                # Déjà notée — on n'annonce pas ce qui vient d'être fait.
+                return None
+            return Reminder(
+                kind=kind,
+                title="Séance dans 15 min",
+                # Le titre tel qu'il est au planning. Rien d'ajouté : c'est ce que
+                # l'utilisateur a écrit, et il le reconnaît.
+                body=f"{titre} · {debut:%H:%M}.",
+            )
 
         case ReminderKind.WORKOUT:
             # Aucune séance prévue : aucun rappel. C'est `HEAT-12` — attendu seulement si
@@ -388,7 +451,7 @@ def due(
     """Les rappels à envoyer maintenant : l'heure est venue **et** il y a quelque chose à dire."""
     ready = []
     for checkpoint in pending(slots=slots, now=now, already_sent=already_sent, grace=grace):
-        reminder = compose(checkpoint.kind, snapshot)
+        reminder = compose(checkpoint, snapshot)
         if reminder is not None:
             ready.append(reminder)
     return ready
@@ -398,6 +461,7 @@ __all__ = [
     "DAILY_CAP",
     "GAP_SHARE",
     "GRACE",
+    "LEAD",
     "SPACING",
     "Checkpoint",
     "DaySnapshot",
@@ -410,4 +474,5 @@ __all__ = [
     "parse_slot",
     "parse_slots",
     "pending",
+    "shift",
 ]

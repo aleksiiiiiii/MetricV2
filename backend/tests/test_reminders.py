@@ -20,6 +20,7 @@ import pytest
 
 from app.domains.notifications.reminders import (
     GRACE,
+    LEAD,
     Checkpoint,
     DaySnapshot,
     ReminderKind,
@@ -29,6 +30,19 @@ from app.domains.notifications.reminders import (
     parse_slots,
     pending,
 )
+
+
+def pour(kind: ReminderKind, heure: str = "12:00") -> Checkpoint:
+    """Un contrôle, pour composer un message hors de tout ordonnanceur.
+
+    L'heure ne compte que pour `WORKOUT_SOON`, qui nomme la séance qui commence quinze
+    minutes plus tard. Les autres types l'ignorent, et un défaut évite de la répéter
+    trente fois.
+    """
+    lu = parse_slot(heure)
+    assert lu is not None
+    return Checkpoint(kind=kind, at=lu)
+
 
 PARIS = ZoneInfo("Europe/Paris")
 
@@ -93,7 +107,7 @@ class TestCeQuUnRappelDit:
         inventée à l'écran » appliqué à une notification — et le cas difficile, parce
         qu'une notification est lue en trois mots sur un écran verrouillé.
         """
-        reminder = compose(kind, snapshot)
+        reminder = compose(pour(kind), snapshot)
         assert reminder is not None
 
         texte = f"{reminder.title} {reminder.body}".lower()
@@ -107,7 +121,7 @@ class TestCeQuUnRappelDit:
             (ReminderKind.MEALS, DaySnapshot()),
             (ReminderKind.WORKOUT, DaySnapshot(workouts_planned=1)),
         ):
-            reminder = compose(kind, snapshot)
+            reminder = compose(pour(kind), snapshot)
             assert reminder is not None
             assert "not" in reminder.body.lower(), reminder.body
 
@@ -117,7 +131,7 @@ class TestCeQuUnRappelDit:
         C'est l'absence qu'on n'a pas le droit d'affirmer, pas le relevé.
         """
         reminder = compose(
-            ReminderKind.HYDRATION, DaySnapshot(hydration_ml=750, hydration_target_ml=2000)
+            pour(ReminderKind.HYDRATION), DaySnapshot(hydration_ml=750, hydration_target_ml=2000)
         )
         assert reminder is not None
         assert "750" in reminder.body
@@ -130,7 +144,7 @@ class TestCeQuUnRappelDit:
         serait faux, et suffirait à faire désinstaller le rappel.
         """
         reminder = compose(
-            ReminderKind.SUPPLEMENTS, DaySnapshot(supplements_pending=("whey", "magnésium"))
+            pour(ReminderKind.SUPPLEMENTS), DaySnapshot(supplements_pending=("whey", "magnésium"))
         )
         assert reminder is not None
         assert "whey" in reminder.body
@@ -140,7 +154,7 @@ class TestCeQuUnRappelDit:
     def test_une_longue_liste_est_bornée(self) -> None:
         """Une notification tronquée à quelques mots n'apprend rien de plus avec huit noms."""
         reminder = compose(
-            ReminderKind.SUPPLEMENTS,
+            pour(ReminderKind.SUPPLEMENTS),
             DaySnapshot(supplements_pending=("a", "b", "c", "d", "e")),
         )
         assert reminder is not None
@@ -151,29 +165,29 @@ class TestQuandIlNyARienADire:
     """Un rappel qui part tous les jours cesse d'être lu — et emporte les autres."""
 
     def test_tous_les_suppléments_notés_ne_déclenchent_rien(self) -> None:
-        assert compose(ReminderKind.SUPPLEMENTS, DaySnapshot(supplements_pending=())) is None
+        assert compose(pour(ReminderKind.SUPPLEMENTS), DaySnapshot(supplements_pending=())) is None
 
     def test_objectif_dhydratation_atteint_ne_déclenche_rien(self) -> None:
         snapshot = DaySnapshot(hydration_ml=2000, hydration_target_ml=2000)
-        assert compose(ReminderKind.HYDRATION, snapshot) is None
+        assert compose(pour(ReminderKind.HYDRATION), snapshot) is None
 
     def test_un_repas_noté_suffit(self) -> None:
-        assert compose(ReminderKind.MEALS, DaySnapshot(meals_logged=1)) is None
+        assert compose(pour(ReminderKind.MEALS), DaySnapshot(meals_logged=1)) is None
 
     def test_aucun_rappel_de_séance_sans_séance_prévue(self) -> None:
         """C'est la cadence `conditional` de `HEAT-12`, appliquée à un rappel.
 
         Rappeler une séance un jour de repos est exactement le rappel qu'on désinstalle.
         """
-        assert compose(ReminderKind.WORKOUT, DaySnapshot(workouts_planned=0)) is None
+        assert compose(pour(ReminderKind.WORKOUT), DaySnapshot(workouts_planned=0)) is None
         assert (
-            compose(ReminderKind.WORKOUT, DaySnapshot(workouts_planned=0, workouts_logged=0))
+            compose(pour(ReminderKind.WORKOUT), DaySnapshot(workouts_planned=0, workouts_logged=0))
             is None
         )
 
     def test_une_séance_notée_ferme_le_rappel(self) -> None:
         snapshot = DaySnapshot(workouts_planned=1, workouts_logged=1)
-        assert compose(ReminderKind.WORKOUT, snapshot) is None
+        assert compose(pour(ReminderKind.WORKOUT), snapshot) is None
 
 
 # ═══ Les créneaux ═════════════════════════════════════
@@ -276,3 +290,76 @@ class TestDue:
             already_sent=frozenset(),
         )
         assert rappels[0].payload()["tag"] == "meals"
+
+
+# ═══ Une séance annoncée un quart d'heure avant (**N3**) ═══
+
+
+class TestSeanceImminente:
+    """Le déclencheur ne vient plus des réglages mais du **planning** : c'est l'heure
+    qu'on a posée au calendrier, et elle change d'un jour à l'autre."""
+
+    ETAT = DaySnapshot(
+        workouts_planned=1,
+        workouts_logged=0,
+        sessions_at=((time(18, 0), "Haut du corps"),),
+    )
+
+    def test_elle_nomme_la_séance_et_son_heure(self) -> None:
+        """Le titre tel qu'il est au planning : c'est ce que l'utilisateur a écrit, et il
+        le reconnaît. Rien n'est ajouté."""
+        rappel = compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), self.ETAT)
+
+        assert rappel is not None
+        assert rappel.title == "Séance dans 15 min"
+        assert rappel.body == "Haut du corps · 18:00."
+
+    def test_deux_séances_le_même_jour_ne_se_confondent_pas(self) -> None:
+        """**Le test qui justifie que `compose` prenne le contrôle et non le type.** Sans
+        l'heure, le rappel de 17 h 45 pourrait nommer la séance de 20 h."""
+        etat = DaySnapshot(
+            workouts_planned=2,
+            workouts_logged=0,
+            sessions_at=((time(18, 0), "Haut du corps"), (time(20, 0), "Gainage")),
+        )
+
+        premier = compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), etat)
+        second = compose(pour(ReminderKind.WORKOUT_SOON, "19:45"), etat)
+
+        assert premier is not None and "Haut du corps" in premier.body
+        assert second is not None and "Gainage" in second.body
+
+    def test_une_séance_retirée_du_planning_se_tait(self) -> None:
+        """Elle a pu être supprimée entre la construction du contrôle et l'envoi. On
+        n'annonce pas une séance qui n'est plus prévue."""
+        assert compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), DaySnapshot()) is None
+
+    def test_une_séance_déjà_notée_ne_sannonce_pas(self) -> None:
+        """On n'annonce pas ce qui vient d'être fait — le cas de qui s'entraîne en avance
+        et note tout de suite."""
+        etat = DaySnapshot(
+            workouts_planned=1,
+            workouts_logged=1,
+            sessions_at=((time(18, 0), "Haut du corps"),),
+        )
+
+        assert compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), etat) is None
+
+    def test_lavance_est_bien_dun_quart_dheure(self) -> None:
+        """De quoi enfiler des chaussures, pas de quoi oublier entre la notification et la
+        séance."""
+        assert LEAD.total_seconds() == 900
+
+    def test_une_séance_à_minuit_dix_sannonce_la_veille_au_soir(self) -> None:
+        """Cas limite du recul d'un quart d'heure : le contrôle tombe le jour d'avant.
+
+        Il n'est alors **jamais dû** — `pending` situe les créneaux dans le jour de `now`,
+        et un contrôle à 23 h 55 vu à 00 h 10 tombe dans le futur. La séance de 00 h 10
+        n'est pas annoncée, et c'est le comportement voulu : on ne notifie pas la nuit.
+        """
+        etat = DaySnapshot(workouts_planned=1, sessions_at=((time(0, 10), "Nuit blanche"),))
+
+        rappel = compose(pour(ReminderKind.WORKOUT_SOON, "23:55"), etat)
+
+        assert rappel is not None
+        assert rappel.body == "Nuit blanche · 00:10."

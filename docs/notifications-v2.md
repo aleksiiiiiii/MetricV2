@@ -193,6 +193,7 @@ addition, elle se défait. « Séance faite » écrirait une durée que personne
 |---|---|---|
 | 0 | ~~**N1** : plafond quotidien et espacement~~ **fait** | nul — une fonction pure, et un garde-fou qui doit exister avant les règles qu'il borne |
 | 0 bis | ~~**N2** : l'écart décide, trois contrôles d'hydratation, les protéines~~ **fait** | c'est là que tout se joue — et c'est fait |
+| 0 ter | ~~**N3** : une séance s'annonce un quart d'heure avant~~ **fait** | le déclencheur quitte les réglages pour le planning |
 | 1 | `payload()` : l'adresse par type | nul — trois lignes dans un module pur déjà testé |
 | 2 | `sent.csv` gagne son créneau, et le service qui le lit | faible |
 | 3 | `reminders.py` : l'écart, les nouveaux types, les textes | **c'est là que tout se joue** |
@@ -297,3 +298,46 @@ sur le même écran, et rien ne les distinguait à la synthèse vocale — la le
 
 **Mesuré** : `make check` vert, 1 589 tests backend et 498 d'écran. Les seuils et les
 frontières sont vérifiés à la minute et au millilitre près.
+
+
+### N3 — le déclencheur quitte les réglages (25 août 2026)
+
+L'heure d'un rappel de séance vient maintenant de `plan.csv`, pas d'une clé `reminders_*` :
+c'est celle qu'on a posée au calendrier, et elle change d'un jour à l'autre. Une séance
+prévue à 18 h construit un contrôle à 17 h 45. **Aucun réglage à poser.**
+
+**Un type à part, `workout_soon`.** Il annonce ce qui vient ; `workout` constatera en fin de
+journée qu'il n'y a rien de noté (N4). Un seul type aurait donné un message qui ment dans un
+des deux cas.
+
+**`compose` prend le contrôle et non le type.** C'est la conséquence directe de deux séances
+le même jour : sans l'heure, le rappel de 17 h 45 pourrait nommer celle de 20 h. Un test le
+vérifie nommément.
+
+**Une séance sans heure ne s'annonce pas.** L'heure est facultative dans `plan.csv`
+(`PLAN-02`) et le cas est courant. Elle ne compte que dans le rappel de fin de journée.
+
+#### Le coût, mesuré plutôt que craint
+
+Lire le planning à chaque passe est une **troisième** lecture par minute, à côté de celles
+des réglages et du journal d'envoi. C'est le même ordre de grandeur, pas une nouvelle
+catégorie : ce que l'ordonnanceur évite depuis toujours, c'est la lecture des **cinq
+domaines** du `snapshot`, qui ne part que si un contrôle est atteint.
+
+#### Trois cas de silence, tous testés
+
+- La séance a quitté le planning entre la construction du contrôle et l'envoi — on
+  n'annonce pas ce qui n'est plus prévu.
+- Elle est déjà notée : on n'annonce pas ce qui vient d'être fait.
+- Elle commence après minuit : le contrôle tombe la veille, et `pending` situe les créneaux
+  dans le jour de `now`. Il n'est donc jamais dû — on ne notifie pas la nuit.
+
+#### Ce que la relecture a rangé
+
+`shift(heure, delta)` est **exportée et employée des deux côtés** : l'ordonnanceur recule
+d'un quart d'heure ce que `compose` avance du même quart d'heure. J'en avais écrit deux —
+elles se seraient répondu à une minute près le jour où l'une aurait changé.
+
+Et trois messages de `ruff` ont été suivis plutôt que contournés : un `datetime` sans fuseau,
+un `__all__` désordonné, et une lambda qui capturait la variable d'une boucle — la dernière
+aurait fait partager la même heure aux quatre passes d'un test.

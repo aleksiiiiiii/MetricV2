@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime, time, timedelta
+from functools import partial
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
@@ -30,6 +31,7 @@ from app.domains.notifications.reminders import (
     allowed,
     compose,
     gap_matters,
+    parse_slot,
     parse_slots,
     pending,
 )
@@ -38,6 +40,19 @@ from app.storage.files import FileStore
 from tests.conftest import TEST_ENDPOINT, subscription_payload
 from tests.fake_webdav import FakeWebDav
 from tests.fake_webpush import FakeWebPush
+
+
+def pour(kind: ReminderKind, heure: str = "12:00") -> Checkpoint:
+    """Un contrôle, pour composer un message hors de tout ordonnanceur.
+
+    L'heure ne compte que pour `WORKOUT_SOON`, qui nomme la séance qui commence quinze
+    minutes plus tard. Les autres types l'ignorent, et un défaut évite de la répéter
+    trente fois.
+    """
+    lu = parse_slot(heure)
+    assert lu is not None
+    return Checkpoint(kind=kind, at=lu)
+
 
 PARIS = ZoneInfo("Europe/Paris")
 JOUR = date(2026, 8, 13)
@@ -774,14 +789,14 @@ class TestEcart:
     def test_lhydratation_à_jour_ne_déclenche_rien(self) -> None:
         etat = DaySnapshot(hydration_ml=1700, hydration_target_ml=2000)
 
-        assert compose(ReminderKind.HYDRATION, etat) is None
+        assert compose(pour(ReminderKind.HYDRATION), etat) is None
 
     def test_lhydratation_en_retard_cite_le_restant(self) -> None:
         """L'urgence est dans les chiffres, pas dans un jugement : le corps ne dit ni
         « en retard » ni « tu devrais »."""
         etat = DaySnapshot(hydration_ml=600, hydration_target_ml=2000)
 
-        rappel = compose(ReminderKind.HYDRATION, etat)
+        rappel = compose(pour(ReminderKind.HYDRATION), etat)
 
         assert rappel is not None
         assert rappel.body == "600 ml notés sur 2000 · il reste 1400 ml."
@@ -789,7 +804,7 @@ class TestEcart:
     def test_les_protéines_citent_ce_quun_repas_peut_combler(self) -> None:
         etat = DaySnapshot(protein_g=86.4, protein_target_g=150)
 
-        rappel = compose(ReminderKind.PROTEIN, etat)
+        rappel = compose(pour(ReminderKind.PROTEIN), etat)
 
         assert rappel is not None
         assert rappel.title == "Protéines"
@@ -797,7 +812,8 @@ class TestEcart:
 
     def test_les_protéines_à_jour_se_taisent(self) -> None:
         assert (
-            compose(ReminderKind.PROTEIN, DaySnapshot(protein_g=140, protein_target_g=150)) is None
+            compose(pour(ReminderKind.PROTEIN), DaySnapshot(protein_g=140, protein_target_g=150))
+            is None
         )
 
 
@@ -832,3 +848,74 @@ class TestControles:
         parti = frozenset({Checkpoint(kind=ReminderKind.HYDRATION, at=time(18))})
 
         assert pending(slots=slots, now=at(18), already_sent=parti) == []
+
+
+def _fixe(moment: datetime) -> datetime:
+    """Une horloge arrêtée.  plutôt qu'une lambda dans une boucle : la lambda
+    capturerait la variable d'itération, et les quatre passes partageraient sa dernière
+    valeur."""
+    return moment
+
+
+class TestSeanceDepuisLePlanning:
+    """N3 vu depuis une passe : le contrôle est construit à partir de `plan.csv`, jamais
+    d'un réglage."""
+
+    PLAN = "Metric/planning/plan.csv"
+
+    def _seed_subscription(self, dav: FakeWebDav) -> None:
+        from tests.conftest import TEST_AUTH, TEST_P256DH
+
+        dav.seed(
+            SUBSCRIPTIONS,
+            "id,created,endpoint,p256dh,auth,user_agent\n"
+            f"app1,2026-08-01,{TEST_ENDPOINT},{TEST_P256DH},{TEST_AUTH},iPhone\n",
+        )
+
+    def _seed_plan(self, dav: FakeWebDav, heure: str, titre: str = "Haut du corps") -> None:
+        dav.seed(
+            self.PLAN,
+            "id,date,time,kind,title,duration_min,note,source\n"
+            f"s1,{JOUR.isoformat()},{heure},muscu,{titre},60,,manual\n",
+        )
+
+    def test_une_séance_prévue_sannonce_sans_aucun_réglage(
+        self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
+    ) -> None:
+        """**Aucune clé `reminders_*` n'est posée** : le déclencheur vient du planning."""
+        dav.seed(SETTINGS, "key,value\n")
+        self._seed_subscription(dav)
+        self._seed_plan(dav, "18:00")
+
+        envoyes = asyncio.run(ReminderScheduler(store, push_sender, now=lambda: at(17, 45)).tick())
+
+        assert envoyes == [ReminderKind.WORKOUT_SOON]
+        assert webpush.count == 1
+
+    def test_rien_ne_part_avant_le_quart_dheure(
+        self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
+    ) -> None:
+        dav.seed(SETTINGS, "key,value\n")
+        self._seed_subscription(dav)
+        self._seed_plan(dav, "18:00")
+
+        asyncio.run(ReminderScheduler(store, push_sender, now=lambda: at(17, 30)).tick())
+
+        assert webpush.count == 0
+
+    def test_une_séance_sans_heure_ne_sannonce_pas(
+        self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
+    ) -> None:
+        """L'heure est facultative dans `plan.csv`, et c'est courant. Sans elle, il n'y a
+        pas de « quinze minutes avant » — la séance ne compte que dans le rappel de fin de
+        journée."""
+        dav.seed(SETTINGS, "key,value\n")
+        self._seed_subscription(dav)
+        self._seed_plan(dav, "")
+
+        for heure in (at(8), at(12), at(18), at(21)):
+            # Le défaut lie l'heure à cette itération-ci : sans lui, les quatre passes
+            # partageraient la dernière valeur de la boucle.
+            asyncio.run(ReminderScheduler(store, push_sender, now=partial(_fixe, heure)).tick())
+
+        assert webpush.count == 0

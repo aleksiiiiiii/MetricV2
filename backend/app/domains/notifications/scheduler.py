@@ -44,12 +44,15 @@ from app.domains.activity.service import RunService, WorkoutService
 from app.domains.hydration.service import HydrationService
 from app.domains.notifications.push import PushSender
 from app.domains.notifications.reminders import (
+    LEAD,
     DaySnapshot,
     ReminderKind,
     allowed,
     compose,
+    parse_slot,
     parse_slots,
     pending,
+    shift,
 )
 from app.domains.notifications.service import NotificationService, setting_key
 from app.domains.nutrition.service import NutritionService
@@ -57,6 +60,7 @@ from app.domains.supplements.service import SupplementService
 from app.storage.files import FileStore
 
 logger = logging.getLogger(__name__)
+
 
 #: Intervalle entre deux passes.
 #:
@@ -102,7 +106,13 @@ class ReminderScheduler:
         service = NotificationService(self._store)
         moment = self._now()
 
-        slots = await self._slots(service)
+        slots = dict(await self._slots(service))
+        # **Les séances viennent du planning, pas des réglages** (**N3**) : leur heure est
+        # celle qu'on a posée au calendrier, et elle change d'un jour à l'autre. C'est une
+        # troisième lecture par passe, du même ordre que celles des réglages et du journal
+        # d'envoi — et non la lecture des cinq domaines, qui reste réservée au `snapshot`.
+        seances = await self._planned(moment.date())
+        slots[ReminderKind.WORKOUT_SOON] = tuple(shift(heure, -LEAD) for heure, _titre in seances)
         if not any(slots.values()):
             return []
 
@@ -122,7 +132,7 @@ class ReminderScheduler:
         partis, dernier = await service.budget_on(moment.date())
 
         for checkpoint in attendus:
-            reminder = compose(checkpoint.kind, snapshot)
+            reminder = compose(checkpoint, snapshot)
             if reminder is None:
                 # Rien à dire — tout est noté, ou l'écart est trop petit pour valoir une
                 # notification. Le type se tait pour **toute la journée** : l'état du jour
@@ -179,6 +189,19 @@ class ReminderScheduler:
         values = await service.raw_settings()
         return {kind: parse_slots(values.get(setting_key(kind), "")) for kind in ReminderKind}
 
+    async def _planned(self, day: date) -> tuple[tuple[time, str], ...]:
+        """Les séances prévues du jour **qui portent une heure**, avec leur titre.
+
+        L'heure est facultative dans `plan.csv` (`PLAN-02`), et une séance sans heure est
+        un cas courant : elle ne peut pas être annoncée un quart d'heure avant, et n'est
+        donc pas ici. Elle compte toujours dans le rappel de fin de journée.
+        """
+        from app.domains.planning.service import PlanningService
+
+        prevues = await PlanningService(self._store).between(day, day)
+        lues = [(parse_slot(session.time or ""), session.title) for session in prevues]
+        return tuple(sorted((heure, titre) for heure, titre in lues if heure is not None))
+
     async def _snapshot(self, day: date) -> DaySnapshot:
         """Ce que l'application **sait** du jour.
 
@@ -210,6 +233,13 @@ class ReminderScheduler:
         workouts = [row for row in await WorkoutService(self._store).all() if row.model.date == day]
 
         return DaySnapshot(
+            sessions_at=tuple(
+                sorted(
+                    (heure, session.title)
+                    for session in prevues
+                    if (heure := parse_slot(session.time or "")) is not None
+                )
+            ),
             supplements_pending=tuple(item.name for item in checklist.items if not item.taken),
             hydration_ml=eau.today_ml,
             hydration_target_ml=eau.target_ml,
