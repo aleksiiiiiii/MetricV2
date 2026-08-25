@@ -133,6 +133,43 @@ export function LinkButton({
 }
 
 /**
+ * Lien **hors de l'application**, avec l'apparence d'un bouton.
+ *
+ * `LinkButton` rend un `Link` de react-router : il intercepte le clic et cherche une route
+ * interne. Une adresse vers une autre application n'en est pas une, et le clic ne mènerait
+ * nulle part — d'où ce second composant plutôt qu'une prop de plus sur le premier.
+ *
+ * **Un vrai `<a href>` et non un bouton qui appelle `window.open`.** C'est ce qui donne
+ * l'appui long, le partage, l'ouverture dans un onglet — et surtout ce qui laisse le
+ * système router vers une application installée plutôt que vers le navigateur.
+ *
+ * `noopener noreferrer` par défaut : la page ouverte ne doit pas pouvoir toucher à celle
+ * qui l'ouvre, même quand c'est une application qu'on a écrite soi-même.
+ */
+export function ExternalLinkButton({
+  href,
+  variant = 'ghost',
+  className,
+  children,
+  ...rest
+}: {
+  href: string;
+  variant?: ButtonVariant | undefined;
+} & AnchorHTMLAttributes<HTMLAnchorElement>) {
+  return (
+    <a
+      className={cx(styles.btn, styles[variant], styles.btnLink, className)}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      {...rest}
+    >
+      {children}
+    </a>
+  );
+}
+
+/**
  * Bouton de saisie rapide : libellé à gauche, dernière valeur connue à droite.
  *
  * C'est la cible du projet — un relevé en un geste. Le rappel de la dernière valeur

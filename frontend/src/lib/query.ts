@@ -41,6 +41,8 @@ export const keys = {
     exercises: () => ['activity', 'exercises'] as const,
     types: () => ['activity', 'types'] as const,
     muscleGroups: () => ['activity', 'muscle-groups'] as const,
+    circuits: () => ['activity', 'circuits'] as const,
+    circuitExercises: () => ['activity', 'circuits', 'exercises'] as const,
   },
   hydration: {
     all: () => ['hydration'] as const,

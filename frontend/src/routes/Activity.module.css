@@ -743,3 +743,109 @@
   color: var(--recover);
   border-color: var(--recover);
 }
+
+/* ── Séances Cadence ──────────────────────────────────
+   Les lignes du formulaire d'un circuit. Elles ne réemploient pas `.pair`, qui met deux
+   champs côte à côte : ici il en faut trois sur 390 px, et deux d'entre eux sont très
+   courts — une valeur et un repos en secondes. */
+
+/* Un formulaire est **une colonne qu'on remplit**, pas une bande.
+
+   Vu sur ordinateur : à 1 440 px, le champ où l'on tape « 4 » faisait 1 200 px de large,
+   et l'œil devait traverser l'écran entre une étiquette et sa valeur. Le projet a déjà
+   l'idiome — `.lede` se borne à `56ch` pour la même raison. La borne ne s'applique qu'au
+   delà du premier point de rupture : sous 600 px, la largeur disponible *est* la bonne. */
+@media (min-width: 600px) {
+  .circuitForm {
+    /* 56rem et non 46 : c'est la largeur à laquelle les **neuf** pastilles de groupe
+       musculaire tiennent sur une ligne. Plus étroit, le `ChipStrip` se mettait à défiler
+       alors qu'il restait 700 px de vide à droite — un geste de plus pour rien. Un jour où
+       un libellé s'allongerait, il défilerait : c'est son comportement normal, pas une
+       casse. */
+    max-width: 56rem;
+  }
+}
+
+.circuitLine {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface-2);
+}
+
+/* `align-items: end` n'est pas un détail, et ça s'est vu en capture : « Repos entre rounds
+   (s) » passe sur deux lignes à 360 px alors que « Rounds » tient sur une, et sans cet
+   alignement les deux champs de la paire se retrouvaient décalés de 20 px. Aligner par le
+   bas règle le cas pour tous les libellés, présents et futurs — raccourcir celui-ci ne
+   l'aurait réglé que pour lui. */
+.circuitNums,
+.circuitTop {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+  align-items: end;
+}
+
+/* Les actions d'un circuit, en **un seul bloc**.
+
+   Sans lui, le lien « Ouvrir » était un frère du texte dans `.catalogueRow` — qui passe en
+   `flex-direction: row` au-delà de 600 px. Sa largeur de 100 % réclamait alors toute la
+   ligne : il recouvrait le nom de la séance, qui se coupait mot par mot. Vu en capture sur
+   ordinateur, invisible sur téléphone où la rangée est déjà une colonne. */
+.circuitActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+/* Le lien vers Cadence **termine** un geste : il porte `--tap-lg`, comme les autres
+   actions qui font partir quelque chose. */
+.circuitOpen {
+  min-height: var(--tap-lg);
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  /* Le bloc cesse de s'étirer : il vaut sa largeur de contenu, à droite du texte, et
+     c'est le texte qui prend la place restante. */
+  .circuitActions {
+    flex: none;
+    margin-top: 0;
+  }
+}
+
+/* Le résumé d'un circuit : nom, rounds, durée. Il se lit d'un coup d'œil au pouce. */
+.circuitMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: center;
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+}
+
+/* La confirmation de « Fait », dépliée dans la ligne. */
+.circuitDone {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+/* Le lien vers la page des séances, sous les trois cartes mises en avant. */
+.circuitMore {
+  display: flex;
+  margin-top: var(--s3);
+}
+
+/* « Je l'ai faite » : une coche et un verbe, alignés. Le bouton reste une cible de 44 px
+   sans devenir le plus gros de la carte — « Ouvrir » garde ce rôle. */
+.circuitDoneBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}

@@ -18,6 +18,9 @@ export { Toaster } from './Toaster';
 
 export { Sheet, SheetGroup, SheetRow } from './Sheet';
 
+export { Combobox } from './Combobox';
+export type { Suggestion } from './Combobox';
+
 export { Markdown } from './Markdown';
 
 export {
@@ -29,6 +32,7 @@ export {
   Chip,
   ChipStrip,
   Empty,
+  ExternalLinkButton,
   Eyebrow,
   Field,
   LinkButton,

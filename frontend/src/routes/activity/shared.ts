@@ -13,7 +13,8 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 
-import type { Workout } from '@/features/activity/api';
+import type { Circuit, Workout } from '@/features/activity/api';
+import { num } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 
 /** Ce qu'il faut d'une séance pour la proposer au choix, sans avoir à la relire. */
@@ -62,4 +63,21 @@ export function fold(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+/** La durée d'un circuit, avec le `~` que lui impose la présence de répétitions. */
+export function circuitDuration(circuit: Circuit): string {
+  const minutes = `${num(circuit.estimated_duration_min, 0)} min`;
+  return circuit.exact ? minutes : `~${minutes}`;
+}
+
+/** Ce qu'un circuit dit de son contenu, sans avoir à l'ouvrir. */
+export function circuitDetail(circuit: Circuit): string {
+  return circuit.exercises
+    .map((item) =>
+      item.reps === null
+        ? `${item.name} ${String(item.duration_s ?? 0)} s`
+        : `${item.name} ${String(item.reps)}×`,
+    )
+    .join(' · ');
 }

@@ -431,6 +431,94 @@ function guard(token: string): Record<string, string> {
   return { 'If-Match': token };
 }
 
+// ── Circuits ouverts dans Cadence Tabata ──────────────
+
+/**
+ * Un exercice d'un circuit.
+ *
+ * `duration_s` et `reps` **s'excluent** : c'est celui qui vaut `null` qui dit la nature de
+ * l'autre. La sentinelle `-1` du fichier CSV n'arrive jamais jusqu'ici — c'est une
+ * convention de stockage, pas une valeur à interpréter à l'écran.
+ */
+export interface CircuitExercise {
+  position: number;
+  name: string;
+  muscle_group: string;
+  duration_s: number | null;
+  reps: number | null;
+  rest_s: number;
+}
+
+export interface Circuit {
+  id: number;
+  token: string;
+  circuit_id: string;
+  name: string;
+  rounds: number;
+  round_rest_s: number;
+  created: string | null;
+  note: string | null;
+  exercises: CircuitExercise[];
+  /**
+   * L'adresse à ouvrir, **déjà construite par le serveur**.
+   *
+   * `null` tant que l'adresse de Cadence n'est pas réglée. L'échappement, le bornage et le
+   * suffixe qui distingue quinze répétitions de quinze secondes sont des règles métier :
+   * l'écran pose ce qu'il reçoit dans un `href`, il ne fabrique rien.
+   */
+  url: string | null;
+  estimated_duration_min: number;
+  /** Faux dès qu'un exercice est en répétitions : le total s'affiche alors préfixé d'un `~`. */
+  exact: boolean;
+}
+
+/**
+ * Un nom d'exercice proposé à la saisie d'un circuit.
+ *
+ * **Servi par le serveur, jamais écrit ici.** Les 35 noms de Cadence recopiés dans l'écran
+ * divergeraient du jour où l'application en ajoute un, et le symptôme serait une
+ * illustration qui n'apparaît pas — sans message, sans erreur, sans rien à chercher.
+ */
+export interface CircuitSuggestion {
+  name: string;
+  /** Vrai si ce nom **exact** affiche une illustration dans Cadence. */
+  illustrated: boolean;
+  /** Le groupe musculaire quand l'exercice est au catalogue de Metric, `null` sinon. */
+  muscle_group: string | null;
+}
+
+export interface CircuitList {
+  circuits: Circuit[];
+  /**
+   * Vrai quand une adresse de Cadence est réglée.
+   *
+   * **Non déductible de la liste** : sur une liste vide, l'écran doit distinguer « aucun
+   * circuit » de « aucune adresse », et ces deux états ne proposent pas le même geste.
+   */
+  linkable: boolean;
+}
+
+export interface CircuitExercisePayload {
+  name: string;
+  muscle_group: string;
+  duration_s?: number;
+  reps?: number;
+  rest_s: number;
+}
+
+export interface CircuitPayload {
+  name: string;
+  rounds: number;
+  round_rest_s: number;
+  exercises: CircuitExercisePayload[];
+  note?: string | null;
+}
+
+export interface CircuitDonePayload {
+  duration_min: number;
+  rpe?: number | null;
+}
+
 export const activityApi = {
   overview: () => request<ActivityOverview>('/api/activity'),
   progress: () => request<ExerciseProgress[]>('/api/activity/progress'),
@@ -466,6 +554,26 @@ export const activityApi = {
       method: 'DELETE',
       headers: guard(token),
     }),
+  circuits: () => request<CircuitList>('/api/activity/circuits'),
+  circuitExercises: () => request<CircuitSuggestion[]>('/api/activity/circuits/exercises'),
+  createCircuit: (payload: CircuitPayload) =>
+    request<Circuit>('/api/activity/circuits', { method: 'POST', body: payload }),
+  importCircuit: (url: string) =>
+    request<Circuit>('/api/activity/circuits/import', { method: 'POST', body: { url } }),
+  updateCircuit: (id: number, token: string, payload: CircuitPayload) =>
+    request<Circuit>(`/api/activity/circuits/${id}`, {
+      method: 'PATCH',
+      headers: guard(token),
+      body: payload,
+    }),
+  deleteCircuit: (id: number, token: string) =>
+    request<undefined>(`/api/activity/circuits/${id}`, {
+      method: 'DELETE',
+      headers: guard(token),
+    }),
+  completeCircuit: (id: number, payload: CircuitDonePayload) =>
+    request<Workout>(`/api/activity/circuits/${id}/done`, { method: 'POST', body: payload }),
+
   duplicateWorkout: (id: number, date: string) =>
     request<Workout>(`/api/activity/workouts/${id}/duplicate`, {
       method: 'POST',

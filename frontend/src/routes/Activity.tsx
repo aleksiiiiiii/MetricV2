@@ -33,6 +33,7 @@ import styles from './Activity.module.css';
 import { ActivitySheet, type SheetTarget } from './activity/ActivitySheet';
 import { NewActivitySheet } from './activity/NewActivitySheet';
 import { AppleImport } from './activity/AppleImport';
+import { CircuitsSection } from './activity/Circuits.section';
 import { History } from './activity/History';
 import { Journal } from './activity/Journal';
 import { toSession, useInvalidateActivity, type Session } from './activity/shared';
@@ -126,11 +127,20 @@ export function Activity() {
         actions={
           <>
             <LinkButton to="/activite/courses">Courses</LinkButton>
+            {/* Pas de lien vers `/activite/seances` ici : la section juste en dessous en
+                porte un, au pied de ses cartes, et deux portes vers la même page dans le
+                même écran font hésiter au lieu d'aider. */}
             <LinkButton to="/activite/catalogue">Catalogue</LinkButton>
             <LinkButton to="/activite/statistiques">Statistiques</LinkButton>
           </>
         }
       />
+
+      {/* **En tête, et devant le journal.** Une séance Cadence est le geste le plus direct
+          de l'écran — un appui et elle démarre — là où consigner une série suppose d'avoir
+          déjà commencé. C'est le même arbitrage qui avait fait passer le journal devant les
+          statistiques : ce qu'on fait passe devant ce qu'on lit. */}
+      <CircuitsSection />
 
       <Rule>Séance</Rule>
       <div ref={logRef}>

@@ -1,0 +1,89 @@
+/* La liste des suggestions.
+
+   Elle est **dans le flux** et non en position absolue, et c'est une décision mobile : une
+   liste flottante au-dessus du contenu se fait recouvrir par le clavier système, qui occupe
+   la moitié basse de l'écran dès qu'on tape. Dans le flux, la page défile et la liste reste
+   sous le doigt. Le prix est que le formulaire s'allonge pendant la frappe — visible, mais
+   c'est justement le moment où l'on regarde ce champ-là. */
+
+/* `min-width: 0` n'est pas décoratif, et ça s'est vu en capture : sans lui, à 360 px, la
+   liste prenait la largeur de son plus long nom et poussait tout le formulaire hors de
+   l'écran. Un enfant de conteneur flex ne rétrécit pas sous la taille de son contenu tant
+   qu'on ne le lui autorise pas — la règle vaut à chaque étage, d'où les trois. */
+.wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: var(--s1);
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  min-width: 0;
+  max-width: 100%;
+  /* Huit lignes de 44 px dépassent un écran de téléphone clavier ouvert : la liste défile
+     chez elle plutôt que de pousser le bouton d'enregistrement hors de portée. */
+  max-height: 232px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* `flex-start` et non `space-between`, et c'est une correction vue sur ordinateur : sur
+   une ligne de 1 200 px, la puce se retrouvait à l'autre bout de l'écran et ne se lisait
+   plus comme une annotation du nom mais comme une décoration de fin de ligne. Collée au
+   nom, elle dit la même chose aux deux largeurs — une seule règle plutôt que deux. */
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--s2);
+  width: 100%;
+  min-width: 0;
+  /* Le plancher de toute cible. Une suggestion se choisit au pouce, entre deux séries. */
+  min-height: var(--tap);
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-body);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--t);
+}
+
+.optionOn,
+.option:hover,
+.option:focus-visible {
+  background: rgb(var(--signal-rgb) / 0.13);
+  outline: none;
+}
+
+.optionName {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* La puce qui signale ce que le nom exact apporte.
+
+   Elle a remplacé le mot « ILLUSTRATION », qui prenait la moitié d'une ligne à 360 px et
+   tronquait le nom — c'est-à-dire l'information qu'on est venu lire. Le texte n'est pas
+   perdu : il est rendu en `.sr-only` juste à côté, et le `hint` du champ dit ce que la
+   puce signifie. */
+.optionMark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--signal);
+}
