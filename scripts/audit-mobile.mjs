@@ -74,6 +74,7 @@ const PRIVATE_ROUTES = [
   // elle rejoint l'angle mort dont le lot vient de la sortir.
   ['/activite/catalogue', 'activite-catalogue'],
   ['/activite/statistiques', 'activite-statistiques'],
+  ['/activite/seances', 'activite-seances'],
   ['/planning', 'planning'],
   ['/objectif', 'objectif'],
   ['/assistant', 'assistant'],
