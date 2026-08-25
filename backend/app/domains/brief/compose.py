@@ -5,6 +5,14 @@ assembler, une réponse à relire. Il ne lit aucun fichier, ne connaît ni l'hor
 modèle, et n'écrit rien. Chaque cas se vérifie sur des valeurs fixes, sans monter
 d'application.
 
+## Trois lectures, trois questions
+
+Une seule par jour ne pouvait dire qu'une chose. Le même paragraphe servi au réveil, à midi
+et le soir serait lu une fois puis ignoré — c'est le sort de « belle semaine » affiché tous
+les matins, et la consigne l'interdit déjà pour les compliments. `SLOT_BRIEFS` donne à
+chaque créneau un travail que les deux autres ne font pas ; le reste de la consigne, lui,
+ne bouge pas, parce que les interdits ne dépendent pas de l'heure.
+
 ## Une carte, pas un bilan
 
 Le bilan hebdomadaire demande trois rubriques — progrès, décrochages, action — parce qu'on
@@ -40,7 +48,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from app.domains.brief.models import MAX_MESSAGE
+from app.domains.brief.models import DEFAULT_SLOT, MAX_MESSAGE, normalise_slot
 
 #: Les jours, en français. Un modèle n'a pas de calendrier : « mercredi » lui est donné,
 #: il ne le déduit pas d'une date ISO — c'est la même règle que dans `assistant/context`.
@@ -59,7 +67,48 @@ INSTRUCTION = (
     "uniquement par un objet JSON, sans phrase avant ni après, sans bloc de code."
 )
 
-_TEMPLATE = """Écris la lecture du jour — {weekday} {day}.
+#: Ce que chaque créneau demande, et ce qui le distingue des deux autres.
+#:
+#: **Trois moments, trois questions.** Le même paragraphe servi trois fois par jour serait
+#: lu une fois puis ignoré — c'est le sort de « belle semaine » affiché tous les matins, et
+#: la consigne l'interdit déjà pour les compliments. Chaque créneau a donc un travail que
+#: les deux autres ne font pas :
+#:
+#: * **matin** — la journée n'a rien produit encore. On regarde en arrière (hier) et on
+#:   pose ce qui vient. C'est le seul créneau qui a le droit de commenter la veille : le
+#:   faire à midi reviendrait à ressasser.
+#: * **midi** — la journée est entamée et rien n'est joué. On dit où en est ce qui se suit
+#:   dans la journée — ce qui a été mangé, bu —, et on encourage sur la séance qui reste à
+#:   faire. Pas de bilan : il est trop tôt, et un bilan de mi-journée se lit comme un
+#:   jugement.
+#: * **soir** — la journée est presque close. On récapitule ce qu'elle a produit, et on
+#:   nomme **ce qui se rattrape encore ce soir** — un verre d'eau, dix minutes de gainage,
+#:   une pesée. C'est le seul créneau où « il reste » a un sens.
+SLOT_BRIEFS: dict[str, str] = {
+    "matin": """- Deux à quatre phrases, adressées à moi, au présent. Un seul paragraphe.
+- Ouvre sur **hier** : ce qui a été fait, en citant un chiffre. Si hier est vide, dis-le
+  sans le commenter — une journée sans relevé n'est pas une journée ratée.
+- Enchaîne sur **aujourd'hui** : ce qui est prévu, et le geste le plus utile de la journée.
+  Un seul.
+- Mets les chiffres en gras, avec des doubles astérisques : **2,4 séances**.""",
+    "midi": """- Deux à quatre phrases, adressées à moi, au présent. Un seul paragraphe.
+- Dis où en est la journée sur ce qui se suit au fil des heures — repas, protéines, eau —
+  en citant un chiffre et ce qu'il reste à la cible.
+- Encourage sur la **séance** : celle qui est prévue, ou celle que le déséquilibre par
+  groupe musculaire appelle. Nomme-la.
+- **Ne fais aucun bilan de la journée** : elle n'est pas finie, et un bilan à midi se lit
+  comme un jugement sur ce qui peut encore changer.
+- Mets les chiffres en gras, avec des doubles astérisques : **86 g de protéines**.""",
+    "soir": """- Deux à quatre phrases, adressées à moi, au présent. Un seul paragraphe.
+- Récapitule ce que la journée a produit, en citant un chiffre.
+- Finis sur **ce qui se rattrape encore ce soir** — un verre d'eau, dix minutes, une
+  pesée. Un seul geste, et seulement s'il en reste un qui tienne avant la nuit.
+- Si la journée est déjà pleine, dis-le et n'invente pas un geste de plus : une journée
+  tenue se referme, elle ne se rallonge pas.
+- Mets les chiffres en gras, avec des doubles astérisques : **1,8 L**.""",
+}
+
+_TEMPLATE = """Écris la lecture {moment} — {weekday} {day}.
 
 ## Ce que disent les données
 
@@ -69,10 +118,7 @@ _TEMPLATE = """Écris la lecture du jour — {weekday} {day}.
 
 {{"message": "…"}}
 
-- Deux à quatre phrases, adressées à moi, au présent. Un seul paragraphe.
-- Ouvre sur ce qui est **acquis** — aujourd'hui ou cette semaine — en citant un chiffre.
-- Enchaîne sur ce qui vient : le geste le plus utile d'ici ce soir, un seul.
-- Mets les chiffres en gras, avec des doubles astérisques : **2,4 séances**.
+{brief}
 
 Règles :
 - N'écris aucun chiffre qui ne soit pas ci-dessus. Pas d'estimation, pas de moyenne
@@ -84,19 +130,33 @@ Règles :
   symptôme. Devant une douleur, tu renvoies vers un professionnel de santé.
 """
 
+#: Comment chaque créneau se nomme dans la première ligne de la consigne.
+_MOMENTS: dict[str, str] = {
+    "matin": "du matin",
+    "midi": "de la mi-journée",
+    "soir": "du soir",
+}
 
-def build_prompt(*, day: dt.date, context: list[str]) -> str:
-    """Assemble la consigne à partir du condensé factuel.
+
+def build_prompt(*, day: dt.date, context: list[str], slot: str = DEFAULT_SLOT) -> str:
+    """Assemble la consigne du créneau à partir du condensé factuel.
 
     Le condensé est **fourni** — `assistant.context.build` en détient l'unique
     implémentation, et en écrire une seconde ici donnerait deux versions des mêmes faits
     qui divergeraient au premier ajout de ligne. C'est l'argument déjà écrit dans
     `goals/service.py`, et il vaut mot pour mot.
+
+    Un créneau inconnu retombe sur `matin` par `normalise_slot`. Le repli est celui du
+    fichier, et non un second : une cellule abîmée et un argument fautif ne doivent pas
+    donner deux lectures différentes du même mot.
     """
+    wanted = normalise_slot(slot)
     return _TEMPLATE.format(
+        moment=_MOMENTS[wanted],
         weekday=WEEKDAYS[day.weekday()],
         day=f"{day:%d/%m/%Y}",
         context="\n".join(f"- {line}" for line in context) or "- Aucune donnée relevée.",
+        brief=SLOT_BRIEFS[wanted],
     )
 
 
@@ -132,4 +192,4 @@ def read_message(payload: dict[str, Any]) -> str:
     return text[:MAX_MESSAGE]
 
 
-__all__ = ["INSTRUCTION", "WEEKDAYS", "build_prompt", "read_message"]
+__all__ = ["INSTRUCTION", "SLOT_BRIEFS", "WEEKDAYS", "build_prompt", "read_message"]

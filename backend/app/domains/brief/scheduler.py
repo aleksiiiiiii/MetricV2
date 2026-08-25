@@ -25,6 +25,10 @@ de démarrage, et la seconde ne demande qu'une clé OpenRouter et un stockage.
 
 ── Ce que cet ordonnanceur ne fait pas ──────────────────────────────────────
 
+Il n'écrit **qu'un créneau par passe**. Ouvrir l'application à vingt heures après une
+journée sans passe ne doit pas déclencher trois appels de modèle d'affilée ; l'intervalle
+est d'une heure, et les deux autres suivront.
+
 Il ne réessaie pas dans la minute. Un modèle gratuit indisponible le reste souvent
 plusieurs minutes, et la passe suivante viendra de toute façon ; entre-temps, la carte
 porte son bouton et l'utilisateur n'attend pas après nous. Il ne rattrape pas non plus les
@@ -42,6 +46,7 @@ from datetime import datetime, time
 
 from app.core.dates import now_local
 from app.domains.ai.service import AiService
+from app.domains.brief.models import SLOT_HOURS, due_slots
 from app.domains.brief.service import BriefService
 from app.domains.planning.service import DEFAULT_ADHERENCE_WEEKS, PlanningService
 from app.storage.files import FileStore
@@ -56,11 +61,12 @@ logger = logging.getLogger(__name__)
 #: bouton, qui écrit la même ligne par le même chemin.
 INTERVAL = 3600.0
 
-#: Heure locale à partir de laquelle la lecture du jour peut être écrite.
+#: Heure locale du premier créneau, gardée pour les appelants qui la nommaient.
 #:
-#: Six heures : assez tôt pour qu'elle soit là au réveil, assez tard pour que la journée
-#: précédente soit close et que les chiffres commentés soient ceux de la bonne journée.
-FLOOR = time(6, 0)
+#: Les trois heures vivent maintenant dans `models.SLOT_HOURS` : le service en a besoin
+#: aussi — c'est lui qui décide quel créneau afficher quand l'écran n'en demande aucun — et
+#: deux tables donneraient deux idées de « il est midi ».
+FLOOR = SLOT_HOURS["matin"]
 
 
 class BriefScheduler:
@@ -87,24 +93,38 @@ class BriefScheduler:
     # ── Une passe ─────────────────────────────────────
 
     async def tick(self) -> bool:
-        """Une passe. Rend vrai si une lecture vient d'être écrite."""
+        """Une passe. Rend vrai si une lecture vient d'être écrite.
+
+        **Un créneau par passe, le plus ancien manquant.** Ouvrir l'application à vingt
+        heures après une journée sans passe ne doit pas déclencher trois appels de modèle
+        d'affilée : l'intervalle est d'une heure, les deux autres suivront, et la carte
+        montre de toute façon le créneau en cours.
+
+        Les créneaux dépassés se rattrapent donc dans la journée mais **pas d'un jour sur
+        l'autre** : le service ne connaît que la date qu'on lui donne, et une lecture de
+        midi écrite à minuit commenterait des chiffres qui ont bougé — exactement ce qu'un
+        condensé daté existe pour empêcher.
+        """
         moment = self._now()
-        if moment.time() < self._floor:
-            return False
-
         service = BriefService(self._store)
-        # La vue **avant** l'écart plan / réalisé : dans le cas courant — la lecture est
-        # déjà là — cette passe ne coûte qu'une lecture de fichier, et construire le taux
-        # de respect pour le jeter serait quatre lectures de plus, toutes les heures.
-        if (await service.view(today=moment.date())).state == "ready":
-            return False
 
-        adherence = await PlanningService(self._store).adherence(
-            today=moment.date(), weeks=DEFAULT_ADHERENCE_WEEKS
-        )
-        await service.generate(self._ai, adherence=adherence, today=moment.date(), now=moment)
-        logger.info("lecture du jour écrite pour le %s", moment.date().isoformat())
-        return True
+        for slot in due_slots(moment):
+            # La vue **avant** l'écart plan / réalisé : dans le cas courant — la lecture
+            # est déjà là — cette passe ne coûte qu'une lecture de fichier, et construire
+            # le taux de respect pour le jeter serait quatre lectures de plus par créneau.
+            if (await service.view(today=moment.date(), slot=slot)).state == "ready":
+                continue
+
+            adherence = await PlanningService(self._store).adherence(
+                today=moment.date(), weeks=DEFAULT_ADHERENCE_WEEKS
+            )
+            await service.generate(
+                self._ai, adherence=adherence, today=moment.date(), now=moment, slot=slot
+            )
+            logger.info("lecture « %s » écrite pour le %s", slot, moment.date().isoformat())
+            return True
+
+        return False
 
     # ── Cycle de vie ──────────────────────────────────
 

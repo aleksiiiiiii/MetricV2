@@ -1,6 +1,9 @@
 """Formes échangées pour la lecture du jour.
 
-Un seul objet circule, et son champ décisif est `state`. Il porte la distinction que
+Trois lectures par jour depuis ce lot — matin, midi, soir. `slot` dit laquelle, et il
+vient du serveur : c'est lui qui tient l'heure.
+
+Un objet circule, et son champ décisif est `state`. Il porte la distinction que
 l'invariant « aucune valeur inventée » exige ici : **« pas encore écrite » n'est pas « il
 n'y a rien à dire »**, et un message vide dirait les deux à la fois.
 """
@@ -19,11 +22,19 @@ from pydantic import BaseModel, Field
 #: état de la vue obligerait l'écran à décider sur un texte, ce que le §2 interdit.
 BriefState = Literal["ready", "absent"]
 
+#: Les trois moments de la journée. Fermé côté API alors que le fichier tolère n'importe
+#: quoi : le fichier doit survivre à un tableur, une réponse n'a pas cette excuse.
+BriefSlot = Literal["matin", "midi", "soir"]
+
 
 class BriefView(BaseModel):
     """La lecture du jour, telle que l'écran la reçoit."""
 
     day: dt.date
+    #: Le moment commenté. Rendu par le serveur et **jamais déduit par l'écran** : lui
+    #: n'a ni l'horloge ni le fuseau, et deux idées de « il est midi » divergeraient
+    #: (`HEAT-32`).
+    slot: BriefSlot
     state: BriefState
     #: Vide tant que `state` vaut `absent`. Jamais une phrase de remplacement : l'écran
     #: dit lui-même ce que coûte le prochain geste, comme tous ses autres états vides.

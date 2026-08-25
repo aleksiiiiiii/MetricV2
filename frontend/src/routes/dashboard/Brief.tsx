@@ -32,7 +32,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 
 import { AiBlock, Button, LinkButton, Markdown } from '@/components/ui';
-import { briefApi } from '@/features/brief/api';
+import { briefApi, type BriefSlot, type BriefView } from '@/features/brief/api';
 import { useAiStatus } from '@/features/ai/useAiStatus';
 import { ApiError } from '@/lib/api';
 import { longDate, plural } from '@/lib/format';
@@ -42,9 +42,28 @@ import { useToast } from '@/lib/toast';
 import styles from '../Dashboard.module.css';
 
 /** « Lecture du mercredi 19 août ». Le jour vient du serveur, jamais de l'horloge locale. */
-function tagFor(day: string): string {
-  return `Lecture du ${longDate(`${day}T12:00:00`)}`;
+/**
+ * Comment chaque moment se nomme sur la carte.
+ *
+ * Sans lui, trois textes différents se succéderaient sous le même titre au fil de la
+ * journée, et relire à vingt heures une phrase qui parle du matin laisserait croire à une
+ * carte qui n'a pas été rafraîchie.
+ *
+ * Le mot vient du `slot` **servi par le serveur** : l'écran ne décide pas de l'heure qu'il
+ * est, il n'a ni l'horloge ni le fuseau (`HEAT-32`).
+ */
+const MOMENTS: Record<BriefSlot, string> = {
+  matin: 'Le matin',
+  midi: 'À la mi-journée',
+  soir: 'Ce soir',
+};
+
+function tagFor(view: BriefView): string {
+  return `${MOMENTS[view.slot]} · ${longDate(`${view.day}T12:00:00`)}`;
 }
+
+/** L'étiquette avant que la lecture arrive — on ne sait pas encore de quel moment. */
+const NEUTRE = 'Lecture du jour';
 
 export function Brief() {
   const navigate = useNavigate();
@@ -115,7 +134,7 @@ export function Brief() {
 
   if (isPending) {
     return (
-      <AiBlock tag="Lecture du jour">
+      <AiBlock tag={NEUTRE}>
         <p className={styles.briefLoading}>lecture en cours d’écriture…</p>
       </AiBlock>
     );
@@ -124,7 +143,7 @@ export function Brief() {
   if (error) {
     return (
       <AiBlock
-        tag="Lecture du jour"
+        tag={NEUTRE}
         actions={
           <>
             <Button
@@ -147,7 +166,7 @@ export function Brief() {
   if (data.state === 'absent') {
     return (
       <AiBlock
-        tag="Lecture du jour"
+        tag={tagFor(data)}
         actions={
           <>
             <Button
@@ -167,8 +186,8 @@ export function Brief() {
             inventée. Surtout pas une phrase d'encouragement générique : ce serait
             exactement le compliment sans chiffre que la consigne interdit au modèle. */}
         <p>
-          Rien n’est encore écrit pour aujourd’hui. Elle s’écrit toute seule dans la matinée — ou
-          maintenant, si tu la demandes.
+          Rien n’est encore écrit pour ce moment de la journée. Elle s’écrit toute seule — à 6 h, 13
+          h et 19 h — ou maintenant, si tu la demandes.
         </p>
       </AiBlock>
     );
@@ -176,7 +195,7 @@ export function Brief() {
 
   return (
     <AiBlock
-      tag={tagFor(data.day)}
+      tag={tagFor(data)}
       onOpen={() => {
         open.mutate();
       }}

@@ -17,6 +17,8 @@ dirait tantôt vert tantôt rouge sans qu'une ligne de code ait bougé.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from datetime import date, datetime, time
 from typing import Any
@@ -26,6 +28,7 @@ from fastapi.testclient import TestClient
 
 from app.core.dates import today_local
 from app.domains.brief import compose
+from app.domains.brief.models import current_slot
 from app.domains.brief.scheduler import BriefScheduler
 from app.domains.brief.service import BriefService
 from app.storage.files import FileStore
@@ -43,6 +46,16 @@ TODAY = today_local()
 def _text(dav: FakeWebDav, path: str) -> str:
     """Le contenu d'un fichier du faux WebDAV, en clair."""
     return dav.files[path].content.decode("utf-8-sig")
+
+
+def _rows(dav: FakeWebDav, path: str) -> list[list[str]]:
+    """Les lignes **CSV** d'un fichier, en-tête compris.
+
+    Et non `splitlines()` : la colonne `basis` porte le condensé, une ligne par élément,
+    donc des sauts de ligne protégés par des guillemets. Les compter comme des lignes de
+    fichier donnerait trente et une lignes pour trois lectures.
+    """
+    return list(csv.reader(io.StringIO(_text(dav, path))))
 
 
 LECTURE = (
@@ -296,14 +309,16 @@ async def test_scheduler_writes_once_past_the_floor(
 async def test_scheduler_does_not_write_twice_in_a_day(
     store: FileStore, ai_service: Any, openrouter: FakeOpenRouter
 ) -> None:
-    """Une passe par heure, une lecture par jour. Sinon la carte changerait de texte
-    toutes les heures sous les yeux de quelqu'un qui n'a rien demandé."""
+    """Une passe par heure, une lecture **par créneau**. Sinon la carte changerait de
+    texte toutes les heures sous les yeux de quelqu'un qui n'a rien demandé."""
     openrouter.say(answer())
     scheduler = BriefScheduler(store, ai_service, now=lambda: at(7))
 
     assert await scheduler.tick() is True
     assert await scheduler.tick() is False
-    assert (await BriefService(store).view(today=TODAY)).message == LECTURE
+    # Le créneau est **nommé** : sans lui, la vue rendrait celui de l'heure réelle
+    # d'exécution du test, qui n'est pas celle qu'on a injectée dans l'ordonnanceur.
+    assert (await BriefService(store).view(today=TODAY, slot="matin")).message == LECTURE
 
 
 @pytest.mark.anyio
@@ -314,11 +329,11 @@ async def test_scheduler_leaves_a_manual_reading_alone(
     celui qui passe en second n'a rien à faire."""
     openrouter.say(answer("Écrite au doigt."))
     service = BriefService(store)
-    await service.generate(ai_service, adherence=_no_adherence(), today=TODAY)
+    await service.generate(ai_service, adherence=_no_adherence(), today=TODAY, slot="matin")
 
     scheduler = BriefScheduler(store, ai_service, now=lambda: at(9))
     assert await scheduler.tick() is False
-    assert (await service.view(today=TODAY)).message == "Écrite au doigt."
+    assert (await service.view(today=TODAY, slot="matin")).message == "Écrite au doigt."
 
 
 def _no_adherence() -> Any:
@@ -326,3 +341,114 @@ def _no_adherence() -> Any:
     from app.domains.planning.schemas import AdherenceView
 
     return AdherenceView(weeks=[], rate=None, planned=0, honoured=0)
+
+
+# ── Trois moments, trois lectures ─────────────────────
+
+
+def test_the_current_slot_is_the_last_one_whose_hour_has_passed() -> None:
+    """L'écran ne le calcule pas : il n'a ni l'horloge ni le fuseau du serveur."""
+    assert current_slot(at(5, 59)) == "matin"
+    assert current_slot(at(6)) == "matin"
+    assert current_slot(at(12, 59)) == "matin"
+    assert current_slot(at(13)) == "midi"
+    assert current_slot(at(18, 59)) == "midi"
+    assert current_slot(at(19)) == "soir"
+    assert current_slot(at(23, 30)) == "soir"
+
+
+def test_before_six_it_is_this_morning_and_not_yesterday_evening() -> None:
+    """Rendre la lecture du soir de la veille serait montrer un texte qui commente une
+    autre journée sur un écran qui affiche celle d'aujourd'hui."""
+    assert current_slot(at(3)) == "matin"
+
+
+def test_each_slot_asks_a_different_thing() -> None:
+    """Le même paragraphe servi trois fois par jour serait lu une fois puis ignoré."""
+    faits = ["Protéines : 86 g sur 150"]
+
+    matin = compose.build_prompt(day=TODAY, context=faits, slot="matin")
+    midi = compose.build_prompt(day=TODAY, context=faits, slot="midi")
+    soir = compose.build_prompt(day=TODAY, context=faits, slot="soir")
+
+    assert "hier" in matin.lower()
+    # Midi n'a pas le droit de faire un bilan : la journée peut encore changer, et un
+    # bilan de mi-journée se lit comme un jugement.
+    assert "aucun bilan" in midi.lower()
+    assert "rattrape encore ce soir" in soir
+    assert len({matin, midi, soir}) == 3
+
+
+def test_an_unknown_slot_falls_back_where_the_file_does() -> None:
+    """Une cellule abîmée et un argument fautif ne doivent pas donner deux lectures
+    différentes du même mot."""
+    assert compose.build_prompt(day=TODAY, context=[], slot="brunch") == compose.build_prompt(
+        day=TODAY, context=[], slot="matin"
+    )
+
+
+@pytest.mark.anyio
+async def test_a_reading_written_before_this_lot_counts_as_the_morning(
+    store: FileStore, dav: FakeWebDav
+) -> None:
+    """Les lignes sans créneau sont les lectures de six heures — c'était le seul. Les lire
+    comme `matin` est exact, pas un repli de commodité (`STO-04`)."""
+    dav.seed(
+        "Metric/insights/brief.csv",
+        f"day,slot,created,message,basis,thread_id,source\n{TODAY.isoformat()},,,Ancienne.,,,ai\n",
+    )
+
+    assert (await BriefService(store).view(today=TODAY, slot="matin")).message == "Ancienne."
+
+
+@pytest.mark.anyio
+async def test_the_scheduler_writes_one_slot_per_pass(
+    store: FileStore, ai_service: Any, openrouter: FakeOpenRouter
+) -> None:
+    """Ouvrir l'application à vingt heures après une journée sans passe ne doit pas
+    déclencher trois appels de modèle d'affilée."""
+    openrouter.say(answer("Du matin."))
+    scheduler = BriefScheduler(store, ai_service, now=lambda: at(20))
+
+    assert await scheduler.tick() is True
+
+    service = BriefService(store)
+    assert (await service.view(today=TODAY, slot="matin")).state == "ready"
+    assert (await service.view(today=TODAY, slot="midi")).state == "absent"
+    assert (await service.view(today=TODAY, slot="soir")).state == "absent"
+
+
+@pytest.mark.anyio
+async def test_three_slots_live_side_by_side_in_the_file(
+    store: FileStore, ai_service: Any, openrouter: FakeOpenRouter, dav: FakeWebDav
+) -> None:
+    """`day` **et** `slot` forment la clé : écrire midi ne remplace pas le matin."""
+    service = BriefService(store)
+    for slot, texte in (("matin", "Du matin."), ("midi", "De midi."), ("soir", "Du soir.")):
+        openrouter.say(answer(texte))
+        await service.generate(ai_service, adherence=_no_adherence(), today=TODAY, slot=slot)
+
+    lignes = _rows(dav, "Metric/insights/brief.csv")
+    assert lignes[0][:2] == ["day", "slot"]
+    assert len(lignes) == 4
+
+    assert (await service.view(today=TODAY, slot="matin")).message == "Du matin."
+    assert (await service.view(today=TODAY, slot="soir")).message == "Du soir."
+
+
+@pytest.mark.anyio
+async def test_regenerating_a_slot_replaces_only_its_own_line(
+    store: FileStore, ai_service: Any, openrouter: FakeOpenRouter, dav: FakeWebDav
+) -> None:
+    service = BriefService(store)
+    openrouter.say(answer("Du matin."))
+    await service.generate(ai_service, adherence=_no_adherence(), today=TODAY, slot="matin")
+    openrouter.say(answer("De midi."))
+    await service.generate(ai_service, adherence=_no_adherence(), today=TODAY, slot="midi")
+
+    openrouter.say(answer("Midi, corrigé."))
+    await service.generate(ai_service, adherence=_no_adherence(), today=TODAY, slot="midi")
+
+    assert len(_rows(dav, "Metric/insights/brief.csv")) == 3
+    assert (await service.view(today=TODAY, slot="matin")).message == "Du matin."
+    assert (await service.view(today=TODAY, slot="midi")).message == "Midi, corrigé."

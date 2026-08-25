@@ -5,6 +5,9 @@
  * condensé sur lequel il s'appuie est rangé avec lui, et le client ne fait que les
  * afficher.
  *
+ * **Trois lectures par jour** — matin, midi, soir. L'écran ne demande jamais laquelle :
+ * le serveur rend celle du moment, parce que lui seul tient l'heure.
+ *
  * **Trois appels qui ne se confondent pas.** `read` lit et n'écrit rien — c'est lui que
  * l'écran d'accueil appelle. `write` demande la lecture au modèle et la range ; il n'est
  * déclenché que par un appui, en repli de l'ordonnanceur du serveur. `openThread` ouvre le
@@ -13,8 +16,19 @@
 
 import { request } from '@/lib/api';
 
+/** Les trois moments de la journée. Décidés par le serveur, jamais déduits ici. */
+export type BriefSlot = 'matin' | 'midi' | 'soir';
+
 export interface BriefView {
   day: string;
+  /**
+   * Le moment commenté.
+   *
+   * **L'écran ne le calcule pas.** Il n'a ni l'horloge ni le fuseau du serveur, et deux
+   * idées de « il est midi » finiraient par diverger — c'est la même règle que « le jour
+   * vient du serveur ». Il reçoit le créneau et l'affiche.
+   */
+  slot: BriefSlot;
   /**
    * `absent` n'est pas « il n'y a rien à dire » : c'est « ce n'est pas encore écrit ».
    *

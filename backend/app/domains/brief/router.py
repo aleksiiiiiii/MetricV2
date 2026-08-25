@@ -19,33 +19,40 @@ opération publiée exige un jeton (`AUTH-05`).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, status
 
 from app.core.deps import StoreDep
 from app.domains.ai.deps import AiServiceDep
-from app.domains.brief.schemas import BriefThread, BriefView
+from app.domains.brief.schemas import BriefSlot, BriefThread, BriefView
 from app.domains.brief.service import BriefService
 from app.domains.planning.service import DEFAULT_ADHERENCE_WEEKS, PlanningService
 
 router = APIRouter(prefix="/brief", tags=["lecture du jour"])
 
 
-@router.get("", response_model=BriefView, summary="La lecture du jour")
-async def read_brief(store: StoreDep) -> BriefView:
-    """Ce qui a été écrit pour aujourd'hui. **Aucun modèle n'est interrogé.**"""
-    return await BriefService(store).view()
+#: Le créneau demandé. Absent, c'est celui en cours qui est rendu — décidé par le serveur,
+#: qui seul tient l'heure et le fuseau (`HEAT-32`).
+SlotQuery = Annotated[BriefSlot | None, Query(description="matin, midi ou soir")]
+
+
+@router.get("", response_model=BriefView, summary="La lecture du moment")
+async def read_brief(store: StoreDep, slot: SlotQuery = None) -> BriefView:
+    """Ce qui a été écrit pour ce moment de la journée. **Aucun modèle n'est interrogé.**"""
+    return await BriefService(store).view(slot=slot)
 
 
 @router.post(
     "",
     response_model=BriefView,
     status_code=status.HTTP_201_CREATED,
-    summary="Écrire la lecture du jour",
+    summary="Écrire la lecture du moment",
 )
-async def write_brief(store: StoreDep, ai: AiServiceDep) -> BriefView:
-    """Demande la lecture du jour et la range. Rappelée, elle remplace celle du jour."""
+async def write_brief(store: StoreDep, ai: AiServiceDep, slot: SlotQuery = None) -> BriefView:
+    """Demande la lecture d'un créneau et la range. Rappelée, elle remplace la sienne."""
     adherence = await PlanningService(store).adherence(weeks=DEFAULT_ADHERENCE_WEEKS)
-    return await BriefService(store).generate(ai, adherence=adherence)
+    return await BriefService(store).generate(ai, adherence=adherence, slot=slot)
 
 
 @router.post(
@@ -54,6 +61,6 @@ async def write_brief(store: StoreDep, ai: AiServiceDep) -> BriefView:
     status_code=status.HTTP_201_CREATED,
     summary="Ouvrir le fil de la lecture du jour",
 )
-async def open_thread(store: StoreDep) -> BriefThread:
+async def open_thread(store: StoreDep, slot: SlotQuery = None) -> BriefThread:
     """Le fil dans lequel répondre — créé au premier appui, rendu tel quel ensuite."""
-    return await BriefService(store).thread()
+    return await BriefService(store).thread(slot=slot)

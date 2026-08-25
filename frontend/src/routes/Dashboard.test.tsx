@@ -64,13 +64,21 @@ const AI_OFF = { enabled: false, message: 'Aucune clé OpenRouter n’est config
 /** Une lecture du jour écrite, et le condensé qui l'accompagne (`IA-09`). */
 const READING = {
   day: '2026-07-27',
+  slot: 'matin',
   state: 'ready',
   message: 'Deux séances cette semaine sur les **3** visées.',
   basis: ['Poids : 72,4 kg', 'Séances par semaine : 2,4'],
   thread_id: null,
 };
 
-const ABSENT = { day: '2026-07-27', state: 'absent', message: '', basis: [], thread_id: null };
+const ABSENT = {
+  day: '2026-07-27',
+  slot: 'soir',
+  state: 'absent',
+  message: '',
+  basis: [],
+  thread_id: null,
+};
 
 function stub(dashboard: unknown = DASHBOARD, brief: unknown = ABSENT, ai: unknown = AI_ON) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -150,7 +158,10 @@ describe('la lecture du jour', () => {
     renderDashboard();
 
     expect(await screen.findByText(/Deux séances cette semaine/)).toBeInTheDocument();
-    expect(screen.getByText(/Lecture du lundi 27 juillet/)).toBeInTheDocument();
+    // L'étiquette dit **de quel moment** la carte parle : trois lectures se succèdent
+    // dans la journée, et sans elle relire le soir une phrase du matin laisserait croire
+    // à une carte qui n'a pas été rafraîchie.
+    expect(screen.getByText(/Le matin · lundi 27 juillet/)).toBeInTheDocument();
     expect(screen.getByText(/Ce qui a été envoyé \(2 lignes, aucun fichier\)/)).toBeInTheDocument();
     // Les chiffres arrivent **en gras** : c'est la forme que `GuidelinesUI.html` §10
     // donne à cette carte, et la consigne du serveur la demande explicitement. Aucun HTML
@@ -186,6 +197,15 @@ describe('la lecture du jour', () => {
     );
   });
 
+  it('dit de quel moment l’état vide parle', async () => {
+    // Deux états vides à trois heures d'écart ne disent pas la même chose : « rien pour
+    // ce soir » à 19 h n'est pas « rien pour ce matin » à 7 h.
+    stub(DASHBOARD, ABSENT);
+    renderDashboard();
+
+    expect(await screen.findByText(/Ce soir · lundi 27 juillet/)).toBeInTheDocument();
+  });
+
   it('propose de l’écrire quand l’ordonnanceur n’est pas passé', async () => {
     // `absent` n'est pas « rien à dire » : c'est « pas encore écrite ». Aucun chiffre
     // inventé, aucune phrase d'encouragement générique en attendant.
@@ -193,7 +213,9 @@ describe('la lecture du jour', () => {
     renderDashboard();
 
     expect(await screen.findByRole('button', { name: 'Demander la lecture' })).toBeInTheDocument();
-    expect(screen.getByText(/Rien n’est encore écrit pour aujourd’hui/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Rien n’est encore écrit pour ce moment de la journée/),
+    ).toBeInTheDocument();
   });
 
   it('n’écrit rien tant que personne n’a appuyé', async () => {
