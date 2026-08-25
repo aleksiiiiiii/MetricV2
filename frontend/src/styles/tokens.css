@@ -37,6 +37,16 @@
   --load: #e2a659; /* ambre — charge, seuil approché */
   --recover: #a9748a; /* mauve — repos, alerte, dette */
 
+  /* ── Confettis ────────────────────────────────────
+     Décoratif, et **c'est la seule liste de couleurs du dépôt qui ne porte aucun sens**.
+     Elle est ici quand même : « aucune couleur en dur » vaut aussi pour ce qui ne veut
+     rien dire, sans quoi la première exception en appelle une seconde.
+
+     Les quatre couleurs de signal ouvrent la liste — la fête reste dans la charte — et
+     trois teintes de plus l'élargissent, parce qu'un feu d'artifice en quatre couleurs se
+     lit comme un graphique. */
+  --confetti: #7fa8b4, #8aa37b, #e2a659, #a9748a, #d9c05e, #6f8fd0, #d3856b;
+
   /* ── Charte — texte ───────────────────────────── */
   --ink: #e3e8ee;
   --ink-mid: #97a3b0;
@@ -244,6 +254,9 @@
   --effort: #4a6b38; /* sauge — activité, série tenue */
   --load: #a45a00; /* ambre — charge, seuil approché */
   --recover: #8c3f5b; /* mauve — repos, alerte, dette */
+
+  /* Mêmes teintes, assombries pour tenir sur un fond clair. */
+  --confetti: #2b6b7b, #4a6b38, #a45a00, #8c3f5b, #9a8420, #3f5da8, #a4553c;
 
   /* ── Texte ───────────────────────────────────── */
   --ink: #131b24;

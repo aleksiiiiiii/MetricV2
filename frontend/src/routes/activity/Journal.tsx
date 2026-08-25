@@ -36,6 +36,7 @@ import {
   type ExerciseEntryPayload,
 } from '@/features/activity/api';
 import { ApiError } from '@/lib/api';
+import { celebrate } from '@/lib/confetti';
 import { cx } from '@/lib/cx';
 import { hoursMinutes, num, plural, shortDate } from '@/lib/format';
 import { keys } from '@/lib/query';
@@ -126,6 +127,9 @@ function SeriesForm({
     },
     onSuccess: () => {
       invalidate();
+      // La fête à l'**ajout** seulement : corriger une série est un rattrapage, pas un
+      // accomplissement, et célébrer les deux reviendrait à ne célébrer ni l'un ni l'autre.
+      if (editing === null) celebrate();
       notify(editing === null ? 'Performance consignée.' : 'Série corrigée.', 'effort');
       setForm((current) => ({ ...current, weight_kg: '' }));
       setError(null);

@@ -189,3 +189,13 @@ export function IconBook(props: IconProps) {
     </Svg>
   );
 }
+
+/** Fait — la coche, dans un cercle qu'on peut viser au pouce. */
+export function IconCheck(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M20.5 11.3V12a8.5 8.5 0 1 1-5-7.8" />
+      <path d="m8.4 11.6 3.2 3.2 9-9" />
+    </Svg>
+  );
+}

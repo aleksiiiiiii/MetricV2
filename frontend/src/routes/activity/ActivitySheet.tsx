@@ -23,6 +23,7 @@ import type { ReactNode, SyntheticEvent } from 'react';
 import { Button, Chip, ChipStrip, Field, Segmented, Sheet } from '@/components/ui';
 import { activityApi, type Run, type Workout } from '@/features/activity/api';
 import { ApiError } from '@/lib/api';
+import { celebrate } from '@/lib/confetti';
 import { shortDate } from '@/lib/format';
 import { keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
@@ -251,6 +252,7 @@ function RunForm({
     },
     onSuccess: () => {
       invalidate();
+      if (editing === null) celebrate();
       notify(editing === null ? 'Course enregistrée.' : 'Course corrigée.', 'effort');
       setError(null);
       onSaved();

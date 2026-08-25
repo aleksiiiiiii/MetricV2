@@ -12,6 +12,7 @@ import {
   type WeeklyReview,
 } from '@/features/goals/api';
 import { ApiError } from '@/lib/api';
+import { celebrate } from '@/lib/confetti';
 import { cx } from '@/lib/cx';
 import { num, plural, shortDate } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
@@ -76,6 +77,9 @@ function CurrentGoal({ active }: { active: ActiveGoal }) {
     onSuccess: (entry) => {
       setArmed(false);
       invalidate();
+      // **Atteint, pas abandonné.** C'est toute la distinction : un objectif clos parce
+      // qu'on y est arrivé se fête, un objectif abandonné se respecte en silence.
+      if (entry.outcome === 'reached') celebrate();
       notify(
         `Objectif clos : ${entry.outcome_label}.`,
         entry.outcome === 'reached' ? 'effort' : 'signal',
