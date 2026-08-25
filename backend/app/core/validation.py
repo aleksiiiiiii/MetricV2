@@ -112,3 +112,27 @@ HydrationTargetMl = Annotated[
 
 Note = Annotated[str, Field(max_length=500, description="Note libre")]
 Label = Annotated[str, Field(min_length=1, max_length=80, description="Libellé court")]
+
+# ── Adresses d'applications externes ──────────────────
+
+#: Adresse **de base** d'une application tierce, à laquelle on ajoutera une query string.
+#:
+#: Trois bornes, et chacune évite un lien cassé plutôt qu'une valeur aberrante :
+#:
+#: * **La chaîne vide est acceptée**, et c'est une valeur au sens plein : elle veut dire
+#:   « pas d'adresse ». Sans elle, un réglage renseigné par erreur ne pourrait plus être
+#:   effacé — il n'y a pas de défaut sur lequel retomber, contrairement à un objectif.
+#: * **Ni `?` ni `#`.** Une base qui porte déjà une query string ou une ancre donnerait
+#:   `…?a=b?w=…` une fois le paramètre ajouté, ce qui n'est pas une URL mais un texte qui
+#:   y ressemble. Le refus arrive à la saisie, où il se corrige, et non à l'ouverture du
+#:   lien, où il ne se comprend pas.
+#: * **`http` ou `https` seulement.** Un `javascript:` ou un `data:` dans un `href` rendu
+#:   par l'application est une porte qu'on n'ouvre pas, fût-elle à un seul utilisateur.
+BaseUrl = Annotated[
+    str,
+    Field(
+        max_length=200,
+        pattern=r"^$|^https?://[^\s?#]+$",
+        description="Adresse de base d'une application externe, ou vide",
+    ),
+]

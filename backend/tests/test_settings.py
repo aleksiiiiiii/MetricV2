@@ -57,6 +57,9 @@ def test_the_defaults_apply_before_any_setting(
     assert values["target_hydration_ml"] == 2000
     assert values["hydration_presets_ml"] == [250, 500, 750]
     assert values["heatmap_metric"] == "activity"
+    # Vide, et volontairement : le pont vers Cadence Tabata est en sommeil tant que son
+    # adresse n'est pas renseignée (**D1**). Un domaine deviné serait une valeur inventée.
+    assert values["cadence_base_url"] == ""
 
 
 def test_the_server_serves_the_defaults_rather_than_trusting_the_client(
@@ -126,6 +129,39 @@ def test_a_bogus_preset_list_keeps_the_readable_values(
     dav.seed(FILE, 'key,value\nhydration_presets_ml,"200,,abc,800"\n')
 
     assert read(app_client, auth)["values"]["hydration_presets_ml"] == [200, 800]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "cadence.exemple.fr",  # sans protocole : un href relatif, pas une adresse
+        "javascript:alert(1)",  # protocole qu'on ne rend jamais dans un href
+        "https://cadence.exemple.fr/?utm=x",  # une query string qui casserait le `?w=`
+        "   ",  # cellule vidée à la main
+    ],
+)
+def test_an_unusable_base_url_gives_no_link_rather_than_a_broken_one(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav, raw: str
+) -> None:
+    """Le repli d'une adresse abîmée est **rien**, et pas le texte tel quel.
+
+    C'est la différence entre un écran qui dit « adresse non renseignée » — un état qu'il
+    sait afficher — et un bouton « Ouvrir » qui mène à une page d'erreur. Le refus à la
+    saisie ne suffit pas : le fichier s'ouvre dans un tableur, et une cellule collée de
+    travers y est une possibilité normale.
+    """
+    dav.seed(FILE, f"key,value\ncadence_base_url,{raw}\n")
+
+    assert read(app_client, auth)["values"]["cadence_base_url"] == ""
+
+
+def test_a_usable_base_url_is_served_as_written(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """La barre finale est conservée : c'est l'adresse de l'utilisateur, pas la nôtre."""
+    dav.seed(FILE, "key,value\ncadence_base_url,https://cadence.exemple.fr/\n")
+
+    assert read(app_client, auth)["values"]["cadence_base_url"] == "https://cadence.exemple.fr/"
 
 
 # ── Modification (`L08-02`) ───────────────────────────
@@ -255,6 +291,11 @@ def test_the_token_changes_when_the_file_changes(
         ("hydration_presets_ml", []),
         ("hydration_presets_ml", [100, 200, 300, 400, 500, 600, 700]),
         ("heatmap_metric", ""),
+        # Les trois formes que `BaseUrl` refuse. La chaîne vide, elle, est légitime et
+        # se vérifie plus bas — c'est l'effacement du réglage.
+        ("cadence_base_url", "cadence.exemple.fr"),
+        ("cadence_base_url", "javascript:alert(1)"),
+        ("cadence_base_url", "https://cadence.exemple.fr/?w=deja"),
     ],
 )
 def test_an_aberrant_setting_is_refused(
@@ -264,3 +305,18 @@ def test_an_aberrant_setting_is_refused(
 
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
+
+
+def test_the_base_url_can_be_set_then_cleared(app_client: TestClient, auth: dict[str, str]) -> None:
+    """**Le seul réglage de cet écran qui doit pouvoir revenir à vide.**
+
+    Les autres retombent sur un défaut : ne pas régler son poids cible donne 70 kg, ce qui
+    est un état utilisable. Une adresse absente n'a aucun repli — et c'est justement pour
+    ça que l'effacement doit marcher. Le chemin passe par `update`, qui ignore les champs
+    à `None` mais **écrit** une chaîne vide : la distinction porte tout le comportement.
+    """
+    assert patch(app_client, auth, cadence_base_url="https://cadence.exemple.fr").status_code == 200
+    assert read(app_client, auth)["values"]["cadence_base_url"] == "https://cadence.exemple.fr"
+
+    assert patch(app_client, auth, cadence_base_url="").status_code == 200
+    assert read(app_client, auth)["values"]["cadence_base_url"] == ""

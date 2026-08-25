@@ -17,7 +17,15 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.core.validation import HydrationTargetMl, Label, ProteinG, SugarG, VolumeMl, WeightKg
+from app.core.validation import (
+    BaseUrl,
+    HydrationTargetMl,
+    Label,
+    ProteinG,
+    SugarG,
+    VolumeMl,
+    WeightKg,
+)
 
 
 class SettingsValues(BaseModel):
@@ -29,6 +37,16 @@ class SettingsValues(BaseModel):
     target_hydration_ml: int = Field(description="Objectif quotidien d'hydratation, `HYD-03`")
     hydration_presets_ml: list[int] = Field(description="Raccourcis de volume, `HYD-02`")
     heatmap_metric: str = Field(description="Métrique mise en avant, `HEAT-08`")
+    #: Adresse de Cadence Tabata, l'application qui exécute les séances (**D1**).
+    #:
+    #: **Vide par défaut, et c'est un état qui a un sens** : la fonctionnalité est en
+    #: sommeil. Aucun domaine deviné, aucune adresse en dur — le seul autre choix aurait
+    #: été d'écrire un domaine dans le code, où il ne se corrige qu'en redéployant.
+    #:
+    #: Homonyme assumé avec `app/core/cadence.py`, qui décrit la **fréquence** d'une piste
+    #: d'assiduité, et avec `RunRow.cadence_spm`, qui compte des pas. Ici, « Cadence » est
+    #: le nom d'une application tierce ; les trois ne se croisent dans aucun fichier.
+    cadence_base_url: str = Field(description="Adresse de base de Cadence Tabata")
 
 
 class SettingsPayload(BaseModel):
@@ -44,6 +62,10 @@ class SettingsPayload(BaseModel):
     #: des données utilisateur créées au lot L09 ; figer ici un vocabulaire que ce lot
     #: remplacera obligerait à rejeter une piste légitime, ou à mentir sur son nom.
     heatmap_metric: Label | None = None
+    #: `BaseUrl` accepte la chaîne vide, et le service l'écrit au lieu de l'ignorer : ce
+    #: réglage est le seul de cette liste qu'on doit pouvoir **effacer**, puisqu'il n'a
+    #: pas de valeur de repli sur laquelle retomber.
+    cadence_base_url: BaseUrl | None = None
 
 
 class SettingsView(BaseModel):

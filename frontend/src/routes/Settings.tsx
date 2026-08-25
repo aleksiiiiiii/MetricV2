@@ -79,6 +79,7 @@ function toDraft(values: SettingsValues): Draft {
     target_hydration_ml: String(values.target_hydration_ml),
     hydration_presets_ml: values.hydration_presets_ml.join(', '),
     heatmap_metric: values.heatmap_metric,
+    cadence_base_url: values.cadence_base_url,
   };
 }
 
@@ -114,6 +115,16 @@ function changes(draft: Draft, current: SettingsValues): SettingsPayload {
 
   if (draft.heatmap_metric !== before.heatmap_metric) {
     payload.heatmap_metric = draft.heatmap_metric;
+  }
+
+  /*
+   * **Le seul champ dont la chaîne vide part au serveur.** Partout ailleurs, un champ
+   * vidé serait une saisie en cours et le laisser filer écraserait un objectif par rien.
+   * Ici, vide *est* la valeur — « pas d'adresse » — et c'est la seule façon d'effacer un
+   * réglage qui n'a aucun défaut sur lequel retomber.
+   */
+  if (draft.cadence_base_url.trim() !== before.cadence_base_url) {
+    payload.cadence_base_url = draft.cadence_base_url.trim();
   }
 
   return payload;
@@ -162,6 +173,69 @@ function Appearance() {
             options={THEMES}
             value={mode}
             onChange={setMode}
+          />
+        </div>
+      </Card>
+    </>
+  );
+}
+
+/**
+ * Le pont vers Cadence Tabata (**D1**) — une adresse, et rien d'autre.
+ *
+ * ── Pourquoi ce réglage ne porte pas le badge « valeur par défaut » ────────
+ *
+ * `Origin` lit `stored`, c'est-à-dire « la clé est-elle dans le fichier ». Ça marche pour
+ * un objectif, où la clé absente veut dire « je suis le défaut ». Ça ment ici : effacer
+ * l'adresse **écrit** une cellule vide, donc la clé y est, donc `stored` dirait « réglé »
+ * d'un champ vide. Le badge lit donc la valeur, qui est la question qu'on se pose vraiment
+ * — y a-t-il une adresse, oui ou non.
+ *
+ * ── Ce que dit la carte quand elle est vide ───────────────────────────────
+ *
+ * Le prochain geste, et son coût : ouvrir Cadence, copier l'adresse de la barre. Pas un
+ * exemple de domaine — un domaine plausible affiché en gris finit par être recopié tel
+ * quel, et ce serait une valeur inventée.
+ */
+function CadenceCard({
+  value,
+  error,
+  onChange,
+}: {
+  value: string;
+  error: string | undefined;
+  onChange: (event: { target: { value: string } }) => void;
+}) {
+  const set = value.trim() !== '';
+
+  return (
+    <>
+      <Rule>Applications</Rule>
+      <Card>
+        <div className="spread">
+          <span className={styles.name}>Cadence Tabata</span>
+          <Badge tone={set ? 'signal' : 'load'}>{set ? 'renseignée' : 'non renseignée'}</Badge>
+        </div>
+        <p className={cx(styles.note, styles.noteSpaced)}>
+          {set
+            ? 'Les séances s’ouvrent dans cette application. Rien n’y est envoyé : le lien contient la séance entière.'
+            : 'Sans adresse, les séances se créent et se modifient, mais aucune ne s’ouvre. Ouvre Cadence et recopie l’adresse de la barre du navigateur.'}
+        </p>
+        {/* `.row` et non un style en ligne : `noteSpaced` n'espace que par le haut, et
+            sans lui le paragraphe colle à l'étiquette du champ — vu en capture. C'est le
+            même enveloppement que les cartes d'objectifs, pas une seconde façon d'espacer. */}
+        <div className={styles.row}>
+          <Field
+            label="Adresse de l’application"
+            type="url"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            value={value}
+            error={error}
+            hint="Sans « ? » ni « # » : le paramètre de séance s’ajoute après · vide pour effacer"
+            onChange={onChange}
           />
         </div>
       </Card>
@@ -329,6 +403,12 @@ export function Settings() {
             />
           </Card>
         </div>
+
+        <CadenceCard
+          value={fields.cadence_base_url}
+          error={refusal?.messageFor('cadence_base_url')}
+          onChange={set('cadence_base_url')}
+        />
 
         <div className={styles.actions}>
           <Button type="submit" variant="primary" busy={save.isPending} disabled={!dirty}>

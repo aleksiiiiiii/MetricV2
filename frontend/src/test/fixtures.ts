@@ -161,6 +161,8 @@ const DEFAULT_VALUES = {
   target_hydration_ml: 2000,
   hydration_presets_ml: [250, 500, 750],
   heatmap_metric: 'activity',
+  // Vide, comme le sert le serveur tant que le pont n'est pas branché (**D1**).
+  cadence_base_url: '',
 };
 
 export const SETTINGS: SettingsView = {

@@ -16,6 +16,14 @@ export interface SettingsValues {
   target_hydration_ml: number;
   hydration_presets_ml: number[];
   heatmap_metric: string;
+  /**
+   * Adresse de Cadence Tabata, l'application qui exécute les séances.
+   *
+   * **La chaîne vide est un état, pas une absence** : le pont est en sommeil, et l'écran
+   * le dit. Aucun domaine n'est deviné côté client — c'est le serveur qui sert cette
+   * valeur, et lui seul qui décide qu'une adresse abîmée n'en est pas une.
+   */
+  cadence_base_url: string;
 }
 
 export interface SettingsView {
