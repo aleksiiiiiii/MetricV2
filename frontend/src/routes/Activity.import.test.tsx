@@ -15,7 +15,37 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Toaster } from '@/components/ui';
 import { createQueryClient } from '@/lib/query';
 
+import type * as ImageModuleShape from '@/lib/image';
+
 import { Activity } from './Activity';
+
+type ImageModule = typeof ImageModuleShape;
+
+/**
+ * `reduceImage` est doublé, et c'est délibéré.
+ *
+ * En jsdom, `createImageBitmap` et le canevas n'existent pas : la vraie fonction rendrait
+ * toujours « je n'ai pas su ouvrir », et le test mesurerait alors l'absence d'un moteur de
+ * rendu plutôt que ce que l'écran fait de la réduction. Ce qui est vérifié ici est le
+ * contrat de l'écran — il réduit avant d'envoyer, et il le dit.
+ */
+vi.mock('@/lib/image', async () => {
+  const real = await vi.importActual<ImageModule>('@/lib/image');
+  return {
+    ...real,
+    reduceImage: vi.fn((file: File) => {
+      reductions.push(file.name);
+      return Promise.resolve({
+        file: new File(['x'], file.name.replace(/\.png$/, '.jpg'), { type: 'image/jpeg' }),
+        reduced: true,
+        readable: true,
+      });
+    }),
+  };
+});
+
+/** Les captures réellement passées au réducteur, dans l'ordre. */
+const reductions: string[] = [];
 
 interface Call {
   url: string;
@@ -129,6 +159,7 @@ function importCard(): HTMLElement {
 
 beforeEach(() => {
   calls.length = 0;
+  reductions.length = 0;
   URL.createObjectURL = vi.fn(() => 'blob:capture');
   URL.revokeObjectURL = vi.fn();
 });
@@ -407,5 +438,57 @@ describe('import Apple', () => {
 
     // Une séance n'a pas de distance : le champ disparaît au lieu d'être ignoré.
     expect(within(importCard()).queryByLabelText('Distance (km)')).not.toBeInTheDocument();
+  });
+});
+
+// ── Le poids de l'envoi (`413`) ───────────────────────
+
+describe('réduction des captures', () => {
+  /** Ajoute plusieurs captures d'un coup, comme le fait un `<input multiple>`. */
+  async function addShots(names: string[]) {
+    await screen.findByText("Import d'une capture");
+    const input = document.querySelector('#apple-screenshot') as HTMLInputElement;
+    await userEvent.upload(
+      input,
+      names.map((name) => new File(['png'.repeat(400)], name, { type: 'image/png' })),
+    );
+  }
+
+  it('réduit chaque capture avant de l’envoyer', async () => {
+    // Le défaut : jusqu'à six captures partaient brutes dans une requête plafonnée à
+    // 16 Mo. Ça passait à l'unité et rendait un `413` en lot.
+    stub();
+    renderActivity();
+
+    await addShots(['un.png', 'deux.png', 'trois.png']);
+
+    await waitFor(() => {
+      expect(reductions).toEqual(['un.png', 'deux.png', 'trois.png']);
+    });
+  });
+
+  it('annonce ce qui part réellement', async () => {
+    // Une transformation muette serait pire que le défaut : l'utilisateur croit envoyer ce
+    // qu'il a choisi.
+    stub();
+    renderActivity();
+
+    await addShots(['un.png', 'deux.png']);
+
+    expect(await screen.findByText(/Réduites pour l’envoi/)).toBeInTheDocument();
+  });
+
+  it('envoie les fichiers réduits, pas les originaux', async () => {
+    stub();
+    renderActivity();
+
+    await addShots(['un.png']);
+    await userEvent.click(await screen.findByRole('button', { name: 'Lire la capture' }));
+
+    await waitFor(() => {
+      const sent = calls.find((call) => call.url.includes('/apple/analyze'));
+      const body = sent?.init?.body as FormData;
+      expect((body.getAll('screenshot') as File[]).map((file) => file.name)).toEqual(['un.jpg']);
+    });
   });
 });

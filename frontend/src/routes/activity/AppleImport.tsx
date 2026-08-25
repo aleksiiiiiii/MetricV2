@@ -34,6 +34,7 @@ import { AiBlock, Badge, Button, Card, Field, Segmented, Stepper, Steps } from '
 import { importsApi, type AppleDraft } from '@/features/imports/api';
 import { ApiError } from '@/lib/api';
 import { duration, km, shortDate } from '@/lib/format';
+import { fileSize, reduceImage } from '@/lib/image';
 import { useToast } from '@/lib/toast';
 
 import styles from '../Activity.module.css';
@@ -87,6 +88,18 @@ function fullSplits(draft: AppleDraft): number {
   return draft.splits.filter((split) => !split.partial).length;
 }
 
+/** Ce que pesaient les captures choisies, et ce qu'elles pèsent une fois réduites. */
+interface Weight {
+  before: number;
+  after: number;
+  changed: boolean;
+}
+
+/** Le poids cumulé d'une liste de fichiers. C'est lui que le plafond de requête mesure. */
+function total(files: File[]): number {
+  return files.reduce((sum, file) => sum + file.size, 0);
+}
+
 export function AppleImport({ today }: { today: string | undefined }) {
   const invalidate = useInvalidateActivity();
   const { notify } = useToast();
@@ -101,6 +114,8 @@ export function AppleImport({ today }: { today: string | undefined }) {
   // Ce qui vient de la capture et n'a pas encore été retouché.
   const [proposed, setProposed] = useState<string[]>([]);
   const [error, setError] = useState<ApiError | null>(null);
+  /** Ce que pesaient les captures et ce qu'elles pèsent — `null` tant qu'il n'y en a pas. */
+  const [weight, setWeight] = useState<Weight | null>(null);
 
   function reset() {
     setDraft(null);
@@ -109,7 +124,38 @@ export function AppleImport({ today }: { today: string | undefined }) {
     setError(null);
   }
 
-  function choose(chosen: File[]) {
+  /**
+   * Réduit les captures **au moment du choix**, pas à l'envoi : le poids se lit avant.
+   *
+   * ── Le défaut que ça corrige ──────────────────────────────────────────
+   *
+   * Les captures partaient brutes. Jusqu'à six dans la même requête, contre un plafond de
+   * **16 Mo pour la requête entière** — celui du reverse-proxy comme celui de
+   * `core/limits.py`. Six captures d'iPhone à trois mégaoctets dépassaient donc, sans
+   * qu'aucune n'approche les 12 Mo autorisés par image : ça passait à l'unité et échouait
+   * en lot, avec un `413`. `MealSheet` réduisait déjà, pour exactement la même raison ;
+   * ce chemin ne l'avait jamais fait.
+   *
+   * ── Pourquoi ça ne coûte rien à la lecture ────────────────────────────
+   *
+   * `ai/images.py` ramène **de toute façon** chaque image à 1024 px avant de l'envoyer au
+   * modèle. Tout pixel au-delà est transporté puis jeté. Réduire ici ne retire donc que ce
+   * que le serveur allait retirer — mais avant le téléversement, qui est le seul endroit
+   * où le problème existe.
+   *
+   * ── La qualité, elle, monte ───────────────────────────────────────────
+   *
+   * Une capture n'est pas une assiette : elle porte des **chiffres** qu'un modèle doit
+   * lire, et le serveur la réencodera une seconde fois en JPEG. Deux compressions à 0,8
+   * feraient baver un « 5:12 » en « 5:l2 », et le symptôme serait un import qui rate au
+   * lieu d'un refus — plus difficile à diagnostiquer que ce qu'on corrige. Le côté long
+   * est ce qui pèse, la qualité ne coûte presque rien : on garde `maxSide` et on monte.
+   */
+  const REDUCTION = { quality: 0.92 };
+
+  /** Pose les captures retenues, leurs aperçus et le poids annoncé. */
+  function apply(chosen: File[], measured: Weight | null): void {
+    setWeight(measured);
     setPreviews((current) => {
       // Les anciennes URL sont révoquées **avant** d'en créer d'autres : sans cela,
       // recommencer trois fois laisse trois images vivantes dans la mémoire de l'onglet.
@@ -125,6 +171,40 @@ export function AppleImport({ today }: { today: string | undefined }) {
     // Un brouillon appartient aux captures qui l'ont produit.
     reset();
   }
+
+  /**
+   * Une mutation et non un simple appel : réduire six captures prend une seconde sur un
+   * téléphone, et `isPending` est ce qui empêche l'écran de paraître figé pendant ce
+   * temps-là. C'est aussi le motif de l'écran des repas, qui réduit au même moment.
+   */
+  const choose = useMutation({
+    mutationFn: async (picked: File[]) => ({
+      picked,
+      reduced: await Promise.all(picked.map((shot) => reduceImage(shot, REDUCTION))),
+    }),
+    onSuccess: ({ picked, reduced }) => {
+      // Un format que le navigateur n'ouvre pas part quand même — `IA-07` transposé à
+      // l'image — mais son aperçu restera blanc, et le dire vaut mieux que de laisser
+      // croire à une capture perdue.
+      if (reduced.some((item) => !item.readable)) {
+        notify(
+          'Ton navigateur ne sait pas afficher ce format. La capture part quand même.',
+          'load',
+        );
+      }
+      const chosen = reduced.map((item) => item.file);
+      apply(
+        chosen,
+        picked.length === 0
+          ? null
+          : {
+              before: total(picked),
+              after: total(chosen),
+              changed: reduced.some((item) => item.reduced),
+            },
+      );
+    },
+  });
 
   useEffect(() => {
     if (previews.length === 0) return;
@@ -192,7 +272,7 @@ export function AppleImport({ today }: { today: string | undefined }) {
           : `Séance importée — ${duration(result.duration_min)}.`,
         'effort',
       );
-      choose([]);
+      apply([], null);
       // Le parcours se referme sur lui-même : la course est écrite, et laisser la carte
       // dépliée sur une étape 2 vide donnerait l'impression qu'il reste quelque chose à
       // faire. Elle se rouvre d'un appui.
@@ -215,7 +295,9 @@ export function AppleImport({ today }: { today: string | undefined }) {
   /** Retire une capture avant lecture — le seul écran où c'est encore possible. */
   function drop(index: number) {
     const kept = files.filter((_, position) => position !== index);
-    choose(kept);
+    // Pas de seconde réduction : les fichiers retenus le sont déjà, et le poids annoncé
+    // reste celui du choix — c'est ce qui a été réduit, et rien ne l'a été depuis.
+    apply(kept, kept.length === 0 ? null : weight);
     // Le champ natif garde sa liste : sans ce vidage, rechoisir le **même** fichier
     // n'émettrait aucun `change` et l'écran resterait sur une capture qu'on vient
     // d'écarter.
@@ -265,7 +347,7 @@ export function AppleImport({ today }: { today: string | undefined }) {
           multiple
           className="sr-only"
           onChange={(event) => {
-            choose(Array.from(event.target.files ?? []));
+            choose.mutate(Array.from(event.target.files ?? []));
           }}
         />
         {/* ── Étape 2 — ajouter les captures ───────── */}
@@ -293,6 +375,15 @@ export function AppleImport({ today }: { today: string | undefined }) {
                 : 'Une capture prête à être lue.'}
               {draft === null && ' Vérifie qu’elles sont nettes et complètes.'}
             </p>
+            {/* **Une transformation muette serait pire que le défaut.** L'utilisateur croit
+                envoyer ce qu'il a choisi ; on lui dit ce qui part réellement, comme l'écran
+                des repas le fait pour une photo. */}
+            {weight !== null && weight.changed && (
+              <p className={styles.note}>
+                Réduites pour l’envoi : {fileSize(weight.before)} → {fileSize(weight.after)}. Le
+                serveur ramène de toute façon chaque capture à 1024 px.
+              </p>
+            )}
             <div className={styles.shots}>
               {previews.map((url, index) => (
                 <figure className={styles.shotBox} key={url}>
