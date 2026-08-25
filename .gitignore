@@ -33,6 +33,7 @@ npm-debug.log*
 .claude/settings.local.json
 playwright-report/
 test-results/
+.vscode
 
 # ── Console de développement ───────────────────────
 # PID, ports, journaux et historique des serveurs lancés localement.
