@@ -8,7 +8,7 @@ se fait ici, à la frontière, pour que le domaine ne voie jamais que des minute
 from __future__ import annotations
 
 from datetime import date, time
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -36,6 +36,8 @@ from app.core.validation import (
     Rpe,
     Sets,
 )
+from app.domains.activity import circuit_link as _link
+from app.domains.activity.models import MuscleGroup
 
 # ── Saisies souples ───────────────────────────────────
 
@@ -822,3 +824,170 @@ class ActivityOverview(BaseModel):
     neglected: list[NeglectedGroup]
     history: list[ActivityItem]
     total: int
+
+
+# ── Circuits ouverts dans Cadence Tabata (**D2**, **D7**) ─
+#
+# Les bornes viennent de `circuit_link`, qui les tient de la spécification de Cadence, et
+# **non** de `app.core.validation` comme le reste du domaine. La distinction n'est pas
+# cosmétique : `Reps` ou `DurationMin` disent ce qui est vraisemblable *pour nous* et se
+# discutent ; celles-ci sont le contrat d'une application tierce et ne se discutent pas.
+# Les recopier en dur ici ferait diverger le schéma du générateur de lien au premier
+# ajustement — le module reste la seule source des nombres.
+
+CircuitRounds = Annotated[int, Field(ge=_link.ROUNDS[0], le=_link.ROUNDS[1])]
+CircuitRoundRestS = Annotated[int, Field(ge=_link.ROUND_REST_S[0], le=_link.ROUND_REST_S[1])]
+CircuitDurationS = Annotated[int, Field(ge=_link.DURATION_S[0], le=_link.DURATION_S[1])]
+CircuitReps = Annotated[int, Field(ge=_link.REPS[0], le=_link.REPS[1])]
+CircuitRestS = Annotated[int, Field(ge=_link.REST_S[0], le=_link.REST_S[1])]
+
+
+class CircuitExercisePayload(BaseModel):
+    """Un exercice d'un circuit, tel qu'on le saisit.
+
+    **Exactement un de `duration_s` et `reps`.** À l'écran c'est un sélecteur temps/reps,
+    et la sentinelle `-1` du fichier n'apparaît nulle part dans l'API : elle est une
+    convention de stockage, pas une valeur qu'on demande à quelqu'un de taper.
+
+    Les deux à la fois seraient une contradiction — la spécification n'a qu'un champ pour
+    les porter — et aucun des deux laisserait le service inventer une durée.
+    """
+
+    name: Label
+    #: Le groupe musculaire, parmi les neuf de Metric. **Exigé**, et c'est un choix de
+    #: fond : c'est lui qui permet à un tabata de compter dans « groupes négligés » une
+    #: fois déclaré fait. Le deviner depuis le nom anglais de Cadence serait une
+    #: correspondance approximative de plus, du genre qui se trompe en silence.
+    #:
+    #: **L'énumération et non `str` + validateur**, contrairement à `ExercisePayload`. Un
+    #: validateur ne laisse aucune trace dans le schéma JSON : le catalogue d'actions de
+    #: l'assistant annonçait donc « texte » pour un champ qui n'accepte que neuf valeurs,
+    #: et le modèle envoyait « pecs ». C'est exactement la faute que `plan.add` a payée sur
+    #: son `kind`, et la leçon est écrite en tête de `actions.py` — la description que le
+    #: modèle lit doit venir de la même source que la validation.
+    muscle_group: MuscleGroup
+    duration_s: CircuitDurationS | None = None
+    reps: CircuitReps | None = None
+    rest_s: CircuitRestS = 0
+
+    @model_validator(mode="after")
+    def exactly_one_length(self) -> CircuitExercisePayload:
+        if (self.duration_s is None) == (self.reps is None):
+            raise ValueError("Un exercice est soit au temps, soit en répétitions.")
+        return self
+
+
+class CircuitPayload(BaseModel):
+    """Un circuit à enregistrer ou à corriger.
+
+    Pas de date : un circuit est un patron, il se rejoue. C'est le serveur qui note le
+    jour où il a été créé, et cette date ne sert qu'à trier.
+    """
+
+    name: Label
+    rounds: CircuitRounds = 1
+    round_rest_s: CircuitRoundRestS = 0
+    #: Au moins un : un circuit sans exercice n'ouvre que l'écran d'accueil de Cadence,
+    #: ce qui n'est pas ce qu'on a demandé. Quarante au plus, comme les séances.
+    exercises: list[CircuitExercisePayload] = Field(min_length=1, max_length=40)
+    note: Note | None = None
+
+
+class CircuitImportPayload(BaseModel):
+    """Un lien Cadence collé, à relire en circuit.
+
+    C'est le décodeur de `circuit_link` en sens inverse, et il ne coûte qu'une route :
+    il est déjà écrit et éprouvé par l'aller-retour. Ce qu'il récupère, ce sont les
+    séances construites dans Cadence avant que Metric sache en faire — sinon il faudrait
+    les ressaisir une à une.
+    """
+
+    url: str = Field(min_length=1, max_length=2000)
+
+
+class CircuitExercise(BaseModel):
+    """Un exercice d'un circuit, tel que le client le reçoit.
+
+    `duration_s` et `reps` s'excluent, comme à la saisie : c'est celui qui vaut `None` qui
+    dit la nature de l'autre, et l'écran n'a aucune sentinelle à interpréter.
+    """
+
+    position: int
+    name: str
+    muscle_group: str
+    duration_s: int | None = None
+    reps: int | None = None
+    rest_s: int
+
+
+class Circuit(BaseModel):
+    """Un circuit, tel que le client le reçoit."""
+
+    id: int
+    token: str
+    circuit_id: str
+    name: str
+    rounds: int
+    round_rest_s: int
+    #: Jour d'enregistrement. Il trie la liste ; il ne date aucune séance effectuée.
+    created: date | None = None
+    note: str | None = None
+    exercises: list[CircuitExercise]
+    #: L'adresse à ouvrir, ou `None` tant que `cadence_base_url` n'est pas réglée (**D1**).
+    #: Jamais une adresse relative de repli : sans base il n'y a pas de lien, et c'est un
+    #: état que l'écran sait dire.
+    url: str | None = None
+    #: Durée totale, calculée sur les valeurs **bornées** — celles que Cadence exécutera.
+    estimated_duration_min: float
+    #: Faux dès qu'un exercice est en répétitions. C'est ce booléen que l'écran traduit en
+    #: `~` devant le total : la spécification interdit d'annoncer une durée exacte dans ce
+    #: cas, et l'invariant « aucune valeur inventée » dit la même chose.
+    exact: bool
+
+
+class CircuitSuggestion(BaseModel):
+    """Un nom d'exercice proposé à la saisie d'un circuit.
+
+    **Les deux mondes se retrouvent ici, et seulement ici** : les 35 noms du catalogue de
+    Cadence — les seuls qui affichent une illustration — et ceux que l'utilisateur a
+    déclarés dans le sien. Rien n'est fusionné dans les fichiers ; c'est une liste de
+    suggestions, calculée à la demande.
+
+    Elle est servie par le serveur et non écrite dans l'écran, pour la raison habituelle :
+    35 noms recopiés côté client divergeraient du jour où Cadence en ajoute un, et le
+    symptôme serait une illustration qui n'apparaît pas, sans message.
+    """
+
+    name: str
+    #: Vrai si ce nom **exact** affiche une illustration dans Cadence.
+    illustrated: bool
+    #: Le groupe musculaire, quand cet exercice est au catalogue de Metric. `null` sinon —
+    #: un nom du catalogue de Cadence n'en porte aucun, et en deviner un serait inventer
+    #: une valeur que les statistiques prendraient au sérieux.
+    muscle_group: str | None = None
+
+
+class CircuitList(BaseModel):
+    """Les circuits enregistrés (`GET /activity/circuits`)."""
+
+    circuits: list[Circuit]
+    #: Vrai quand une adresse de base est réglée. **Non déductible de la liste** : sur une
+    #: liste vide, l'écran doit distinguer « aucun circuit » de « aucune adresse », et ces
+    #: deux états vides ne proposent pas le même geste suivant.
+    linkable: bool
+
+
+class CircuitDonePayload(BaseModel):
+    """Ce qu'on confirme en déclarant un circuit fait (**D4**, **D6**).
+
+    **La durée est exigée, pas devinée.** L'écran la pré-remplit avec l'estimation et
+    laisse la corriger ; l'API, elle, ne la déduit pas d'un champ absent. Sur une séance
+    en répétitions, personne ne connaît la durée réelle — l'écrire en silence dans
+    `workouts.csv` mettrait une valeur inventée dans le volume hebdomadaire.
+
+    Pas de date : elle vient du serveur. Cadence n'a aucun moyen de dire à Metric qu'une
+    séance a eu lieu (**D6**), donc c'est un geste, et un geste se fait maintenant.
+    """
+
+    duration_min: DurationMin
+    rpe: Rpe | None = None

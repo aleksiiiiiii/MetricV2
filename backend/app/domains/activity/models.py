@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import date, time
 from enum import StrEnum
 
-from app.storage.model import CsvModel
+from app.storage.model import CsvDate, CsvModel
 
 
 class MuscleGroup(StrEnum):
@@ -181,3 +181,72 @@ class ExerciseLogRow(CsvModel):
     sets: int
     reps: int
     note: str | None = None
+
+
+class CircuitRow(CsvModel):
+    """Une séance **modèle**, ouverte dans Cadence Tabata. `activity/circuits.csv`.
+
+    Elle n'a pas de date : ce n'est pas une mesure mais un patron, et il se rejoue. C'est
+    toute la raison pour laquelle elle ne vit pas dans `workouts.csv` — voir `paths.py`.
+
+    **Aucun lien vers `exercises.csv`** (**D2**). Les noms d'exercices d'un circuit sont
+    ceux du catalogue de Cadence, en anglais, et servent à afficher une illustration ;
+    ceux du catalogue de Metric sont en français et servent à suivre une charge. Les
+    rapprocher demanderait une table de correspondance à tenir à jour, et la faute qu'elle
+    ferait — « Push-Ups » qui donne l'illustration de *Pike Push-ups* — est silencieuse.
+    """
+
+    #: Identifiant **stable**, sur le modèle de `WorkoutRow.id` : les exercices s'y
+    #: rattachent, et `id` — la position dans le fichier — se décale à la première
+    #: suppression.
+    id: str = ""
+    name: str = ""
+    #: Bornes de la spécification de Cadence : 1 à 99. Une valeur hors bornes n'est pas
+    #: rejetée à la lecture, elle est ramenée par `circuit_link.normalise` au moment de
+    #: fabriquer le lien — c'est ce que fait l'application cible.
+    rounds: int = 1
+    #: Repos **entre deux rounds**, en secondes. 0 à 900.
+    round_rest_s: int = 0
+    #: Jour de création, tel que le serveur le voit. Il sert à trier une liste, jamais à
+    #: dater une mesure : un circuit ne s'est pas produit ce jour-là.
+    created: CsvDate = None
+    note: str = ""
+
+
+class CircuitExerciseRow(CsvModel):
+    """Un exercice d'un circuit. `activity/circuit_exercises.csv`.
+
+    ## `reps` fait autorité, `duration_s` est subordonnée
+
+    `reps = -1` veut dire « cet exercice est au temps », et c'est alors `duration_s` qui
+    compte. Un fichier corrigé à la main peut porter `reps: 12` **et** `duration_s: 30` ;
+    la règle dit alors douze répétitions. Sans elle écrite ici, le générateur de lien et
+    l'estimateur de durée trancheraient différemment le jour où ça arrive.
+
+    Pourquoi une sentinelle plutôt qu'une cellule vide : une cellule vide laisse deviner,
+    `-1` **dit** quelque chose à qui ouvre le fichier. Et pourquoi elle ne va pas dans
+    `exercise_log.csv` : `Reps` y est borné `ge=1`, et desserrer cette borne la desserrerait
+    aussi pour la saisie manuelle, où `-1` deviendrait une faute de frappe acceptée dans le
+    journal de charge (**D3**).
+    """
+
+    #: Rattachement à `CircuitRow.id`, jamais à sa position.
+    circuit_id: str = ""
+    #: L'ordre **lu**, jamais recompté : le fichier peut être trié dans un tableur.
+    position: int = 0
+    #: Texte libre. Un nom du catalogue de Cadence y affiche une illustration ; tout autre
+    #: nom fonctionne, simplement sans image.
+    name: str = ""
+    #: L'un des neuf groupes de `MuscleGroup`, choisi à la création du circuit.
+    #:
+    #: **C'est cette colonne qui relie les deux mondes.** Sans elle, un tabata déclaré fait
+    #: n'aurait aucun groupe à écrire dans `exercise_log.csv`, et tous les circuits
+    #: finiraient dans « autre » — l'équilibre par groupe cesserait de vouloir dire quelque
+    #: chose exactement là où le tabata compte, sur les abdos et les jambes.
+    #:
+    #: Vide sur une ligne écrite à la main ou avant ce lot : légitime (`STO-04`), et lue
+    #: comme « autre » plutôt que de faire tomber le fichier.
+    muscle_group: str = ""
+    duration_s: int = 20
+    reps: int = -1
+    rest_s: int = 0

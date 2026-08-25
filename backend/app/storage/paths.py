@@ -27,6 +27,18 @@ WORKOUTS = "activity/workouts.csv"
 EXERCISES = "activity/exercises.csv"
 EXERCISE_LOG = "activity/exercise_log.csv"
 
+#: Les séances **modèles** ouvertes dans Cadence Tabata (**D2**), et leurs exercices.
+#:
+#: `circuits` et non `workouts` : `workouts.csv` décrit ce qui **a eu lieu** — il porte une
+#: date, une durée réelle, un RPE. Un circuit n'a pas de date, il se rejoue. Les mettre
+#: dans le même fichier ferait porter à `date` un sens différent selon la ligne, ce qui est
+#: la façon la plus sûre de casser un CSV qu'on rouvre dans un tableur trois ans plus tard.
+#:
+#: Deux fichiers plutôt qu'une liste sérialisée dans une cellule, comme `run_splits.csv` et
+#: `exercise_log.csv` : c'est la seule forme qui reste lisible dans un tableur (`STO-02`).
+CIRCUITS = "activity/circuits.csv"
+CIRCUIT_EXERCISES = "activity/circuit_exercises.csv"
+
 MEALS = "nutrition/meals.csv"
 MEAL_FAVORITES = "nutrition/favorites.csv"
 MEAL_PHOTOS = "nutrition/photos"

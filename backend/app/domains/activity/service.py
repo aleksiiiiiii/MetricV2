@@ -7,20 +7,32 @@ s'occupe que du cycle de vie des lignes.
 from __future__ import annotations
 
 import secrets
+from collections.abc import Sequence
 from datetime import date
 
-from app.core.exceptions import AiUnreadableError
+from app.core.exceptions import AiUnreadableError, ValidationFailedError
 from app.core.parsing import estimate_one_rep_max, pace_min_per_km
 from app.core.text import fold
-from app.domains.activity import notes, progress, splits
+from app.core.validation import today_local
+from app.domains.activity import circuit_link, notes, progress, splits
 from app.domains.activity.models import (
+    CircuitExerciseRow,
+    CircuitRow,
     ExerciseLogRow,
     ExerciseRow,
+    MuscleGroup,
     RunRow,
     RunSplitRow,
     WorkoutRow,
 )
 from app.domains.activity.schemas import (
+    Circuit,
+    CircuitDonePayload,
+    CircuitExercise,
+    CircuitExercisePayload,
+    CircuitList,
+    CircuitPayload,
+    CircuitSuggestion,
     DistanceBand,
     Exercise,
     ExerciseEntry,
@@ -42,10 +54,19 @@ from app.domains.activity.schemas import (
 )
 from app.domains.ai.images import prepare_data_url
 from app.domains.ai.service import AiService
+from app.domains.app_settings.service import SettingsService
 from app.storage.csv_repo import CsvRepository, Row
 from app.storage.errors import StorageConflictError, StorageNotFoundError
 from app.storage.files import FileStore
-from app.storage.paths import EXERCISE_LOG, EXERCISES, RUN_SPLITS, RUNS, WORKOUTS
+from app.storage.paths import (
+    CIRCUIT_EXERCISES,
+    CIRCUITS,
+    EXERCISE_LOG,
+    EXERCISES,
+    RUN_SPLITS,
+    RUNS,
+    WORKOUTS,
+)
 
 #: Longueur des identifiants stables. Assez court pour rester lisible dans un tableur,
 #: assez long pour qu'une collision soit hors de portée à l'échelle d'une vie de relevés.
@@ -803,6 +824,68 @@ class ExerciseService:
     async def log_entries(self) -> list[Row[ExerciseLogRow]]:
         return await self._log.read_all()
 
+    async def ensure(self, name: str, muscle_group: str) -> ExerciseRow:
+        """L'exercice du catalogue portant ce nom, **créé s'il n'y est pas**.
+
+        C'est le pont entre un circuit Cadence et le catalogue de Metric : « Push-Ups
+        Classic » y entre au premier circuit déclaré fait, puis se réutilise. Sans ça, le
+        journal porterait un `exercise_id` vide et « Progression des charges » ignorerait
+        ces exercices.
+
+        La reconnaissance passe par `fold` — casse, accents et ponctuation ignorés — et par
+        les alias, exactement comme la relecture d'une note manuscrite (`C07`). Deux
+        graphies du même mouvement ne doivent pas donner deux lignes de catalogue, sinon
+        l'historique de charge se coupe en deux au premier changement d'orthographe.
+
+        **Ne renomme jamais un exercice existant** et ne corrige pas son groupe : le
+        catalogue appartient à l'utilisateur, un circuit n'est pas une autorité sur lui.
+        """
+        wanted = fold(name)
+        for row in await self._repo.read_all():
+            if fold(row.model.name) == wanted:
+                return row.model
+            if any(fold(alias) == wanted for alias in read_aliases(row.model.aliases)):
+                return row.model
+
+        created = await self._repo.append(
+            ExerciseRow(id=new_id(), name=name, muscle_group=muscle_group)
+        )
+        return created.model
+
+    async def log_timed(
+        self, workout_id: str, day: date, exercise: ExerciseRow, *, sets: int, reps: int
+    ) -> ExerciseEntry:
+        """Journalise une série **sans passer par `ExerciseEntryPayload`**, et c'est assumé.
+
+        Le schéma de saisie borne `reps` à `ge=1`, parce qu'une saisie manuelle n'a aucune
+        raison d'écrire un nombre négatif. Un exercice de circuit au temps, lui, n'a pas de
+        répétitions du tout : il porte la sentinelle `-1`, la même que
+        `circuit_exercises.csv`, et la même règle de lecture — c'est `reps` qui dit la
+        nature de la ligne.
+
+        Desserrer `Reps` pour l'accueillir aurait rendu `-1` acceptable **à la saisie
+        manuelle** aussi, où ce serait une faute de frappe silencieuse dans un journal de
+        charge. Un second point d'entrée, documenté et étroit, coûte moins cher qu'une
+        borne relâchée pour tout le monde.
+
+        `weight_kg = 0` est le poids du corps, valeur légitime (`ACT-07`) : le tonnage
+        d'un tabata est donc nul, ce qui est vrai. Ce qu'il apporte aux statistiques, ce
+        sont ses **séries** par groupe musculaire.
+        """
+        row = await self._log.append(
+            ExerciseLogRow(
+                workout_id=workout_id,
+                date=day,
+                exercise_id=exercise.id,
+                exercise_name=exercise.name,
+                muscle_group=exercise.muscle_group,
+                weight_kg=0,
+                sets=sets,
+                reps=reps,
+            )
+        )
+        return self.entry_to_schema(row)
+
     async def log(self, workout_id: str, day: date, payload: ExerciseEntryPayload) -> ExerciseEntry:
         exercise = await self.resolve(payload.exercise_id)
         row = await self._log.append(
@@ -1010,3 +1093,408 @@ class WorkoutService:
         created.exercises = entries
         created.volume_kg = _round(sum(entry.volume_kg for entry in entries)) or 0
         return created
+
+
+# ── Circuits (Cadence Tabata) ─────────────────────────
+
+
+def _group_of(item: CircuitExerciseRow) -> str:
+    """Le groupe musculaire d'un exercice de circuit, ou `autre`.
+
+    Le repli existe pour les lignes écrites à la main ou avant que la colonne existe
+    (`STO-04`). Il ne se voit jamais depuis la saisie : le schéma exige le groupe.
+    """
+    cleaned = item.muscle_group.strip()
+    return cleaned if cleaned in {group.value for group in MuscleGroup} else MuscleGroup.AUTRE.value
+
+
+class CircuitService:
+    """Séances **modèles**, ouvertes dans Cadence Tabata (**D2**, **D3**, **D7**).
+
+    ## Un circuit fait entre dans l'ancien système, entièrement
+
+    **D2 est renversée**, et c'est le bon sens : un tabata *est* du sport, il n'a aucune
+    raison de vivre à côté des séances. Déclarer un circuit fait écrit une séance `HIIT`
+    **et** ses séries dans `exercise_log.csv`, donc dans le tonnage, dans l'équilibre par
+    groupe musculaire et dans les pistes d'assiduité — comme n'importe quelle séance.
+
+    Ce qui rend ça possible sans table de correspondance : **chaque exercice de circuit
+    porte son groupe musculaire**, choisi une fois à la création. On ne devine rien depuis
+    le nom anglais de Cadence — une correspondance approximative de plus se serait trompée
+    en silence, exactement comme celle des illustrations.
+
+    Le nom, lui, rejoint le catalogue de Metric au premier « fait » (`ensure`), reconnu par
+    `fold` et par les alias. Deux graphies du même mouvement ne créent donc pas deux entrées.
+
+    ## Ce qui reste séparé
+
+    Le **catalogue d'illustrations de Cadence** — ses 35 noms anglais — n'est toujours
+    rapproché d'aucune donnée de Metric. Il sert à choisir un intitulé qui affiche une
+    image, et rien d'autre.
+    """
+
+    #: La provenance écrite dans `workouts.csv`. Elle rejoint `manual`, `apple` et `ia` ;
+    #: `IMP-05` s'applique — corriger la durée d'une séance venue d'ici ne la transforme
+    #: pas en saisie manuelle.
+    SOURCE = "cadence"
+
+    #: Le type de séance écrit quand on déclare un circuit fait. Il est déjà dans
+    #: `WORKOUT_TYPES`, donc il ne crée pas un vocabulaire de plus.
+    WORKOUT_TYPE = "HIIT"
+
+    def __init__(self, store: FileStore) -> None:
+        self._repo: CsvRepository[CircuitRow] = CsvRepository(store, CIRCUITS, CircuitRow)
+        self._items: CsvRepository[CircuitExerciseRow] = CsvRepository(
+            store, CIRCUIT_EXERCISES, CircuitExerciseRow
+        )
+        self._workouts = WorkoutService(store)
+        self._exercises = ExerciseService(store)
+        self._settings = SettingsService(store)
+
+    # ── Conversions ───────────────────────────────────
+
+    @staticmethod
+    def _to_link(row: CircuitRow, items: list[CircuitExerciseRow]) -> circuit_link.LinkCircuit:
+        """Les lignes du fichier → la forme que le module pur manipule.
+
+        C'est **ici** qu'on lit la sentinelle `-1`, et nulle part ailleurs : le module pur
+        la connaît, l'API ne la voit jamais.
+        """
+        return circuit_link.LinkCircuit(
+            name=row.name,
+            rounds=row.rounds,
+            round_rest_s=row.round_rest_s,
+            exercises=tuple(
+                circuit_link.LinkExercise(
+                    name=item.name,
+                    duration_s=item.duration_s,
+                    reps=item.reps,
+                    rest_s=item.rest_s,
+                )
+                for item in items
+            ),
+        )
+
+    def _to_schema(
+        self, row: Row[CircuitRow], items: list[CircuitExerciseRow], base: str
+    ) -> Circuit:
+        link = self._to_link(row.model, items)
+        prediction = circuit_link.estimate(link)
+
+        return Circuit(
+            id=row.index,
+            token=row.token,
+            circuit_id=row.model.id,
+            name=row.model.name,
+            rounds=row.model.rounds,
+            round_rest_s=row.model.round_rest_s,
+            created=row.model.created,
+            note=row.model.note or None,
+            exercises=[
+                CircuitExercise(
+                    position=item.position,
+                    muscle_group=_group_of(item),
+                    duration_s=item.duration_s if item.reps == circuit_link.TIMED else None,
+                    reps=None if item.reps == circuit_link.TIMED else item.reps,
+                    name=item.name,
+                    rest_s=item.rest_s,
+                )
+                for item in items
+            ],
+            url=circuit_link.build_url(base, link),
+            estimated_duration_min=prediction.minutes,
+            exact=prediction.exact,
+        )
+
+    @staticmethod
+    def _to_rows(
+        circuit_id: str, payload: CircuitPayload
+    ) -> tuple[CircuitRow, list[CircuitExerciseRow]]:
+        """La charge utile → les lignes du fichier, avec la sentinelle remise en place.
+
+        `position` est écrite explicitement et non déduite de l'ordre du fichier : c'est
+        ce qui permet de trier `circuit_exercises.csv` dans un tableur sans intervertir
+        les exercices de tous les circuits.
+        """
+        items = [
+            CircuitExerciseRow(
+                circuit_id=circuit_id,
+                position=index,
+                name=exercise.name,
+                muscle_group=exercise.muscle_group,
+                duration_s=exercise.duration_s or circuit_link.DEFAULT_DURATION_S,
+                reps=circuit_link.TIMED if exercise.reps is None else exercise.reps,
+                rest_s=exercise.rest_s,
+            )
+            for index, exercise in enumerate(payload.exercises, start=1)
+        ]
+        row = CircuitRow(
+            id=circuit_id,
+            name=payload.name,
+            rounds=payload.rounds,
+            round_rest_s=payload.round_rest_s,
+            created=today_local(),
+            note=payload.note or "",
+        )
+        return row, items
+
+    # ── Lecture ───────────────────────────────────────
+
+    async def _base(self) -> str:
+        """L'adresse de Cadence, ou la chaîne vide (**D1**)."""
+        return (await self._settings.values()).cadence_base_url
+
+    async def _items_of(self, circuit_id: str) -> list[CircuitExerciseRow]:
+        """Les exercices d'un circuit, dans l'ordre **écrit** sur les lignes.
+
+        Un circuit sans identifiant ne réclame aucun exercice : sinon toutes les lignes
+        orphelines d'un fichier corrigé à la main lui seraient rattachées d'un coup.
+        """
+        if not circuit_id:
+            return []
+        rows = [
+            row.model for row in await self._items.read_all() if row.model.circuit_id == circuit_id
+        ]
+        return sorted(rows, key=lambda item: item.position)
+
+    async def list(self) -> CircuitList:
+        """Tous les circuits, du plus récent au plus ancien.
+
+        Une seule lecture des exercices pour toute la liste : une par circuit ferait autant
+        d'allers-retours vers Nextcloud qu'il y a de séances enregistrées.
+        """
+        base = await self._base()
+        rows = await self._repo.read_all()
+        items = [row.model for row in await self._items.read_all()]
+
+        grouped: dict[str, list[CircuitExerciseRow]] = {}
+        for item in items:
+            grouped.setdefault(item.circuit_id, []).append(item)
+        for bucket in grouped.values():
+            bucket.sort(key=lambda entry: entry.position)
+
+        circuits = [
+            self._to_schema(row, grouped.get(row.model.id, []) if row.model.id else [], base)
+            for row in rows
+        ]
+        # Tri décroissant sur la date puis sur la position : deux circuits créés le même
+        # jour gardent l'ordre d'écriture, et une date absente ne fait pas tomber le tri.
+        circuits.sort(key=lambda item: (item.created or date.min, item.id), reverse=True)
+
+        return CircuitList(circuits=circuits, linkable=bool(base.strip()))
+
+    async def get(self, index: int) -> Circuit:
+        rows = await self._repo.read_all()
+        if not 0 <= index < len(rows):
+            raise StorageNotFoundError("Ce circuit n'existe pas.")
+
+        row = rows[index]
+        return self._to_schema(row, await self._items_of(row.model.id), await self._base())
+
+    async def find(self, circuit_id: str) -> Circuit | None:
+        """Un circuit par son identifiant **stable**, ou `None`.
+
+        Par `circuit_id` et non par position : ce point d'entrée sert à joindre une séance
+        à un planning, et une position se décale à la première suppression — la séance
+        prévue pointerait alors vers une autre.
+        """
+        if not circuit_id.strip():
+            return None
+        rows = await self._repo.read_all()
+        for row in rows:
+            if row.model.id == circuit_id:
+                return self._to_schema(row, await self._items_of(row.model.id), await self._base())
+        return None
+
+    # `Sequence` et non `list`, et ce n'est pas un choix de style : cette classe porte une
+    # méthode `list`, qui masque le type interne dans toute annotation de son corps. Le
+    # symptôme est un message de mypy qui parle de « callback protocol » sans jamais nommer
+    # la collision.
+    async def suggestions(self) -> Sequence[CircuitSuggestion]:
+        """Les noms proposés à la saisie : ceux de Cadence, puis ceux de l'utilisateur.
+
+        Les 35 d'abord, et dans leur ordre : ce sont les seuls qui affichent une
+        illustration, et c'est le service qu'on rend en premier. Les exercices du catalogue
+        de Metric suivent, sans doublon — un exercice déjà nommé comme Cadence le nomme
+        n'apparaît qu'une fois, avec son groupe musculaire.
+
+        La reconnaissance passe par `fold`, celle du reste du domaine : « push-ups
+        classic » et « Push-Ups Classic » sont le même exercice, et proposer les deux
+        laisserait choisir la graphie qui n'a pas d'illustration.
+        """
+        catalogue = await self._exercises.catalogue()
+        by_name = {fold(item.name): item for item in catalogue}
+
+        proposed = [
+            CircuitSuggestion(
+                name=name,
+                illustrated=True,
+                muscle_group=known.muscle_group if (known := by_name.get(fold(name))) else None,
+            )
+            for name in circuit_link.ILLUSTRATED
+        ]
+
+        known_names = {fold(name) for name in circuit_link.ILLUSTRATED}
+        proposed.extend(
+            CircuitSuggestion(name=item.name, illustrated=False, muscle_group=item.muscle_group)
+            for item in catalogue
+            if fold(item.name) not in known_names
+        )
+        return proposed
+
+    # ── Écriture ──────────────────────────────────────
+
+    async def create(self, payload: CircuitPayload) -> Circuit:
+        """Enregistre un circuit et ses exercices.
+
+        **Le circuit s'écrit d'abord**, comme une course et ses paliers : le stockage n'a
+        pas de transaction, et l'ordre inverse laisserait des exercices rattachés à un
+        identifiant qui n'existe nulle part, c'est-à-dire des lignes que rien ne vient
+        jamais nettoyer.
+        """
+        circuit_id = new_id()
+        row_model, items = self._to_rows(circuit_id, payload)
+
+        row = await self._repo.append(row_model)
+        await self._items.extend(items)
+
+        return self._to_schema(row, items, await self._base())
+
+    async def update(self, index: int, token: str, payload: CircuitPayload) -> Circuit:
+        """Corrige un circuit, sous garde anti-conflit (`STO-05`).
+
+        **L'identifiant stable est conservé**, et la date de création aussi : une
+        correction ne fait pas naître un nouveau circuit. Les exercices, eux, sont
+        remplacés en bloc — on ne sait pas apparier un exercice renommé avec celui qu'il
+        remplace, et deviner ferait pire qu'une réécriture franche.
+        """
+        rows = await self._repo.read_all(fresh=True)
+        if not 0 <= index < len(rows):
+            raise StorageConflictError(detail=f"circuit {index} absent")
+
+        existing = rows[index].model
+        circuit_id = existing.id or new_id()
+        row_model, items = self._to_rows(circuit_id, payload)
+        row_model.created = existing.created
+
+        row = await self._repo.replace_by_token(index, token, row_model)
+        await self._items.remove_where(lambda item: item.circuit_id == circuit_id)
+        await self._items.extend(items)
+
+        return self._to_schema(row, items, await self._base())
+
+    async def delete(self, index: int, token: str) -> None:
+        """Supprime un circuit et ses exercices (`ACT-04`, même motif que les séances).
+
+        Ce qui **survit** : les liens déjà collés dans une note de planning. Une URL
+        Cadence est autoportante — elle contient la séance entière — donc supprimer le
+        modèle ne casse aucune séance prévue. C'est le seul endroit où l'absence de base
+        de données joue en notre faveur.
+        """
+        rows = await self._repo.read_all(fresh=True)
+        if not 0 <= index < len(rows):
+            raise StorageConflictError(detail=f"circuit {index} absent")
+        circuit_id = rows[index].model.id
+
+        await self._repo.delete_by_token(index, token)
+        if circuit_id:
+            await self._items.remove_where(lambda item: item.circuit_id == circuit_id)
+
+    async def import_link(self, url: str) -> Circuit:
+        """Relit un lien Cadence collé et l'enregistre comme circuit.
+
+        Le décodeur est celui de l'aller-retour ; ce qu'il rend est déjà borné. Un lien
+        illisible n'est pas une panne mais une saisie à corriger, d'où un refus qui porte
+        un code plutôt qu'une trace.
+        """
+        parsed = circuit_link.parse_url(url)
+        if parsed is None:
+            raise ValidationFailedError(
+                "Ce lien ne contient pas de séance lisible.", detail="lien Cadence illisible"
+            )
+
+        return await self.create(
+            CircuitPayload(
+                name=parsed.name,
+                rounds=parsed.rounds,
+                round_rest_s=parsed.round_rest_s,
+                exercises=[
+                    CircuitExercisePayload(
+                        name=exercise.name,
+                        # Un lien Cadence ne porte aucun groupe musculaire : il n'a pas de
+                        # champ pour ça. `autre` est donc le seul choix honnête — deviner
+                        # depuis le nom serait la correspondance approximative que ce lot
+                        # s'interdit. L'écran laisse corriger, et c'est un geste de plus
+                        # qu'on assume plutôt qu'un groupe faux qu'on n'aurait pas vu.
+                        muscle_group=MuscleGroup.AUTRE.value,
+                        duration_s=exercise.duration_s if exercise.timed else None,
+                        reps=None if exercise.timed else exercise.reps,
+                        rest_s=exercise.rest_s,
+                    )
+                    for exercise in parsed.exercises
+                ],
+            )
+        )
+
+    async def mark_done(self, index: int, payload: CircuitDonePayload) -> Workout:
+        """Déclare un circuit fait : une séance **et ses séries** (**D3**).
+
+        ## Ce qui est écrit
+
+        Une ligne dans `workouts.csv` — type `HIIT`, `source: cadence`, datée par le
+        serveur — puis une ligne de journal par exercice du circuit, avec :
+
+        * `sets` = le nombre de **rounds** : chaque round est bien une série de plus ;
+        * `reps` = les répétitions, ou `-1` si l'exercice est au temps ;
+        * `weight_kg` = 0, le poids du corps (`ACT-07`), donc un tonnage nul — ce qui est
+          vrai. Ce qu'un tabata apporte aux statistiques, ce sont ses **séries** par groupe.
+
+        ## L'ordre, et ce qu'une panne laisse derrière
+
+        Les exercices rejoignent le catalogue **avant** que la séance soit écrite. Le
+        stockage n'a pas de transaction : dans cet ordre, une panne laisse au pire une
+        entrée de catalogue en trop — visible, corrigeable, sans conséquence. L'ordre
+        inverse laisserait une séance sans ses séries, c'est-à-dire une mesure incomplète.
+
+        ## La durée
+
+        **Proposée par l'estimation, corrigée avant l'appui** (**D4**). Sur une séance en
+        répétitions personne ne connaît la durée réelle, et l'écrire en silence mettrait
+        une valeur inventée dans le volume hebdomadaire.
+        """
+        rows = await self._repo.read_all()
+        if not 0 <= index < len(rows):
+            raise StorageNotFoundError("Ce circuit n'existe pas.")
+
+        circuit = rows[index].model
+        items = await self._items_of(circuit.id)
+
+        # Le catalogue d'abord, et en entier : `ensure` peut écrire, et il vaut mieux
+        # qu'il ait fini avant que la séance existe.
+        catalogue = [
+            await self._exercises.ensure(item.name, _group_of(item))
+            for item in items
+            if item.name.strip()
+        ]
+
+        day = today_local()
+        workout = await self._workouts.create(
+            WorkoutPayload(
+                date=day,
+                type=self.WORKOUT_TYPE,
+                duration_min=payload.duration_min,
+                rpe=payload.rpe,
+                note=circuit.name,
+            ),
+            source=self.SOURCE,
+        )
+
+        rounds = circuit_link.normalise(self._to_link(circuit, items)).rounds
+        entries = [
+            await self._exercises.log_timed(
+                workout.workout_id, day, exercise, sets=rounds, reps=item.reps
+            )
+            for item, exercise in zip(items, catalogue, strict=True)
+        ]
+
+        return workout.model_copy(update={"exercises": entries})

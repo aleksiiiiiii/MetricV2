@@ -6,6 +6,7 @@ destructrices l'exigent en `If-Match` (`STO-05`, voir `docs/patron-domaine.md`).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from typing import Annotated
 
@@ -17,6 +18,12 @@ from app.core.validation import today_local
 from app.domains.activity.models import WORKOUT_TYPES, MuscleGroup
 from app.domains.activity.schemas import (
     ActivityOverview,
+    Circuit,
+    CircuitDonePayload,
+    CircuitImportPayload,
+    CircuitList,
+    CircuitPayload,
+    CircuitSuggestion,
     Exercise,
     ExerciseEntry,
     ExerciseEntryPayload,
@@ -30,7 +37,12 @@ from app.domains.activity.schemas import (
     Workout,
     WorkoutPayload,
 )
-from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+from app.domains.activity.service import (
+    CircuitService,
+    ExerciseService,
+    RunService,
+    WorkoutService,
+)
 from app.domains.activity.stats import ActivityStats
 from app.domains.ai.deps import AiServiceDep
 from app.storage.errors import StorageConflictError
@@ -335,3 +347,96 @@ async def update_exercise_entry(
 )
 async def delete_exercise_entry(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
     await ExerciseService(store).delete_entry(row_id, _token(if_match))
+
+
+# ── Circuits ouverts dans Cadence Tabata (**D2**) ─────
+
+
+@router.get("/circuits", response_model=CircuitList, summary="Circuits enregistrés")
+async def list_circuits(store: StoreDep) -> CircuitList:
+    """Les circuits, du plus récent au plus ancien, avec leur lien déjà construit.
+
+    Le client ne fabrique aucune adresse : l'échappement, le bornage et le suffixe `x` qui
+    distingue quinze répétitions de quinze secondes sont des règles, pas du formatage
+    (**D7**). `url` vaut `null` tant que `cadence_base_url` n'est pas réglée, et `linkable`
+    dit lequel des deux états vides l'écran doit annoncer.
+    """
+    return await CircuitService(store).list()
+
+
+@router.post(
+    "/circuits",
+    response_model=Circuit,
+    status_code=status.HTTP_201_CREATED,
+    summary="Enregistrer un circuit",
+)
+async def create_circuit(payload: CircuitPayload, store: StoreDep) -> Circuit:
+    return await CircuitService(store).create(payload)
+
+
+@router.post(
+    "/circuits/import",
+    response_model=Circuit,
+    status_code=status.HTTP_201_CREATED,
+    summary="Relire un lien Cadence",
+)
+async def import_circuit(payload: CircuitImportPayload, store: StoreDep) -> Circuit:
+    """Décode un lien collé et l'enregistre. Un lien illisible est refusé avec son code."""
+    return await CircuitService(store).import_link(payload.url)
+
+
+@router.get(
+    "/circuits/exercises",
+    response_model=list[CircuitSuggestion],
+    summary="Noms d'exercices proposés",
+)
+async def list_circuit_exercises(store: StoreDep) -> Sequence[CircuitSuggestion]:
+    """Les noms à proposer à la saisie : ceux de Cadence, puis ceux du catalogue.
+
+    **Déclarée avant `/circuits/{row_id}`**, et ce n'est pas cosmétique : `row_id` est un
+    entier, mais une route déclarée plus tôt gagne, et l'ordre inverse ferait répondre
+    `422` à « exercises » plutôt que cette liste.
+    """
+    return await CircuitService(store).suggestions()
+
+
+@router.get("/circuits/{row_id}", response_model=Circuit, summary="Détail d'un circuit")
+async def read_circuit(row_id: RowId, store: StoreDep) -> Circuit:
+    return await CircuitService(store).get(row_id)
+
+
+@router.patch("/circuits/{row_id}", response_model=Circuit, summary="Corriger un circuit")
+async def update_circuit(
+    row_id: RowId, payload: CircuitPayload, store: StoreDep, if_match: IfMatch = None
+) -> Circuit:
+    """Corrige un circuit. Son identifiant stable et sa date de création ne bougent pas ;
+    ses exercices sont remplacés en bloc."""
+    return await CircuitService(store).update(row_id, _token(if_match), payload)
+
+
+@router.delete(
+    "/circuits/{row_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer un circuit"
+)
+async def delete_circuit(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
+    """Supprime le circuit et ses exercices. Les liens déjà collés ailleurs survivent :
+    une URL Cadence porte la séance entière."""
+    await CircuitService(store).delete(row_id, _token(if_match))
+
+
+@router.post(
+    "/circuits/{row_id}/done",
+    response_model=Workout,
+    status_code=status.HTTP_201_CREATED,
+    summary="Déclarer un circuit fait",
+)
+async def complete_circuit(row_id: RowId, payload: CircuitDonePayload, store: StoreDep) -> Workout:
+    """Écrit une séance `HIIT` marquée `cadence`, et **rien d'autre** (**D3**).
+
+    Aucun `If-Match` : c'est une **addition**, pas une modification. Elle se défait par la
+    suppression que l'utilisateur ferait de toute façon, et l'invariant est explicite —
+    demander confirmation partout finit par la faire ignorer là où elle compte.
+
+    Cadence ne peut pas dire à Metric qu'une séance a eu lieu (**D6**) : rien n'empêche
+    donc de la déclarer deux fois, et rien ne rappellera de la déclarer. C'est assumé.
+    """
+    return await CircuitService(store).mark_done(row_id, payload)
