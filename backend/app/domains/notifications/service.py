@@ -284,6 +284,33 @@ class NotificationService:
         moments = [model.sent_at for model in lignes if model.sent_at is not None]
         return len(lignes), max(moments, default=None)
 
+    async def praised_since(self, first: date) -> int:
+        """Combien de félicitations sont parties depuis ce jour-là, bornes comprises.
+
+        Sept jours glissants et non une semaine calendaire : personne ne remet ses records
+        à zéro le lundi, et un plafond qui se relâcherait à minuit dimanche laisserait
+        passer huit félicitations en deux jours.
+        """
+        return sum(
+            1
+            for row in await self._sent.read_all()
+            if row.model.kind == ReminderKind.PRAISE.value
+            and row.model.date is not None
+            and row.model.date >= first
+        )
+
+    async def praised_on(self, day: date) -> bool:
+        """Une félicitation est-elle déjà partie ce jour-là ?
+
+        Une par jour au plus, en plus du plafond hebdomadaire. Deux records le même jour
+        n'en donnent qu'une — la plus forte —, et c'est ce qui empêche une bonne journée de
+        consommer tout le budget de la semaine.
+        """
+        return any(
+            row.model.kind == ReminderKind.PRAISE.value and row.model.date == day
+            for row in await self._sent.read_all()
+        )
+
     async def record(self, checkpoint: Checkpoint, *, moment: datetime) -> None:
         """Consigne un envoi. En ajout, jamais en réécriture (`STO-03`).
 

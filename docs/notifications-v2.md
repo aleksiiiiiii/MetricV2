@@ -194,6 +194,7 @@ addition, elle se défait. « Séance faite » écrirait une durée que personne
 | 0 | ~~**N1** : plafond quotidien et espacement~~ **fait** | nul — une fonction pure, et un garde-fou qui doit exister avant les règles qu'il borne |
 | 0 bis | ~~**N2** : l'écart décide, trois contrôles d'hydratation, les protéines~~ **fait** | c'est là que tout se joue — et c'est fait |
 | 0 ter | ~~**N3** : une séance s'annonce un quart d'heure avant~~ **fait** | le déclencheur quitte les réglages pour le planning |
+| 0 quater | ~~**N4**, **N5**, **N6**~~ **faits** | le ton de 21 h, les félicitations, et le bon écran |
 | 1 | `payload()` : l'adresse par type | nul — trois lignes dans un module pur déjà testé |
 | 2 | `sent.csv` gagne son créneau, et le service qui le lit | faible |
 | 3 | `reminders.py` : l'écart, les nouveaux types, les textes | **c'est là que tout se joue** |
@@ -341,3 +342,53 @@ elles se seraient répondu à une minute près le jour où l'une aurait changé.
 Et trois messages de `ruff` ont été suivis plutôt que contournés : un `datetime` sans fuseau,
 un `__all__` désordonné, et une lambda qui capturait la variable d'une boucle — la dernière
 aurait fait partager la même heure aux quatre passes d'un test.
+
+
+### N4, N5, N6 (25 août 2026)
+
+#### N4 — le ton sec, sans un mot faux
+
+« Séance de 18:00 : toujours rien de noté. Il te reste la soirée. »
+
+**« de noté » n'est pas un adoucissement, c'est le mot qui rend la phrase vraie.** J'avais
+d'abord écrit « toujours rien », et un test l'a attrapé : ça se lit « tu n'as rien fait »,
+ce que l'application ne sait pas. Le ton reste ferme — « toujours », « il te reste » —
+sans qu'un mot devienne faux. Sans heure au planning, « Séance prévue : toujours rien de
+noté ».
+
+#### N5 — quatre par semaine, sur un fait
+
+Les félicitations ne sont pas des rappels : rien n'est attendu de l'utilisateur, et elles
+n'ont pas d'heure. C'est une **réaction**, examinée à chaque passe.
+
+**Deux plafonds, qui ne disent pas la même chose.** Une par jour — deux records le même
+jour n'en donnent qu'une, la plus forte, sinon une bonne journée consommerait tout le
+budget de la semaine. Et quatre par **sept jours glissants** : personne ne remet ses
+records à zéro le lundi.
+
+**Aucun record n'est calculé ici.** `RunProgress` tient déjà les bandes de distance et
+leurs records — une allure ne se compare qu'à distance comparable — et il dit le jour où
+chacun a été posé. L'ordonnanceur lit, compare à aujourd'hui, et formule.
+
+**Le chemin coûteux est gardé** : la progression n'est demandée que si une course a été
+notée aujourd'hui, et seulement si le budget le permet. Les jours sans course, la
+félicitation coûte une lecture.
+
+**Ce qui n'est pas fait, et pourquoi.** Une charge battue et un objectif atteint ne sont
+pas salués : `ExerciseProgress` ne porte pas le jour de son record, et `GoalEntry` ne porte
+pas sa date de clôture. Les deux demandent une colonne de plus dans un fichier livré, ce
+qui est un lot à part — pas une ligne à glisser ici.
+
+#### N6 — chaque notification ouvre son écran
+
+Suppléments et hydratation sur `/routine`, repas et protéines sur `/nutrition`, séances sur
+`/activite`. Et **le seul rappel qui remplace toute la navigation** : une séance prévue qui
+porte un lien Cadence ouvre la séance, pas l'application.
+
+Le repli sur l'accueil existe pour le jour où l'on ajoute un type sans y penser. Un test
+vérifie qu'aucun type d'aujourd'hui ne l'emprunte.
+
+**Rien n'a été écrit côté service worker** : il lit `data.url` depuis toujours. Il ne
+manquait que de cesser d'envoyer la même adresse pour tout.
+
+**Mesuré** : `make check` vert, 1 622 tests backend et 498 d'écran.

@@ -37,7 +37,8 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, time
+from dataclasses import replace
+from datetime import date, datetime, time, timedelta
 
 from app.core.dates import now_local
 from app.domains.activity.service import RunService, WorkoutService
@@ -45,6 +46,7 @@ from app.domains.hydration.service import HydrationService
 from app.domains.notifications.push import PushSender
 from app.domains.notifications.reminders import (
     LEAD,
+    PRAISE_CAP,
     DaySnapshot,
     ReminderKind,
     allowed,
@@ -60,6 +62,19 @@ from app.domains.supplements.service import SupplementService
 from app.storage.files import FileStore
 
 logger = logging.getLogger(__name__)
+
+
+def _pace(minutes: float) -> str:
+    """Une allure en `m'ss"`, comme un chronomètre l'affiche.
+
+    `5.3` est un nombre décimal de minutes, pas cinq minutes trente : l'écrire tel quel
+    dans une notification serait le genre de chiffre juste qui se lit faux.
+    """
+    entier = int(minutes)
+    secondes = round((minutes - entier) * 60)
+    if secondes == 60:
+        entier, secondes = entier + 1, 0
+    return f"{entier}'{secondes:02d}\""
 
 
 #: Intervalle entre deux passes.
@@ -112,7 +127,12 @@ class ReminderScheduler:
         # troisième lecture par passe, du même ordre que celles des réglages et du journal
         # d'envoi — et non la lecture des cinq domaines, qui reste réservée au `snapshot`.
         seances = await self._planned(moment.date())
-        slots[ReminderKind.WORKOUT_SOON] = tuple(shift(heure, -LEAD) for heure, _titre in seances)
+        # **La félicitation n'a pas d'heure** : c'est une réaction, pas un rappel. Elle
+        # s'examine à chaque passe — d'où un contrôle posé à l'heure courante, qui la rend
+        # due tant qu'elle n'est pas partie. Les deux plafonds, eux, sont dans `_feats`.
+        if await self._praise_allowed(moment):
+            slots[ReminderKind.PRAISE] = (moment.time().replace(second=0, microsecond=0),)
+        slots[ReminderKind.WORKOUT_SOON] = tuple(shift(heure, -LEAD) for heure, *_ in seances)
         if not any(slots.values()):
             return []
 
@@ -128,6 +148,7 @@ class ReminderScheduler:
         # L'état du jour n'est lu **qu'ici**, une seule fois, et seulement parce qu'un
         # créneau est atteint.
         snapshot = await self._snapshot(moment.date())
+        snapshot = replace(snapshot, feats=await self._feats(moment.date()))
         envoyes: list[ReminderKind] = []
         partis, dernier = await service.budget_on(moment.date())
 
@@ -189,7 +210,54 @@ class ReminderScheduler:
         values = await service.raw_settings()
         return {kind: parse_slots(values.get(setting_key(kind), "")) for kind in ReminderKind}
 
-    async def _planned(self, day: date) -> tuple[tuple[time, str], ...]:
+    async def _praise_allowed(self, moment: datetime) -> bool:
+        """Le budget des félicitations permet-il d'en examiner une ?
+
+        Demandé **avant** de chercher un fait à saluer : chercher coûte une lecture des
+        courses et, s'il y en a une du jour, le calcul complet des records. Le plafond
+        atteint, on ne paie rien.
+        """
+        service = NotificationService(self._store)
+        if await service.praised_on(moment.date()):
+            return False
+        depuis = moment.date() - timedelta(days=6)
+        return await service.praised_since(depuis) < PRAISE_CAP
+
+    async def _feats(self, day: date) -> tuple[str, ...]:
+        """Ce que la journée a produit de remarquable, du plus fort au moins fort.
+
+        **Aucun record n'est calculé ici.** `RunProgress` tient déjà les bandes de distance
+        et leurs records — une allure ne se compare qu'à distance comparable — et il dit
+        le jour où chacun a été posé. On lit, on compare à aujourd'hui, on formule.
+
+        Le chemin coûteux est gardé : on ne demande la progression que si une course a été
+        notée aujourd'hui. Les jours sans course, cette méthode coûte une lecture.
+        """
+        runs = [row for row in await RunService(self._store).all() if row.model.date == day]
+        if not runs:
+            return ()
+
+        progress = await RunService(self._store).progress()
+        faits: list[str] = []
+
+        # La plus longue sortie d'abord : c'est le fait qui se dit sans réserve, là où une
+        # allure demande de préciser sur quelle distance.
+        if progress.longest_distance_day == day and progress.longest_distance_km:
+            faits.append(
+                f"{progress.longest_distance_km:.1f} km".replace(".", ",")
+                + " — ta plus longue sortie."
+            )
+
+        for band in progress.bands:
+            if band.best_day == day and band.best_pace_min_km:
+                faits.append(
+                    f"Meilleure allure {band.label.lower()} : "
+                    f"{_pace(band.best_pace_min_km)} au kilomètre."
+                )
+
+        return tuple(faits)
+
+    async def _planned(self, day: date) -> tuple[tuple[time, str, str], ...]:
         """Les séances prévues du jour **qui portent une heure**, avec leur titre.
 
         L'heure est facultative dans `plan.csv` (`PLAN-02`), et une séance sans heure est
@@ -199,8 +267,13 @@ class ReminderScheduler:
         from app.domains.planning.service import PlanningService
 
         prevues = await PlanningService(self._store).between(day, day)
-        lues = [(parse_slot(session.time or ""), session.title) for session in prevues]
-        return tuple(sorted((heure, titre) for heure, titre in lues if heure is not None))
+        return tuple(
+            sorted(
+                (heure, session.title, session.workout_url or "")
+                for session in prevues
+                if (heure := parse_slot(session.time or "")) is not None
+            )
+        )
 
     async def _snapshot(self, day: date) -> DaySnapshot:
         """Ce que l'application **sait** du jour.
@@ -235,7 +308,7 @@ class ReminderScheduler:
         return DaySnapshot(
             sessions_at=tuple(
                 sorted(
-                    (heure, session.title)
+                    (heure, session.title, session.workout_url or "")
                     for session in prevues
                     if (heure := parse_slot(session.time or "")) is not None
                 )

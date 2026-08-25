@@ -99,6 +99,30 @@ GAP_SHARE = 0.25
 #: n'annonce plus rien.
 LEAD = timedelta(minutes=15)
 
+#: L'écran qu'ouvre chaque rappel (**N6**).
+#:
+#: Toutes les notifications ouvraient l'accueil. Taper « Suppléments — pas encore noté :
+#: créatine » y menait, et il restait deux gestes pour arriver là où l'on note la prise.
+#: Le service worker sait router depuis toujours sur `data.url` ; il ne manquait que de
+#: cesser d'envoyer la même adresse pour tout.
+DESTINATIONS: dict[str, str] = {
+    "supplements": "/routine",
+    "hydration": "/routine",
+    "meals": "/nutrition",
+    "protein": "/nutrition",
+    "workout": "/activite",
+    "workout_soon": "/activite",
+    "praise": "/activite",
+}
+
+#: Combien de félicitations par semaine glissante, au plus (**N5**).
+#:
+#: Quatre. Sans plafond, un mois de progrès ferait quatre notifications par semaine, puis
+#: plus rien pendant six mois — et l'utilisateur aurait appris entre-temps à les balayer.
+#: Sept jours glissants et non une semaine calendaire : personne ne remet ses records à
+#: zéro le lundi.
+PRAISE_CAP = 4
+
 
 def gap_matters(done: float, target: float, share: float = GAP_SHARE) -> bool:
     """L'écart à la cible mérite-t-il qu'on en parle ?
@@ -151,6 +175,12 @@ class ReminderKind(StrEnum):
     WORKOUT = "workout"
     #: L'écart aux protéines, au dernier moment où un repas peut le combler (**N2**).
     PROTEIN = "protein"
+    #: Un fait qui mérite d'être salué (**N5**).
+    #:
+    #: Ce n'est pas un rappel : rien n'est attendu de l'utilisateur, et il n'y a pas
+    #: d'heure. C'est une **réaction** à ce qu'il vient d'accomplir, examinée à chaque
+    #: passe et plafonnée à quatre par semaine.
+    PRAISE = "praise"
     #: Une séance prévue qui commence dans un quart d'heure (**N3**).
     #:
     #: Un type à part et non une variante de `WORKOUT`, parce que les deux ne disent pas la
@@ -188,7 +218,17 @@ class DaySnapshot:
     #: L'heure est facultative dans `plan.csv` (`PLAN-02`), et une séance sans heure est un
     #: cas courant. Elle n'a pas de « quinze minutes avant » : elle n'est pas ici, et ne
     #: compte que dans le rappel de fin de journée.
-    sessions_at: tuple[tuple[time, str], ...] = ()
+    #:
+    #: Le troisième champ est l'adresse Cadence de la séance, vide quand elle n'en a pas.
+    #: C'est ce qui permet au rappel d'ouvrir **la séance** et non l'application.
+    sessions_at: tuple[tuple[time, str, str], ...] = ()
+    #: Ce que la journée a produit de remarquable, **de la plus forte à la moins forte**.
+    #:
+    #: Des phrases toutes faites, construites par l'appelant à partir de chiffres relevés.
+    #: Ce module ne calcule aucun record : il choisit lequel dire, et il dit le premier.
+    #: Si plusieurs tombent le même jour, les autres se taisent — une félicitation en
+    #: retard d'un jour ne félicite plus rien.
+    feats: tuple[str, ...] = ()
     #: Séances et courses notées aujourd'hui.
     workouts_logged: int = 0
 
@@ -200,6 +240,12 @@ class Reminder:
     kind: ReminderKind
     title: str
     body: str
+    #: L'écran à ouvrir, quand il n'est pas celui du type.
+    #:
+    #: Une séance prévue qui porte un lien Cadence ouvre **la séance**, pas l'application :
+    #: c'est le seul rappel qui remplace toute la navigation. Vide, c'est `DESTINATIONS`
+    #: qui décide.
+    url: str = ""
 
     def payload(self) -> dict[str, str]:
         """Ce que le service worker recevra.
@@ -208,7 +254,14 @@ class Reminder:
         remplacent l'un l'autre au lieu d'empiler deux lignes dans le centre de
         notifications.
         """
-        return {"title": self.title, "body": self.body, "tag": self.kind.value, "url": "/"}
+        return {
+            "title": self.title,
+            "body": self.body,
+            "tag": self.kind.value,
+            # L'accueil reste le repli, et il ne devrait jamais servir : `DESTINATIONS`
+            # couvre tous les types. Il couvre le jour où l'on en ajoute un sans y penser.
+            "url": self.url or DESTINATIONS.get(self.kind.value, "/"),
+        }
 
 
 @dataclass(frozen=True)
@@ -346,13 +399,21 @@ def compose(checkpoint: Checkpoint, snapshot: DaySnapshot) -> Reminder | None:
                 return None
             return Reminder(kind=kind, title="Repas", body="Rien de noté aujourd'hui.")
 
+        case ReminderKind.PRAISE:
+            # **Jamais sans chiffre.** « Bravo pour ta performance » cesse d'être lu en
+            # trois jours et emporte avec lui les fois où c'était mérité. La phrase vient
+            # de l'appelant, qui la construit sur un fait relevé.
+            if not snapshot.feats:
+                return None
+            return Reminder(kind=kind, title="Bravo", body=snapshot.feats[0])
+
         case ReminderKind.WORKOUT_SOON:
             # Le contrôle est posé à `début - LEAD` : la séance qu'il annonce est celle qui
             # commence un quart d'heure plus tard. Deux séances le même jour donnent deux
             # contrôles, et chacun nomme la sienne.
             debut = shift(checkpoint.at, LEAD)
-            titre = next((nom for heure, nom in snapshot.sessions_at if heure == debut), None)
-            if titre is None:
+            seance = next((item for item in snapshot.sessions_at if item[0] == debut), None)
+            if seance is None:
                 # La séance a quitté le planning entre la construction du contrôle et
                 # maintenant. Se taire est le seul choix honnête : on n'annonce pas une
                 # séance qui n'est plus prévue.
@@ -360,12 +421,16 @@ def compose(checkpoint: Checkpoint, snapshot: DaySnapshot) -> Reminder | None:
             if snapshot.workouts_logged >= snapshot.workouts_planned:
                 # Déjà notée — on n'annonce pas ce qui vient d'être fait.
                 return None
+            _, titre, lien = seance
             return Reminder(
                 kind=kind,
                 title="Séance dans 15 min",
                 # Le titre tel qu'il est au planning. Rien d'ajouté : c'est ce que
                 # l'utilisateur a écrit, et il le reconnaît.
                 body=f"{titre} · {debut:%H:%M}.",
+                # **Le seul rappel qui remplace toute la navigation** : quand la séance
+                # porte un lien Cadence, la notification l'ouvre directement.
+                url=lien,
             )
 
         case ReminderKind.WORKOUT:
@@ -375,7 +440,20 @@ def compose(checkpoint: Checkpoint, snapshot: DaySnapshot) -> Reminder | None:
                 return None
             if snapshot.workouts_logged >= snapshot.workouts_planned:
                 return None
-            return Reminder(kind=kind, title="Séance prévue", body="Rien de noté aujourd'hui.")
+            # **Le ton est ferme, et chaque mot reste vrai** (**N4**). « Tu as sauté ta
+            # séance » resterait faux à 21 h : l'application sait seulement que rien n'est
+            # noté. Citer l'heure prévue engueule sans mentir — et ne se retourne pas
+            # contre l'utilisateur le jour où il l'a faite sans la noter.
+            heure = snapshot.sessions_at[0][0] if snapshot.sessions_at else None
+            quoi = f"Séance de {heure:%H:%M}" if heure is not None else "Séance prévue"
+            return Reminder(
+                kind=kind,
+                title="Séance prévue",
+                # « toujours rien **de noté** » et non « toujours rien » : le second se
+                # lit comme « tu n'as rien fait », et un test l'a attrapé. Le ton reste
+                # sec — « toujours », « il te reste » — sans qu'un mot devienne faux.
+                body=f"{quoi} : toujours rien de noté. Il te reste la soirée.",
+            )
 
 
 def parse_slots(raw: str) -> tuple[time, ...]:
@@ -462,6 +540,7 @@ __all__ = [
     "GAP_SHARE",
     "GRACE",
     "LEAD",
+    "PRAISE_CAP",
     "SPACING",
     "Checkpoint",
     "DaySnapshot",

@@ -21,8 +21,10 @@ import pytest
 from app.domains.notifications.reminders import (
     GRACE,
     LEAD,
+    PRAISE_CAP,
     Checkpoint,
     DaySnapshot,
+    Reminder,
     ReminderKind,
     compose,
     due,
@@ -302,7 +304,7 @@ class TestSeanceImminente:
     ETAT = DaySnapshot(
         workouts_planned=1,
         workouts_logged=0,
-        sessions_at=((time(18, 0), "Haut du corps"),),
+        sessions_at=((time(18, 0), "Haut du corps", ""),),
     )
 
     def test_elle_nomme_la_séance_et_son_heure(self) -> None:
@@ -320,7 +322,7 @@ class TestSeanceImminente:
         etat = DaySnapshot(
             workouts_planned=2,
             workouts_logged=0,
-            sessions_at=((time(18, 0), "Haut du corps"), (time(20, 0), "Gainage")),
+            sessions_at=((time(18, 0), "Haut du corps", ""), (time(20, 0), "Gainage", "")),
         )
 
         premier = compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), etat)
@@ -340,7 +342,7 @@ class TestSeanceImminente:
         etat = DaySnapshot(
             workouts_planned=1,
             workouts_logged=1,
-            sessions_at=((time(18, 0), "Haut du corps"),),
+            sessions_at=((time(18, 0), "Haut du corps", ""),),
         )
 
         assert compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), etat) is None
@@ -357,9 +359,122 @@ class TestSeanceImminente:
         et un contrôle à 23 h 55 vu à 00 h 10 tombe dans le futur. La séance de 00 h 10
         n'est pas annoncée, et c'est le comportement voulu : on ne notifie pas la nuit.
         """
-        etat = DaySnapshot(workouts_planned=1, sessions_at=((time(0, 10), "Nuit blanche"),))
+        etat = DaySnapshot(workouts_planned=1, sessions_at=((time(0, 10), "Nuit blanche", ""),))
 
         rappel = compose(pour(ReminderKind.WORKOUT_SOON, "23:55"), etat)
 
         assert rappel is not None
         assert rappel.body == "Nuit blanche · 00:10."
+
+
+# ═══ Le ton de fin de journée (**N4**) ════════════════
+
+
+class TestSeanceNonNotee:
+    """Ferme, et chaque mot vrai. « Tu as sauté ta séance » resterait faux à 21 h :
+    l'application sait seulement que rien n'est noté."""
+
+    def test_elle_cite_lheure_prévue(self) -> None:
+        etat = DaySnapshot(
+            workouts_planned=1,
+            workouts_logged=0,
+            sessions_at=((time(18, 0), "Haut du corps", ""),),
+        )
+
+        rappel = compose(pour(ReminderKind.WORKOUT), etat)
+
+        assert rappel is not None
+        assert rappel.body == "Séance de 18:00 : toujours rien de noté. Il te reste la soirée."
+
+    def test_sans_heure_elle_reste_juste(self) -> None:
+        """Une séance sans heure au planning est un cas courant (`PLAN-02`)."""
+        rappel = compose(pour(ReminderKind.WORKOUT), DaySnapshot(workouts_planned=1))
+
+        assert rappel is not None
+        assert rappel.body == "Séance prévue : toujours rien de noté. Il te reste la soirée."
+
+    def test_le_mot_qui_la_rend_vraie_est_là(self) -> None:
+        """« toujours rien » se lirait comme « tu n'as rien fait ». « toujours rien **de
+        noté** » dit la même chose sans affirmer."""
+        rappel = compose(pour(ReminderKind.WORKOUT), DaySnapshot(workouts_planned=1))
+
+        assert rappel is not None
+        assert "de noté" in rappel.body
+
+
+# ═══ Où mène chaque notification (**N6**) ═════════════
+
+
+class TestDestinations:
+    """Toutes ouvraient l'accueil : taper « Suppléments — pas encore noté : créatine » y
+    menait, et il restait deux gestes pour arriver là où l'on note la prise."""
+
+    def test_chaque_type_mène_à_son_écran(self) -> None:
+        attendus = {
+            ReminderKind.SUPPLEMENTS: "/routine",
+            ReminderKind.HYDRATION: "/routine",
+            ReminderKind.MEALS: "/nutrition",
+            ReminderKind.PROTEIN: "/nutrition",
+            ReminderKind.WORKOUT: "/activite",
+        }
+        for kind, ecran in attendus.items():
+            rappel = Reminder(kind=kind, title="x", body="y")
+            assert rappel.payload()["url"] == ecran, kind
+
+    def test_aucun_type_noublie_sa_destination(self) -> None:
+        """Le repli sur l'accueil existe pour le jour où l'on ajoute un type sans y
+        penser — il ne doit servir à aucun type d'aujourd'hui."""
+        for kind in ReminderKind:
+            assert Reminder(kind=kind, title="x", body="y").payload()["url"] != "/"
+
+    def test_une_séance_avec_lien_ouvre_la_séance(self) -> None:
+        """**Le seul rappel qui remplace toute la navigation.**"""
+        lien = "https://cadence.exemple.fr?w=Gainage~2~60~Plank:60s:30"
+        etat = DaySnapshot(workouts_planned=1, sessions_at=((time(18, 0), "Gainage", lien),))
+
+        rappel = compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), etat)
+
+        assert rappel is not None
+        assert rappel.payload()["url"] == lien
+
+    def test_une_séance_sans_lien_ouvre_lactivité(self) -> None:
+        etat = DaySnapshot(workouts_planned=1, sessions_at=((time(18, 0), "Gainage", ""),))
+
+        rappel = compose(pour(ReminderKind.WORKOUT_SOON, "17:45"), etat)
+
+        assert rappel is not None
+        assert rappel.payload()["url"] == "/activite"
+
+
+# ═══ Les félicitations (**N5**) ═══════════════════════
+
+
+class TestFelicitations:
+    """Sur un fait chiffré, jamais sur un compliment."""
+
+    def test_elle_dit_le_fait_tel_quel(self) -> None:
+        etat = DaySnapshot(feats=("12,4 km — ta plus longue sortie.",))
+
+        rappel = compose(pour(ReminderKind.PRAISE), etat)
+
+        assert rappel is not None
+        assert rappel.title == "Bravo"
+        assert rappel.body == "12,4 km — ta plus longue sortie."
+
+    def test_sans_fait_elle_se_tait(self) -> None:
+        """« Bravo pour ta performance » cesse d'être lu en trois jours et emporte avec
+        lui les fois où c'était mérité."""
+        assert compose(pour(ReminderKind.PRAISE), DaySnapshot()) is None
+
+    def test_le_plus_fort_part_et_les_autres_se_taisent(self) -> None:
+        """Une félicitation en retard d'un jour ne félicite plus rien : les suivantes ne
+        sont pas reportées, elles disparaissent."""
+        etat = DaySnapshot(feats=("Le plus fort.", "Le second.", "Le troisième."))
+
+        rappel = compose(pour(ReminderKind.PRAISE), etat)
+
+        assert rappel is not None
+        assert rappel.body == "Le plus fort."
+
+    def test_le_plafond_est_de_quatre_par_semaine(self) -> None:
+        assert PRAISE_CAP == 4

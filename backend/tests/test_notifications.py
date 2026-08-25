@@ -36,6 +36,7 @@ from app.domains.notifications.reminders import (
     pending,
 )
 from app.domains.notifications.scheduler import ReminderScheduler
+from app.domains.notifications.service import NotificationService
 from app.storage.files import FileStore
 from tests.conftest import TEST_ENDPOINT, subscription_payload
 from tests.fake_webdav import FakeWebDav
@@ -919,3 +920,43 @@ class TestSeanceDepuisLePlanning:
             asyncio.run(ReminderScheduler(store, push_sender, now=partial(_fixe, heure)).tick())
 
         assert webpush.count == 0
+
+
+class TestBudgetFelicitations:
+    """Deux plafonds, et ils ne disent pas la même chose : une par jour, quatre par
+    semaine glissante."""
+
+    def _seed_sent(self, dav: FakeWebDav, jours: list[date]) -> None:
+        lignes = "".join(
+            f"{jour.isoformat()},praise,,{jour.isoformat()}T20:00:00+02:00\n" for jour in jours
+        )
+        dav.seed(SENT, f"date,kind,slot,sent_at\n{lignes}")
+
+    def test_une_seule_félicitation_par_jour(self, store: FileStore, dav: FakeWebDav) -> None:
+        """Deux records le même jour n'en donnent qu'une — la plus forte. Sinon une bonne
+        journée consommerait tout le budget de la semaine."""
+        self._seed_sent(dav, [JOUR])
+
+        assert asyncio.run(NotificationService(store).praised_on(JOUR)) is True
+        assert asyncio.run(NotificationService(store).praised_on(JOUR + timedelta(days=1))) is False
+
+    def test_le_plafond_hebdomadaire_glisse(self, store: FileStore, dav: FakeWebDav) -> None:
+        """Sept jours glissants et non une semaine calendaire : personne ne remet ses
+        records à zéro le lundi."""
+        self._seed_sent(dav, [JOUR - timedelta(days=n) for n in (0, 2, 4, 8)])
+        service = NotificationService(store)
+
+        # La ligne d'il y a huit jours est hors fenêtre : trois, pas quatre.
+        assert asyncio.run(service.praised_since(JOUR - timedelta(days=6))) == 3
+
+    def test_les_autres_rappels_ne_comptent_pas_dans_le_plafond(
+        self, store: FileStore, dav: FakeWebDav
+    ) -> None:
+        dav.seed(
+            SENT,
+            "date,kind,slot,sent_at\n"
+            f"{JOUR.isoformat()},hydration,14:00,{JOUR.isoformat()}T14:00:00+02:00\n",
+        )
+
+        assert asyncio.run(NotificationService(store).praised_since(JOUR)) == 0
+        assert asyncio.run(NotificationService(store).praised_on(JOUR)) is False
