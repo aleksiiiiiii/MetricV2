@@ -24,6 +24,8 @@ Ne pas tout lire. Ouvrir ce qui correspond à la tâche.
 | Vérifier un écran à la main | [`docs/verifications-manuelles.md`](docs/verifications-manuelles.md) |
 | L'assistant qui écrit dans les données | [`docs/assistant-agent.md`](docs/assistant-agent.md) |
 | L'ergonomie de `/activite` | [`docs/activite-ux.md`](docs/activite-ux.md) |
+| Le pont vers Cadence Tabata — les liens de séance | [`docs/cadence.md`](docs/cadence.md) |
+| Le `413` à l'ajout de captures — diagnostic et correctif | [`docs/bug-413-captures.md`](docs/bug-413-captures.md) |
 
 [`docs/GuidelinesUI.html`](docs/GuidelinesUI.html) reste la **référence exclusive** de la
 charte visuelle.
