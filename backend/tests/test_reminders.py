@@ -20,11 +20,13 @@ import pytest
 
 from app.domains.notifications.reminders import (
     GRACE,
+    Checkpoint,
     DaySnapshot,
     ReminderKind,
     compose,
     due,
     parse_slot,
+    parse_slots,
     pending,
 )
 
@@ -35,9 +37,20 @@ def moment(hour: int, minute: int = 0, day: date | None = None) -> datetime:
     return datetime.combine(day or date(2026, 8, 13), time(hour, minute), tzinfo=PARIS)
 
 
-def slots(**kwargs: str | None) -> dict[ReminderKind, time | None]:
-    """Créneaux, écrits en `HH:MM` comme dans `settings.csv`."""
-    return {kind: parse_slot(kwargs.get(kind.value) or "") for kind in ReminderKind}
+def slots(**kwargs: str | None) -> dict[ReminderKind, tuple[time, ...]]:
+    """Créneaux, écrits en `HH:MM` comme dans `settings.csv`.
+
+    Une **liste** par type depuis N2 : l'hydratation en porte trois, les autres un. La
+    forme est la même pour tous, il n'y a pas deux façons de lire un réglage.
+    """
+    return {kind: parse_slots(kwargs.get(kind.value) or "") for kind in ReminderKind}
+
+
+def sent(kind: ReminderKind, heure: str) -> Checkpoint:
+    """Un contrôle déjà parti, tel que `sent.csv` le rend."""
+    lu = parse_slot(heure)
+    assert lu is not None
+    return Checkpoint(kind=kind, at=lu)
 
 
 # ═══ Ce qu'un rappel a le droit de dire ═══════════════
@@ -188,14 +201,14 @@ class TestLesCréneaux:
         attendus = pending(
             slots=slots(hydration="20:00"), now=moment(20, 0), already_sent=frozenset()
         )
-        assert attendus == [ReminderKind.HYDRATION]
+        assert attendus == [sent(ReminderKind.HYDRATION, "20:00")]
 
     def test_un_redémarrage_dans_lheure_rattrape(self) -> None:
         """Un serveur relancé à 20 h 05 délivre le rappel de 20 h."""
         attendus = pending(
             slots=slots(hydration="20:00"), now=moment(20, 59), already_sent=frozenset()
         )
-        assert attendus == [ReminderKind.HYDRATION]
+        assert attendus == [sent(ReminderKind.HYDRATION, "20:00")]
 
     def test_au_delà_dune_heure_le_rappel_est_abandonné(self) -> None:
         """Perdre un rappel coûte moins qu'en recevoir un au coucher."""
@@ -225,7 +238,7 @@ class TestLesCréneaux:
         attendus = pending(
             slots=slots(hydration="20:00"),
             now=moment(20, 5),
-            already_sent=frozenset({ReminderKind.HYDRATION}),
+            already_sent=frozenset({sent(ReminderKind.HYDRATION, "20:00")}),
         )
         assert attendus == []
 

@@ -190,7 +190,7 @@ export const NOTIFICATIONS: NotificationsView = {
       'Génère une paire avec « make vapid-keys ».',
   },
   devices: [],
-  reminders: { supplements: null, hydration: null, meals: null, workout: null },
+  reminders: { supplements: null, hydration: null, meals: null, workout: null, protein: null },
   token: 'jeton-reglages',
 };
 
@@ -204,7 +204,7 @@ export const NOTIFICATIONS_READY: NotificationsView = {
       'être autorisé une fois, depuis lui-même.',
   },
   devices: [{ id: 'app1', created: '2026-08-01', label: 'iPhone', hint: 'ppareil-1' }],
-  reminders: { supplements: '20:00', hydration: null, meals: null, workout: null },
+  reminders: { supplements: '20:00', hydration: null, meals: null, workout: null, protein: null },
   token: 'jeton-reglages',
 };
 

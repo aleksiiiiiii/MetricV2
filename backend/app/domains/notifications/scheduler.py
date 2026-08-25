@@ -48,7 +48,7 @@ from app.domains.notifications.reminders import (
     ReminderKind,
     allowed,
     compose,
-    parse_slot,
+    parse_slots,
     pending,
 )
 from app.domains.notifications.service import NotificationService, setting_key
@@ -108,9 +108,9 @@ class ReminderScheduler:
 
         already = await service.sent_on(moment.date())
         attendus = [
-            kind
-            for kind in pending(slots=slots, now=moment, already_sent=already)
-            if (moment.date(), kind) not in self._quiet
+            checkpoint
+            for checkpoint in pending(slots=slots, now=moment, already_sent=already)
+            if (moment.date(), checkpoint.kind) not in self._quiet
         ]
         if not attendus:
             return []
@@ -121,12 +121,18 @@ class ReminderScheduler:
         envoyes: list[ReminderKind] = []
         partis, dernier = await service.budget_on(moment.date())
 
-        for kind in attendus:
-            reminder = compose(kind, snapshot)
+        for checkpoint in attendus:
+            reminder = compose(checkpoint.kind, snapshot)
             if reminder is None:
-                # Tout est noté : il n'y a rien à dire, et un rappel qui félicite tous les
-                # jours finit par emporter avec lui ceux qui comptaient.
-                self._quiet.add((moment.date(), kind))
+                # Rien à dire — tout est noté, ou l'écart est trop petit pour valoir une
+                # notification. Le type se tait pour **toute la journée** : l'état du jour
+                # ne se relit qu'une fois par passe, et le rouvrir à chaque contrôle
+                # coûterait cinq lectures WebDAV pour une réponse qui n'a pas bougé.
+                #
+                # Conséquence assumée : si l'écart d'hydratation redevient important entre
+                # 14 h et 18 h, on ne le dira pas. Ça ne peut arriver qu'en effaçant une
+                # prise — un cas où se taire est le bon choix.
+                self._quiet.add((moment.date(), checkpoint.kind))
                 continue
 
             # **Le budget se demande juste avant d'envoyer, jamais avant de composer.**
@@ -137,30 +143,41 @@ class ReminderScheduler:
                 # Rien n'est marqué : il redeviendra dû à la passe suivante, tant que
                 # `GRACE` n'est pas dépassée. Et on sort — les suivants sont soumis au
                 # même délai, les examiner ne ferait que relire la même réponse.
-                logger.info("rappel %s repoussé : budget du jour", kind.value)
+                logger.info("rappel %s repoussé : budget du jour", checkpoint.kind.value)
                 break
 
             livres = await service.deliver(self._sender, reminder.payload())
             # Consigné même si aucun appareil n'était joignable : le créneau a bien été
             # traité pour la journée, et réessayer à la minute suivante enverrait en
             # rafale dès qu'un téléphone se rallume.
-            await service.record(kind, moment=moment)
+            await service.record(checkpoint, moment=moment)
             # Le budget est tenu **en mémoire pour le reste de la passe** : le relire du
             # fichier après chaque envoi coûterait un aller-retour WebDAV par notification,
             # pour une valeur qu'on vient d'écrire soi-même.
             partis += 1
             dernier = moment
-            envoyes.append(kind)
-            logger.info("rappel %s envoyé à %d appareil(s)", kind.value, livres)
+            envoyes.append(checkpoint.kind)
+            logger.info(
+                "rappel %s (%s) envoyé à %d appareil(s)",
+                checkpoint.kind.value,
+                f"{checkpoint.at:%H:%M}",
+                livres,
+            )
 
         return envoyes
 
     # ── Lectures ──────────────────────────────────────
 
-    async def _slots(self, service: NotificationService) -> dict[ReminderKind, time | None]:
-        """Les créneaux configurés. Un horaire illisible vaut éteint."""
+    async def _slots(self, service: NotificationService) -> dict[ReminderKind, tuple[time, ...]]:
+        """Les contrôles configurés, par type. Un horaire illisible vaut éteint.
+
+        Une **liste** et non une heure : l'hydratation en porte trois (**N2**), séparées
+        par des virgules, comme `hydration_presets_ml` le fait déjà pour ses volumes. Les
+        types à un seul contrôle rendent un tuple d'un élément — la forme est la même pour
+        tous, et il n'y a pas deux façons de lire un réglage.
+        """
         values = await service.raw_settings()
-        return {kind: parse_slot(values.get(setting_key(kind), "")) for kind in ReminderKind}
+        return {kind: parse_slots(values.get(setting_key(kind), "")) for kind in ReminderKind}
 
     async def _snapshot(self, day: date) -> DaySnapshot:
         """Ce que l'application **sait** du jour.
@@ -197,6 +214,8 @@ class ReminderScheduler:
             hydration_ml=eau.today_ml,
             hydration_target_ml=eau.target_ml,
             meals_logged=repas.meals,
+            protein_g=repas.protein_g,
+            protein_target_g=repas.protein_target_g,
             workouts_planned=len(prevues),
             workouts_logged=len(runs) + len(workouts),
         )

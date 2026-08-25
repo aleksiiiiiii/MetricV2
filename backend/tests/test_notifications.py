@@ -23,7 +23,16 @@ from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 
 from app.domains.notifications.push import PushSender
-from app.domains.notifications.reminders import ReminderKind, allowed
+from app.domains.notifications.reminders import (
+    Checkpoint,
+    DaySnapshot,
+    ReminderKind,
+    allowed,
+    compose,
+    gap_matters,
+    parse_slots,
+    pending,
+)
 from app.domains.notifications.scheduler import ReminderScheduler
 from app.storage.files import FileStore
 from tests.conftest import TEST_ENDPOINT, subscription_payload
@@ -87,6 +96,7 @@ class TestSansCle:
             "hydration": None,
             "meals": None,
             "workout": None,
+            "protein": None,
         }
 
         response = store_client.patch(
@@ -728,3 +738,97 @@ class TestBudgetOrdonnanceur:
         asyncio.run(deux_passes())
 
         assert webpush.count == 2
+
+
+# ── L'écart décide, plus l'heure seule (**N2**) ───────
+
+
+class TestEcart:
+    """Un contrôle qui part à l'heure quel que soit l'état, c'est un rappel à heure fixe.
+    Ce qui distingue N2 tient dans `gap_matters`."""
+
+    def test_un_écart_important_mérite_quon_en_parle(self) -> None:
+        assert gap_matters(300, 2000) is True
+        assert gap_matters(1500, 2000) is True
+
+    def test_un_écart_négligeable_se_tait(self) -> None:
+        """On y est essentiellement, et la notification devient le bruit qu'on
+        désinstalle."""
+        assert gap_matters(1600, 2000) is False
+        assert gap_matters(2000, 2000) is False
+        assert gap_matters(2400, 2000) is False
+
+    def test_le_seuil_suit_la_cible_et_non_un_nombre_de_millilitres(self) -> None:
+        """Quelqu'un qui vise 3 L n'a pas le même « il reste beaucoup » que quelqu'un qui
+        vise 1,5 L. Un seuil absolu ferait mentir l'un des deux."""
+        assert gap_matters(1200, 1500) is False
+        assert gap_matters(1200, 3000) is True
+
+    def test_sans_cible_réglée_on_ne_dit_rien(self) -> None:
+        """Comparer à zéro rendrait tout écart infini, et le rappel partirait tous les
+        jours pour citer un chiffre sans référence. Une cible absente n'est pas une cible
+        de zéro."""
+        assert gap_matters(0, 0) is False
+        assert gap_matters(500, 0) is False
+
+    def test_lhydratation_à_jour_ne_déclenche_rien(self) -> None:
+        etat = DaySnapshot(hydration_ml=1700, hydration_target_ml=2000)
+
+        assert compose(ReminderKind.HYDRATION, etat) is None
+
+    def test_lhydratation_en_retard_cite_le_restant(self) -> None:
+        """L'urgence est dans les chiffres, pas dans un jugement : le corps ne dit ni
+        « en retard » ni « tu devrais »."""
+        etat = DaySnapshot(hydration_ml=600, hydration_target_ml=2000)
+
+        rappel = compose(ReminderKind.HYDRATION, etat)
+
+        assert rappel is not None
+        assert rappel.body == "600 ml notés sur 2000 · il reste 1400 ml."
+
+    def test_les_protéines_citent_ce_quun_repas_peut_combler(self) -> None:
+        etat = DaySnapshot(protein_g=86.4, protein_target_g=150)
+
+        rappel = compose(ReminderKind.PROTEIN, etat)
+
+        assert rappel is not None
+        assert rappel.title == "Protéines"
+        assert rappel.body == "86 g notés sur 150 · il reste 64 g."
+
+    def test_les_protéines_à_jour_se_taisent(self) -> None:
+        assert (
+            compose(ReminderKind.PROTEIN, DaySnapshot(protein_g=140, protein_target_g=150)) is None
+        )
+
+
+class TestControles:
+    """Trois contrôles d'hydratation dans la journée, et ils ne s'éteignent pas l'un
+    l'autre."""
+
+    def test_une_liste_de_créneaux_se_lit_et_se_trie(self) -> None:
+        """Le tri n'est pas cosmétique : `pending` rend les contrôles dans l'ordre, et un
+        réglage écrit « 22:30,14:00 » ferait examiner la fin de journée en premier."""
+        assert parse_slots("22:30, 14:00,18:00") == (time(14), time(18), time(22, 30))
+
+    def test_un_horaire_illisible_nemporte_pas_les_autres(self) -> None:
+        """Une virgule en trop ne doit pas éteindre les contrôles qui sont corrects."""
+        assert parse_slots("14:00,,25:99,18:00") == (time(14), time(18))
+
+    def test_aucun_créneau_donne_un_tuple_vide(self) -> None:
+        assert parse_slots("") == ()
+
+    def test_le_contrôle_de_14h_néteint_pas_celui_de_18h(self) -> None:
+        """**Le test qui porte le passage au triplet dans `sent.csv`.** Avec une clé
+        (date, kind), le premier contrôle du jour aurait éteint les deux autres."""
+        slots = {ReminderKind.HYDRATION: (time(14), time(18), time(22, 30))}
+        parti = frozenset({Checkpoint(kind=ReminderKind.HYDRATION, at=time(14))})
+
+        attendus = pending(slots=slots, now=at(18), already_sent=parti)
+
+        assert attendus == [Checkpoint(kind=ReminderKind.HYDRATION, at=time(18))]
+
+    def test_un_contrôle_déjà_parti_ne_repart_pas(self) -> None:
+        slots = {ReminderKind.HYDRATION: (time(14), time(18))}
+        parti = frozenset({Checkpoint(kind=ReminderKind.HYDRATION, at=time(18))})
+
+        assert pending(slots=slots, now=at(18), already_sent=parti) == []

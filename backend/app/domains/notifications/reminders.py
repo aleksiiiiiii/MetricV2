@@ -47,6 +47,7 @@ règles, ici et pas dans l'intention :
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from enum import StrEnum
@@ -76,6 +77,32 @@ DAILY_CAP = 10
 #: Ce qui est repoussé n'est pas perdu : il redevient dû à la passe suivante, tant que
 #: `GRACE` n'est pas dépassée. C'est la même mécanique que le rattrapage d'un redémarrage.
 SPACING = timedelta(minutes=15)
+
+#: En deçà de quoi un écart ne mérite pas d'être signalé, en part de la cible.
+#:
+#: **C'est le seuil qui rend un rappel « réactif ».** Sans lui, un contrôle à 14 h partirait
+#: qu'on soit à 300 ml ou à 1 900 sur 2 000 — c'est-à-dire à l'heure, ce que N2 remplace.
+#:
+#: Un quart : sur une cible de 2 000 ml, c'est 500 ml, un écart réel et rattrapable à
+#: n'importe quelle heure. En dessous, on y est essentiellement, et la notification devient
+#: le bruit qu'on désinstalle.
+#:
+#: **Une part et non un nombre absolu** : le seuil suit la cible. Quelqu'un qui vise 3 L
+#: n'a pas le même « il te reste beaucoup » que quelqu'un qui vise 1,5 L, et un seuil en
+#: millilitres ferait mentir l'un des deux.
+GAP_SHARE = 0.25
+
+
+def gap_matters(done: float, target: float, share: float = GAP_SHARE) -> bool:
+    """L'écart à la cible mérite-t-il qu'on en parle ?
+
+    Sans cible réglée, la réponse est **non** : comparer à zéro rendrait tout écart
+    infini, et le rappel partirait tous les jours pour dire un chiffre sans référence.
+    C'est « aucune valeur inventée » — une cible absente n'est pas une cible de zéro.
+    """
+    if target <= 0:
+        return False
+    return (target - done) / target >= share
 
 
 def allowed(
@@ -115,6 +142,8 @@ class ReminderKind(StrEnum):
     HYDRATION = "hydration"
     MEALS = "meals"
     WORKOUT = "workout"
+    #: L'écart aux protéines, au dernier moment où un repas peut le combler (**N2**).
+    PROTEIN = "protein"
 
 
 @dataclass(frozen=True)
@@ -135,6 +164,10 @@ class DaySnapshot:
     hydration_target_ml: int = 0
     #: Nombre de repas notés aujourd'hui.
     meals_logged: int = 0
+    #: Protéines notées aujourd'hui, en grammes.
+    protein_g: float = 0.0
+    #: Cible quotidienne, lue dans les réglages. Zéro si elle n'est pas renseignée.
+    protein_target_g: float = 0.0
     #: Séances **prévues** au planning aujourd'hui (`PLAN-01`).
     workouts_planned: int = 0
     #: Séances et courses notées aujourd'hui.
@@ -157,6 +190,23 @@ class Reminder:
         notifications.
         """
         return {"title": self.title, "body": self.body, "tag": self.kind.value, "url": "/"}
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    """Un **contrôle** : un type de rappel, à une heure donnée.
+
+    Un type n'a plus forcément un créneau et un seul. L'hydratation en a trois — 14 h,
+    18 h, 22 h 30 — parce que l'écart se lit à plusieurs moments de la journée et qu'un
+    seul contrôle obligerait à choisir entre « trop tôt pour savoir » et « trop tard pour
+    agir ».
+
+    C'est ce couple, et non le type seul, qui est consigné dans `sent.csv` : sans l'heure,
+    le premier contrôle de la journée éteindrait les deux autres.
+    """
+
+    kind: ReminderKind
+    at: time
 
 
 def parse_slot(raw: str) -> time | None:
@@ -212,20 +262,42 @@ def compose(kind: ReminderKind, snapshot: DaySnapshot) -> Reminder | None:
             )
 
         case ReminderKind.HYDRATION:
-            if (
-                snapshot.hydration_target_ml
-                and snapshot.hydration_ml >= snapshot.hydration_target_ml
-            ):
+            # **C'est l'écart qui décide, plus l'heure seule** (**N2**). À 1 400 sur 2 000
+            # il n'y a rien à dire : le contrôle passe et se tait.
+            if not gap_matters(snapshot.hydration_ml, snapshot.hydration_target_ml):
                 return None
             if snapshot.hydration_ml == 0:
-                return Reminder(kind=kind, title="Hydratation", body="Rien de noté aujourd'hui.")
+                return Reminder(
+                    kind=kind,
+                    title="Hydratation",
+                    body=f"Rien de noté · cible {snapshot.hydration_target_ml} ml.",
+                )
             # Un chiffre relevé se cite : il est vrai, et il dit où l'on en est. C'est
-            # l'absence qu'on ne transforme pas en affirmation.
-            reste = f" sur {snapshot.hydration_target_ml}" if snapshot.hydration_target_ml else ""
+            # l'absence qu'on ne transforme pas en affirmation — et l'urgence reste dans
+            # les chiffres, sans qu'on juge.
             return Reminder(
                 kind=kind,
                 title="Hydratation",
-                body=f"{snapshot.hydration_ml} ml notés{reste} aujourd'hui.",
+                body=(
+                    f"{snapshot.hydration_ml} ml notés sur "
+                    f"{snapshot.hydration_target_ml} · il reste "
+                    f"{snapshot.hydration_target_ml - snapshot.hydration_ml} ml."
+                ),
+            )
+
+        case ReminderKind.PROTEIN:
+            # Le dernier moment où un repas peut combler l'écart. Même règle qu'au-dessus :
+            # sans écart, rien ne part.
+            if not gap_matters(snapshot.protein_g, snapshot.protein_target_g):
+                return None
+            reste = round(snapshot.protein_target_g - snapshot.protein_g)
+            return Reminder(
+                kind=kind,
+                title="Protéines",
+                body=(
+                    f"{round(snapshot.protein_g)} g notés sur "
+                    f"{round(snapshot.protein_target_g)} · il reste {reste} g."
+                ),
             )
 
         case ReminderKind.MEALS:
@@ -243,14 +315,29 @@ def compose(kind: ReminderKind, snapshot: DaySnapshot) -> Reminder | None:
             return Reminder(kind=kind, title="Séance prévue", body="Rien de noté aujourd'hui.")
 
 
+def parse_slots(raw: str) -> tuple[time, ...]:
+    """Lit une liste de créneaux `HH:MM`, séparés par des virgules.
+
+    Le même format que `hydration_presets_ml`, et pour la même raison : un réglage qui
+    porte plusieurs valeurs se lit et se corrige dans un tableur sans connaître le schéma.
+    Les horaires illisibles sont **écartés un par un** — une virgule en trop ne doit pas
+    éteindre les contrôles qui, eux, sont corrects.
+
+    Le tri n'est pas cosmétique : `pending` rend les contrôles dans l'ordre du fichier, et
+    un réglage écrit « 22:30,14:00 » ferait examiner la fin de journée en premier.
+    """
+    lus = [parse_slot(chunk) for chunk in raw.split(",")]
+    return tuple(sorted(moment for moment in lus if moment is not None))
+
+
 def pending(
     *,
-    slots: dict[ReminderKind, time | None],
+    slots: Mapping[ReminderKind, tuple[time, ...]],
     now: datetime,
-    already_sent: frozenset[ReminderKind],
+    already_sent: frozenset[Checkpoint],
     grace: timedelta = GRACE,
-) -> list[ReminderKind]:
-    """Les types dont **l'heure est venue**, sans regarder ce qu'il y aurait à dire.
+) -> list[Checkpoint]:
+    """Les contrôles dont **l'heure est venue**, sans regarder ce qu'il y aurait à dire.
 
     Séparé de `due` pour une raison de coût, et elle est mesurable : composer un rappel
     demande de savoir ce qui est noté, donc de lire cinq domaines — à ~180 ms
@@ -263,40 +350,45 @@ def pending(
     Le jour d'un rappel est celui qu'affiche l'horloge de l'utilisateur, comme pour une
     prise à 23 h 30 (`HEAT-32`).
 
-    `already_sent` porte ce qui est déjà parti **ce jour-là**, lu dans
-    `notifications/sent.csv`. C'est ce qui rend un redémarrage sans effet.
+    `already_sent` porte les **contrôles** déjà partis ce jour-là, lus dans
+    `notifications/sent.csv`. C'est ce qui rend un redémarrage sans effet. Le couple et non
+    le type seul : sinon le contrôle d'hydratation de 14 h éteindrait ceux de 18 h et de
+    22 h 30.
     """
-    ready: list[ReminderKind] = []
+    ready: list[Checkpoint] = []
 
-    for kind, slot in slots.items():
-        if slot is None or kind in already_sent:
-            continue
+    for kind, heures in slots.items():
+        for heure in heures:
+            checkpoint = Checkpoint(kind=kind, at=heure)
+            if checkpoint in already_sent:
+                continue
 
-        # Le créneau est situé dans le jour de `now`, donc dans son fuseau. Un créneau de
-        # 23 h 30 vu à 00 h 10 le lendemain tombe ainsi *dans le futur* du jour courant et
-        # n'est pas dû — ce qui est le comportement voulu : on ne rattrape pas la nuit.
-        moment = datetime.combine(now.date(), slot, tzinfo=now.tzinfo)
-        retard = now - moment
-        if retard < timedelta(0) or retard >= grace:
-            continue
+            # Le créneau est situé dans le jour de `now`, donc dans son fuseau. Un créneau
+            # de 23 h 30 vu à 00 h 10 le lendemain tombe ainsi *dans le futur* du jour
+            # courant et n'est pas dû — ce qui est le comportement voulu : on ne rattrape
+            # pas la nuit.
+            moment = datetime.combine(now.date(), heure, tzinfo=now.tzinfo)
+            retard = now - moment
+            if retard < timedelta(0) or retard >= grace:
+                continue
 
-        ready.append(kind)
+            ready.append(checkpoint)
 
     return ready
 
 
 def due(
     *,
-    slots: dict[ReminderKind, time | None],
+    slots: Mapping[ReminderKind, tuple[time, ...]],
     now: datetime,
     snapshot: DaySnapshot,
-    already_sent: frozenset[ReminderKind],
+    already_sent: frozenset[Checkpoint],
     grace: timedelta = GRACE,
 ) -> list[Reminder]:
     """Les rappels à envoyer maintenant : l'heure est venue **et** il y a quelque chose à dire."""
     ready = []
-    for kind in pending(slots=slots, now=now, already_sent=already_sent, grace=grace):
-        reminder = compose(kind, snapshot)
+    for checkpoint in pending(slots=slots, now=now, already_sent=already_sent, grace=grace):
+        reminder = compose(checkpoint.kind, snapshot)
         if reminder is not None:
             ready.append(reminder)
     return ready
@@ -304,14 +396,18 @@ def due(
 
 __all__ = [
     "DAILY_CAP",
+    "GAP_SHARE",
     "GRACE",
     "SPACING",
+    "Checkpoint",
     "DaySnapshot",
     "Reminder",
     "ReminderKind",
     "allowed",
     "compose",
     "due",
+    "gap_matters",
     "parse_slot",
+    "parse_slots",
     "pending",
 ]

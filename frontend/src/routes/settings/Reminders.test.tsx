@@ -67,15 +67,17 @@ const written = () => calls.find((call) => call.init?.method === 'PATCH');
  * insertion dans cette table aurait déplacé silencieusement ce que chaque test croit
  * modifier.
  */
-function champ(rang: number): HTMLElement {
-  const champs = screen.getAllByLabelText('Heure du rappel');
-  const trouve = champs[rang];
-  if (!trouve) throw new Error(`aucun champ de rappel au rang ${rang}`);
-  return trouve;
+/**
+ * Le champ d'un rappel, **par son nom accessible** et non par son rang.
+ *
+ * Le rang était fragile pour une raison qui s'est vérifiée : insérer un cinquième rappel
+ * au milieu de la table décalait tout, et le test envoyait le mauvais créneau sans rien
+ * dire. Le nom accessible, lui, désigne le rappel — c'est aussi ce que l'utilisateur de
+ * synthèse vocale entend.
+ */
+function champ(sujet: string): HTMLElement {
+  return screen.getByLabelText(new RegExp(`— ${sujet}$`));
 }
-
-/** Ordre de la table `REMINDERS`, écrit une fois. */
-const RANG = { supplements: 0, hydration: 1, meals: 2, workout: 3 } as const;
 const body = (call: Call | undefined) =>
   JSON.parse(call?.init?.body as string) as Record<string, unknown>;
 
@@ -95,10 +97,10 @@ describe('section Rappels', () => {
     renderSection();
 
     expect(await screen.findByText('Notifications')).toBeInTheDocument();
-    expect(screen.getAllByText('éteint')).toHaveLength(4);
+    expect(screen.getAllByText('éteint')).toHaveLength(5);
 
-    for (const champ of screen.getAllByLabelText('Heure du rappel')) {
-      expect(champ).toHaveValue('');
+    for (const sujet of ['Suppléments', 'Hydratation', 'Repas', 'Protéines', 'Séance']) {
+      expect(champ(sujet)).toHaveValue('');
     }
   });
 
@@ -142,7 +144,7 @@ describe('section Rappels', () => {
     renderSection();
 
     expect(await screen.findByText('réglé')).toBeInTheDocument();
-    expect(screen.getAllByText('éteint')).toHaveLength(3);
+    expect(screen.getAllByText('éteint')).toHaveLength(4);
     // L'heure n'est écrite qu'une fois : dans le champ.
     expect(screen.queryAllByText('20:00')).toHaveLength(0);
   });
@@ -163,9 +165,9 @@ describe('section Rappels', () => {
     stub(NOTIFICATIONS_READY);
     renderSection();
 
-    await screen.findAllByLabelText('Heure du rappel');
-    await userEvent.clear(champ(RANG.hydration));
-    await userEvent.type(champ(RANG.hydration), '19:30');
+    await screen.findByText('Notifications');
+    await userEvent.clear(champ('Hydratation'));
+    await userEvent.type(champ('Hydratation'), '19:30');
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer les rappels' }));
 
     await waitFor(() => {
@@ -179,8 +181,8 @@ describe('section Rappels', () => {
     stub(NOTIFICATIONS_READY);
     renderSection();
 
-    await screen.findAllByLabelText('Heure du rappel');
-    await userEvent.clear(champ(RANG.supplements));
+    await screen.findByText('Notifications');
+    await userEvent.clear(champ('Suppléments'));
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer les rappels' }));
 
     await waitFor(() => {
@@ -194,9 +196,9 @@ describe('section Rappels', () => {
     stub(NOTIFICATIONS_READY);
     renderSection();
 
-    await screen.findAllByLabelText('Heure du rappel');
-    await userEvent.clear(champ(RANG.meals));
-    await userEvent.type(champ(RANG.meals), '12:30');
+    await screen.findByText('Notifications');
+    await userEvent.clear(champ('Repas'));
+    await userEvent.type(champ('Repas'), '12:30');
     await userEvent.click(screen.getByRole('button', { name: 'Enregistrer les rappels' }));
 
     await waitFor(() => {

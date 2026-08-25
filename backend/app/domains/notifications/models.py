@@ -55,15 +55,27 @@ class SubscriptionRow(CsvModel):
 class SentRow(CsvModel):
     """Un rappel effectivement envoyé. `notifications/sent.csv`.
 
-    La clé est le couple **(`date`, `kind`)** : un rappel par créneau et par jour. Elle
-    n'est pas déclarée au dépôt — le stockage du projet ne connaît pas les contraintes
-    d'unicité — mais c'est elle que l'ordonnanceur consulte avant chaque envoi.
+    La clé est le triplet **(`date`, `kind`, `slot`)** : un rappel par contrôle et par
+    jour. Elle n'est pas déclarée au dépôt — le stockage du projet ne connaît pas les
+    contraintes d'unicité — mais c'est elle que l'ordonnanceur consulte avant chaque envoi.
+
+    **`slot` a été ajouté quand l'hydratation a gagné trois contrôles** (**N2**). Sans lui,
+    celui de 14 h éteindrait ceux de 18 h et de 22 h 30 : le couple (`date`, `kind`) ne
+    distingue pas deux moments de la même journée.
     """
 
     #: Jour **local** du rappel (`HEAT-32`), jamais UTC.
     date: CsvDate = None
-    #: Type de rappel : `supplements`, `hydration`, `meals`, `workout`.
+    #: Type de rappel : `supplements`, `hydration`, `meals`, `workout`, `protein`.
     kind: str = ""
+    #: L'heure du contrôle, `HH:MM`.
+    #:
+    #: **Vide sur les lignes écrites avant ce lot**, et c'est lu comme « ce type est parti
+    #: aujourd'hui, à un moment qu'on ne sait plus ». Le repli est volontairement
+    #: conservateur : il éteint tous les contrôles de ce type pour la journée, plutôt que
+    #: de risquer un doublon le jour du déploiement. La divergence dure une journée
+    #: (`STO-04`).
+    slot: str = ""
     #: Instant exact de l'envoi, avec décalage. Sert à relire l'historique à l'œil ; la
     #: décision, elle, ne regarde que le jour.
     sent_at: CsvDateTime = None

@@ -48,18 +48,34 @@ class SubscriptionPayload(BaseModel):
     user_agent: Annotated[str, StringConstraints(max_length=255)] = ""
 
 
+#: Une liste de créneaux `HH:MM`, séparés par des virgules — ou un seul.
+#:
+#: Le même format que `hydration_presets_ml` sur l'écran des réglages, et pour la même
+#: raison : un réglage qui porte plusieurs valeurs doit se lire et se corriger dans un
+#: tableur sans connaître le schéma.
+SLOT_LIST_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d(,\s*([01]\d|2[0-3]):[0-5]\d)*$"
+Slots = Annotated[str, Field(pattern=SLOT_LIST_PATTERN, max_length=64)]
+
+
 class Reminders(BaseModel):
-    """Les quatre créneaux (`NOT-03`).
+    """Les cinq créneaux (`NOT-03`, **N2**).
 
     `null` veut dire **éteint**, et c'est la valeur par défaut : aucun rappel n'est
     configuré à l'installation. Un rappel qui arrive au mauvais moment se désinstalle en un
     geste et ne revient jamais — chaque créneau est donc un choix explicite.
+
+    **L'hydratation porte une liste**, les autres un créneau. L'écart d'hydratation se lit
+    à plusieurs moments de la journée — 14 h, 18 h, 22 h 30 — et un contrôle unique
+    obligerait à choisir entre « trop tôt pour savoir » et « trop tard pour agir ». Les
+    autres types n'ont qu'un moment où ils veulent dire quelque chose.
     """
 
     supplements: Slot | None = None
-    hydration: Slot | None = None
+    hydration: Slots | None = None
     meals: Slot | None = None
     workout: Slot | None = None
+    #: L'écart aux protéines, au dernier moment où un repas peut le combler.
+    protein: Slot | None = None
 
 
 class RemindersPayload(BaseModel):
@@ -73,9 +89,10 @@ class RemindersPayload(BaseModel):
     """
 
     supplements: Slot | None = None
-    hydration: Slot | None = None
+    hydration: Slots | None = None
     meals: Slot | None = None
     workout: Slot | None = None
+    protein: Slot | None = None
 
 
 class SubscribedDevice(BaseModel):

@@ -276,3 +276,44 @@ describe('écran Réglages', () => {
     });
   });
 });
+
+// ── Les rappels réactifs (**N2**) ─────────────────────
+
+describe('rappels', () => {
+  it('laisse saisir plusieurs heures pour l’hydratation', async () => {
+    // Son écart se lit à plusieurs moments de la journée : un contrôle unique obligerait
+    // à choisir entre « trop tôt pour savoir » et « trop tard pour agir ».
+    stub();
+    renderSettings();
+
+    const champ = await screen.findByLabelText('Heures du rappel');
+    expect(champ).toHaveAttribute('type', 'text');
+
+    await userEvent.type(champ, '14:00, 18:00, 22:30');
+    await userEvent.click(screen.getByRole('button', { name: 'Enregistrer les rappels' }));
+
+    await waitFor(() => {
+      const call = calls.find(
+        (item) => item.init?.method === 'PATCH' && item.url.includes('/notifications/reminders'),
+      );
+      expect(JSON.parse(call?.init?.body as string)).toEqual({ hydration: '14:00, 18:00, 22:30' });
+    });
+  });
+
+  it('dit les deux conditions d’un rappel d’hydratation', async () => {
+    // Un contrôle qui ne part pas se lit comme un réglage cassé si l'on ignore que
+    // l'écart décide aussi.
+    stub();
+    renderSettings();
+
+    expect(await screen.findByText(/ne part que si l’écart est important/)).toBeInTheDocument();
+  });
+
+  it('propose un rappel de protéines', async () => {
+    stub();
+    renderSettings();
+
+    expect(await screen.findByText('Protéines')).toBeInTheDocument();
+    expect(screen.getByText(/s’il reste un écart qu’un repas peut combler/)).toBeInTheDocument();
+  });
+});

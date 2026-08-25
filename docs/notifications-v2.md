@@ -192,6 +192,7 @@ addition, elle se défait. « Séance faite » écrirait une durée que personne
 | # | Portée | Risque |
 |---|---|---|
 | 0 | ~~**N1** : plafond quotidien et espacement~~ **fait** | nul — une fonction pure, et un garde-fou qui doit exister avant les règles qu'il borne |
+| 0 bis | ~~**N2** : l'écart décide, trois contrôles d'hydratation, les protéines~~ **fait** | c'est là que tout se joue — et c'est fait |
 | 1 | `payload()` : l'adresse par type | nul — trois lignes dans un module pur déjà testé |
 | 2 | `sent.csv` gagne son créneau, et le service qui le lit | faible |
 | 3 | `reminders.py` : l'écart, les nouveaux types, les textes | **c'est là que tout se joue** |
@@ -235,3 +236,64 @@ recevoir un rappel **application fermée**, taper dessus, et vérifier qu'on arr
   en retard ne félicite plus rien.
 - **Aucune cadence d'hydratation n'est inventée.** Deux points de contrôle, des chiffres
   relevés, et c'est l'utilisateur qui lit l'urgence.
+
+
+---
+
+## 10. Journal
+
+### N2 — l'écart décide (25 août 2026)
+
+`gap_matters(done, target)` : un écart mérite qu'on en parle s'il vaut **au moins un quart
+de la cible**. C'est le seuil qui distingue un rappel réactif d'un rappel à heure fixe —
+sans lui, un contrôle à 14 h partirait qu'on soit à 300 ou à 1 900 ml sur 2 000.
+
+**Une part et non un nombre de millilitres.** Quelqu'un qui vise 3 L n'a pas le même « il
+reste beaucoup » que quelqu'un qui vise 1,5 L, et un seuil absolu ferait mentir l'un des
+deux.
+
+**Sans cible réglée, rien ne part.** Comparer à zéro rendrait tout écart infini, et le
+rappel partirait tous les jours pour citer un chiffre sans référence. Une cible absente
+n'est pas une cible de zéro — c'est « aucune valeur inventée », appliqué à un dénominateur.
+
+#### Ce que le passage à trois contrôles a coûté
+
+`sent.csv` a dû passer du couple (`date`, `kind`) au **triplet** (`date`, `kind`, `slot`).
+Sans l'heure, le contrôle d'hydratation de 14 h éteignait ceux de 18 h et de 22 h 30 — et
+c'est le test qui le dit maintenant, nommément.
+
+Une ligne écrite avant ce lot n'a pas de `slot`. Elle est lue comme « ce type est parti
+aujourd'hui, à un moment qu'on ne sait plus », ce qui **éteint tous ses contrôles pour la
+journée**. Conservateur à dessein : un rappel perdu coûte moins qu'un doublon, et la
+divergence dure une journée (`STO-04`).
+
+`pending` rend désormais des `Checkpoint` et non des `ReminderKind`. `parse_slots` lit une
+liste séparée par des virgules — le format de `hydration_presets_ml`, pour la même raison —
+et **la trie** : un réglage écrit « 22:30,14:00 » ferait sinon examiner la fin de journée en
+premier.
+
+#### Deux choses que le code a imposées
+
+**Les signatures prennent un `Mapping`, pas un `dict`.** mypy l'a demandé et il avait
+raison : `dict` est invariant, et un test qui construit `{HYDRATION: (t1, t2, t3)}` ne
+s'assignait pas à `dict[..., tuple[time, ...]]`. Le corriger dans les tests aurait été
+contourner le message.
+
+**Un type qui n'a rien à dire se tait pour la journée entière, pas seulement pour le
+contrôle en cours.** L'état du jour ne se relit qu'une fois par passe, et le rouvrir à
+chaque contrôle coûterait cinq lectures WebDAV pour une réponse qui n'a pas bougé.
+Conséquence assumée : si l'écart d'hydratation redevient important entre 14 h et 18 h, on
+ne le dira pas — ça ne peut arriver qu'en effaçant une prise, un cas où se taire est juste.
+
+#### Un défaut d'accessibilité, trouvé par un test qui cassait
+
+Les tests désignaient les champs de rappel **par leur rang**. Insérer les protéines au
+milieu de la table décalait tout, et le test envoyait le mauvais créneau sans rien dire.
+
+La cause n'était pas le test : cinq champs portaient le nom accessible « Heure du rappel »
+sur le même écran, et rien ne les distinguait à la synthèse vocale — la leçon des pastilles
+« Corriger » du catalogue, reproduite ici. Chaque champ porte maintenant son sujet dans son
+`aria-label`, l'étiquette visible reste courte, et les tests adressent par le nom.
+
+**Mesuré** : `make check` vert, 1 589 tests backend et 498 d'écran. Les seuils et les
+frontières sont vérifiés à la minute et au millilitre près.

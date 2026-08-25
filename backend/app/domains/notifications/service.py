@@ -30,7 +30,7 @@ from app.core.dates import today_local
 from app.domains.app_settings.service import SettingsService
 from app.domains.notifications.models import SentRow, SubscriptionRow
 from app.domains.notifications.push import PushGoneError, PushSender
-from app.domains.notifications.reminders import ReminderKind, parse_slot
+from app.domains.notifications.reminders import Checkpoint, ReminderKind, parse_slot
 from app.domains.notifications.schemas import (
     Reminders,
     SubscribedDevice,
@@ -45,6 +45,15 @@ from app.storage.paths import NOTIFICATIONS_SENT, PUSH_SUBSCRIPTIONS
 #: d'envoi. Trois graphies différentes rendraient un redémarrage incapable de reconnaître
 #: ce qu'il a déjà envoyé.
 SETTING_PREFIX = "reminders_"
+
+#: Les vingt-quatre heures rondes, pour éteindre un type entier quand son créneau est
+#: illisible. Elles n'ont pas à couvrir les demi-heures : `Checkpoint` se compare par
+#: égalité, et un contrôle à 22 h 30 dont la ligne est abîmée sera de toute façon éteint
+#: par le fait qu'aucune heure ne correspond — c'est le cas conservateur qu'on veut.
+#:
+#: **Repli d'un jour, pas une règle.** Il ne sert qu'aux lignes écrites avant que `slot`
+#: existe ; le lendemain, toutes les lignes en portent un.
+_ALL_HOURS = tuple(time(hour, minute) for hour in range(24) for minute in (0, 30))
 
 
 def setting_key(kind: ReminderKind) -> str:
@@ -229,8 +238,8 @@ class NotificationService:
 
     # ── Journal d'envoi (`NOT-02`) ────────────────────
 
-    async def sent_on(self, day: date) -> frozenset[ReminderKind]:
-        """Types déjà envoyés **ce jour-là**, lus dans le fichier.
+    async def sent_on(self, day: date) -> frozenset[Checkpoint]:
+        """Contrôles déjà envoyés **ce jour-là**, lus dans le fichier.
 
         C'est ce qui rend un redémarrage sans effet : la mémoire de l'ordonnanceur est un
         fichier, pas une variable de processus.
@@ -243,11 +252,22 @@ class NotificationService:
         pas du tout.
         """
         known = {kind.value for kind in ReminderKind}
-        return frozenset(
-            ReminderKind(row.model.kind)
-            for row in await self._sent.read_all()
-            if row.model.date == day and row.model.kind in known
-        )
+        partis: set[Checkpoint] = set()
+
+        for row in await self._sent.read_all():
+            if row.model.date != day or row.model.kind not in known:
+                continue
+            kind = ReminderKind(row.model.kind)
+            heure = parse_slot(row.model.slot)
+            if heure is not None:
+                partis.add(Checkpoint(kind=kind, at=heure))
+                continue
+            # Ligne écrite avant que la colonne existe, ou horaire illisible : on éteint
+            # **tous** les contrôles de ce type pour la journée. Conservateur à dessein —
+            # un rappel perdu coûte moins qu'un doublon, et la divergence dure un jour.
+            partis.update(Checkpoint(kind=kind, at=heure) for heure in _ALL_HOURS)
+
+        return frozenset(partis)
 
     async def budget_on(self, day: date) -> tuple[int, datetime | None]:
         """Combien de notifications sont parties ce jour-là, et **quand la dernière**.
@@ -264,13 +284,20 @@ class NotificationService:
         moments = [model.sent_at for model in lignes if model.sent_at is not None]
         return len(lignes), max(moments, default=None)
 
-    async def record(self, kind: ReminderKind, *, moment: datetime) -> None:
+    async def record(self, checkpoint: Checkpoint, *, moment: datetime) -> None:
         """Consigne un envoi. En ajout, jamais en réécriture (`STO-03`).
 
         Le jour vient de l'instant fourni, pour la raison écrite dans `sent_on` : une seule
         horloge par passe, sinon la frontière du jour se traverse au milieu.
         """
-        await self._sent.append(SentRow(date=moment.date(), kind=kind.value, sent_at=moment))
+        await self._sent.append(
+            SentRow(
+                date=moment.date(),
+                kind=checkpoint.kind.value,
+                slot=f"{checkpoint.at:%H:%M}",
+                sent_at=moment,
+            )
+        )
 
     # ── Envoi ─────────────────────────────────────────
 

@@ -9,8 +9,14 @@
 
 import { request } from '@/lib/api';
 
-/** Les quatre types de rappel. Mêmes noms que les clés `reminders_*` du serveur. */
-export type ReminderKind = 'supplements' | 'hydration' | 'meals' | 'workout';
+/**
+ * Les cinq types de rappel. Mêmes noms que les clés `reminders_*` du serveur.
+ *
+ * `hydration` porte **plusieurs créneaux**, séparés par des virgules — son écart se lit à
+ * plusieurs moments de la journée. Les autres n'en portent qu'un : ils n'ont qu'un moment
+ * où ils veulent dire quelque chose.
+ */
+export type ReminderKind = 'supplements' | 'hydration' | 'meals' | 'workout' | 'protein';
 
 export interface PushStatus {
   /** Une paire de clés VAPID est configurée côté serveur. */

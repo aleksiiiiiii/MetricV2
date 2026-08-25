@@ -48,10 +48,12 @@ interface Spec {
   kind: ReminderKind;
   label: string;
   hint: string;
+  /** Vrai quand le type porte **plusieurs** créneaux, séparés par des virgules. */
+  many?: boolean;
 }
 
 /**
- * Les quatre rappels de `NOT-02`, et ce qu'ils disent.
+ * Les cinq rappels de `NOT-02` et de **N2**, et ce qu'ils disent.
  *
  * Les descriptions reprennent **mot pour mot** la règle du serveur : un rappel dit ce qui
  * n'est pas noté, jamais ce qui n'a pas été fait. L'écran doit l'annoncer avant que
@@ -67,9 +69,17 @@ const REMINDERS: readonly Spec[] = [
   {
     kind: 'hydration',
     label: 'Hydratation',
-    hint: 'Rappelle le volume noté, tant que l’objectif n’est pas atteint',
+    // Le texte dit **les deux conditions**, parce qu'un contrôle qui ne part pas se lit
+    // comme un réglage cassé si l'on ignore la seconde.
+    hint: 'Plusieurs heures, séparées par des virgules · ne part que si l’écart est important',
+    many: true,
   },
   { kind: 'meals', label: 'Repas', hint: 'Ne part que si aucun repas n’est noté du jour' },
+  {
+    kind: 'protein',
+    label: 'Protéines',
+    hint: 'Cite ce qu’il reste, s’il reste un écart qu’un repas peut combler',
+  },
   {
     kind: 'workout',
     label: 'Séance',
@@ -86,6 +96,7 @@ function toDraft(view: NotificationsView): Draft {
     hydration: view.reminders.hydration ?? '',
     meals: view.reminders.meals ?? '',
     workout: view.reminders.workout ?? '',
+    protein: view.reminders.protein ?? '',
   };
 }
 
@@ -359,9 +370,22 @@ export function Reminders() {
                 </Badge>
               </div>
               <div className={styles.row}>
+                {/* Un champ texte pour l'hydratation : `type="time"` ne sait porter
+                    qu'une heure, et elle en a trois. Le format à virgules est celui des
+                    raccourcis d'hydratation sur le même écran — un réglage à plusieurs
+                    valeurs se lit et se corrige de la même façon partout. */}
                 <Field
-                  type="time"
-                  label="Heure du rappel"
+                  type={spec.many === true ? 'text' : 'time'}
+                  inputMode={spec.many === true ? 'numeric' : undefined}
+                  placeholder={spec.many === true ? '14:00, 18:00, 22:30' : undefined}
+                  label={spec.many === true ? 'Heures du rappel' : 'Heure du rappel'}
+                  // **Le nom accessible désigne quel rappel.** Cinq champs intitulés
+                  // « Heure du rappel » sur le même écran s'entendent tous pareil à la
+                  // synthèse vocale — c'est la leçon des pastilles « Corriger » du
+                  // catalogue. L'étiquette visible reste courte : la carte porte déjà le
+                  // sujet trente pixels plus haut, et le répéter serait la redite qu'on
+                  // écarte ailleurs sur cet écran.
+                  aria-label={`${spec.many === true ? 'Heures' : 'Heure'} du rappel — ${spec.label}`}
                   value={fields[spec.kind]}
                   error={refusal?.messageFor(spec.kind)}
                   hint={spec.hint}
