@@ -26,6 +26,7 @@ Ne pas tout lire. Ouvrir ce qui correspond à la tâche.
 | L'ergonomie de `/activite` | [`docs/activite-ux.md`](docs/activite-ux.md) |
 | Le pont vers Cadence Tabata — les liens de séance | [`docs/cadence.md`](docs/cadence.md) |
 | Le `413` à l'ajout de captures — diagnostic et correctif | [`docs/bug-413-captures.md`](docs/bug-413-captures.md) |
+| Améliorer les rappels push — ce qui manque, et les pièges | [`docs/prompt-notifications.md`](docs/prompt-notifications.md) |
 
 [`docs/GuidelinesUI.html`](docs/GuidelinesUI.html) reste la **référence exclusive** de la
 charte visuelle.
