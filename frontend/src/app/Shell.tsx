@@ -25,15 +25,26 @@ import { TabBar } from './TabBar';
  * « Plus ». Sur ordinateur on y entre par la carte du tableau de bord et le lien de
  * l'écran Objectif, comme depuis le lot L14b : ajouter une dixième entrée reporterait la
  * demande à ~816 px et rendrait le débordement à nouveau visible.
+ *
+ * **L'ordre suit la fréquence d'usage, et ce n'est pas cosmétique.** La barre demande plus
+ * de place qu'elle n'en a : les dernières entrées ne se lisent qu'après avoir défilé, et
+ * le dégradé de bord le dit. Ce qui vient en tête est donc ce qu'on ouvre tous les jours —
+ * l'activité, ce qu'on mange, la routine —, et ce qui suit est ce qu'on consulte : le
+ * corps se relève une fois par semaine, le planning se pose le dimanche, l'assiduité se
+ * regarde à froid, les réglages presque jamais.
+ *
+ * L'ordre du bas, lui, ne bouge pas : `TabBar` gouverne sous 960 px et n'a que cinq
+ * cibles, choisies sur un autre critère — ce qu'on atteint au pouce entre deux exercices.
+ * Aligner les deux reviendrait à faire décider une souris pour un pouce.
  */
 const NAV = [
   { to: '/', label: 'Accueil', end: true },
-  { to: '/corps', label: 'Corps', end: false },
   { to: '/activite', label: 'Activité', end: false },
-  { to: '/planning', label: 'Planning', end: false },
-  { to: '/objectif', label: 'Objectif', end: false },
-  { to: '/routine', label: 'Routine', end: false },
   { to: '/nutrition', label: 'Nutrition', end: false },
+  { to: '/routine', label: 'Routine', end: false },
+  { to: '/objectif', label: 'Objectif', end: false },
+  { to: '/corps', label: 'Corps', end: false },
+  { to: '/planning', label: 'Planning', end: false },
   { to: '/assiduite', label: 'Assiduité', end: false },
   { to: '/reglages', label: 'Réglages', end: false },
 ] as const;
