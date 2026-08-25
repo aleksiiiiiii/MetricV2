@@ -244,6 +244,10 @@ LECTURE_PAR_ECRITURE = {
     "workout.add": "activites_recentes",
     "workout.delete": "activites_recentes",
     "exercise.create": "exercices",
+    # Sa tranche porte deux choses : les séances déjà enregistrées, et les 35 noms qui
+    # affichent une illustration dans Cadence. Sans elle, un modèle inventerait « Pompes »
+    # — qui tourne, mais sans image — ou pire « Push-Ups », qui en affiche une fausse.
+    "circuit.create": "seances_cadence",
     "supplement.take": "supplements_du_jour",
     "plan.add": "planning_a_venir",
     "plan.delete": "planning_a_venir",

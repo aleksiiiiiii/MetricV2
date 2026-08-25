@@ -46,6 +46,18 @@ export interface ThreadSummary {
   messages: number;
 }
 
+export interface ThreadList {
+  threads: ThreadSummary[];
+  /**
+   * Le fil à **rouvrir de lui-même**, ou `null`.
+   *
+   * La décision vient du serveur : c'est lui qui tient l'heure et le fuseau, et mesurer
+   * l'écart ici serait un second calcul de temps — celui que l'invariant « le jour vient
+   * du serveur » interdit. L'écran reçoit un identifiant ou rien.
+   */
+  resume: string | null;
+}
+
 export interface ThreadMessage {
   seq: number;
   role: 'user' | 'assistant';
@@ -58,6 +70,14 @@ export interface ThreadMessage {
    * un fil ancien ne ment pas, il dit qu'il ne sait pas.
    */
   context: string[];
+  /**
+   * Ce que ce tour a fait, **sans son annulation**.
+   *
+   * Le jeton d'une ligne périme dès qu'elle change ; proposer « annuler » trois jours plus
+   * tard mènerait à un `409` que rien n'explique. Ce qui reste ne périme pas : la phrase,
+   * le lien, l'identifiant — et un lien Cadence porte la séance entière.
+   */
+  actions: ActionReport[];
 }
 
 export interface ThreadDetail {
@@ -85,6 +105,21 @@ export interface ActionReport {
   /** Les arguments relus, à renvoyer pour confirmer une action en attente. */
   args: Record<string, unknown>;
   undo: UndoRef | null;
+  /**
+   * Une adresse **hors de l'application** — aujourd'hui une séance Cadence.
+   *
+   * Elle est rendue en bouton, jamais recopiée dans le texte : c'est le serveur qui l'a
+   * fabriquée, et c'est ce qui garantit qu'elle décrit la séance qu'on croit.
+   */
+  link: string | null;
+  /**
+   * L'identifiant **stable** de ce qui a été créé, quand la ligne en porte un.
+   *
+   * `undo.row_id` est une position dans un fichier : elle se décale à la première
+   * suppression. Elle suffit à annuler dans la seconde qui suit, pas à retrouver la même
+   * ligne en rouvrant le fil trois jours plus tard.
+   */
+  resource_id: string | null;
 }
 
 export interface ChatReply {
@@ -269,7 +304,7 @@ export const assistantApi = {
     return reply;
   },
 
-  threads: () => request<{ threads: ThreadSummary[] }>('/api/assistant/threads'),
+  threads: () => request<ThreadList>('/api/assistant/threads'),
 
   thread: (threadId: string) => request<ThreadDetail>(`/api/assistant/threads/${threadId}`),
 

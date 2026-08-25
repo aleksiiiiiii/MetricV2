@@ -36,10 +36,13 @@ ne s'écrivait ; ça n'en est plus une dès lors qu'une réponse peut agir sur l
 
 from __future__ import annotations
 
+import json
 import secrets as secrets_module
 from collections.abc import Awaitable, Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+
+from pydantic import ValidationError
 
 from app.core.dates import local_moment, now_local, today_local
 from app.core.exceptions import AiUnreadableError, MetricError, ValidationFailedError
@@ -120,6 +123,77 @@ def _sortable(summary: ThreadSummary) -> tuple[bool, datetime]:
     if summary.updated is None:
         return (False, datetime.min.replace(tzinfo=UTC))
     return (True, local_moment(summary.updated))
+
+
+#: En deçà de quoi rouvrir le dernier fil au lieu d'une page vide.
+#:
+#: Une heure, et le nombre se défend des deux côtés. Plus court, on perd le fil d'une
+#: séance en cours parce qu'on a rangé le téléphone. Plus long, on revient le soir sur une
+#: conversation du matin qui ne parle plus de rien — et le modèle recevrait un passé hors
+#: sujet, ce qui est pire qu'un fil vide.
+RESUME_WITHIN = timedelta(hours=1)
+
+
+def _resumable(summaries: list[ThreadSummary]) -> str | None:
+    """Le fil à rouvrir de lui-même, ou `None`.
+
+    Le premier de la liste — elle est triée par activité — et seulement s'il a moins d'une
+    heure. Un fil sans horodatage n'est jamais rouvert : on ne sait pas quand il a servi,
+    et le supposer récent ferait resurgir une conversation de l'an dernier.
+    """
+    if not summaries:
+        return None
+
+    latest = summaries[0]
+    if latest.updated is None:
+        return None
+    if now_local() - local_moment(latest.updated) > RESUME_WITHIN:
+        return None
+    return latest.thread_id
+
+
+def _render_actions(reports: list[ActionReport] | None) -> str:
+    """Les actions d'un tour, sérialisées pour la cellule CSV.
+
+    **Sans les annulations.** Le jeton d'une ligne périme dès qu'elle change ; le ranger
+    n'aurait qu'un effet — proposer trois jours plus tard un bouton « annuler » qui rendrait
+    un `409` que rien n'explique. Ce qu'on garde ne périme pas.
+
+    Une action refusée n'est pas rangée non plus : elle n'a rien produit, et la relire
+    ferait réapparaître un échec passé comme s'il venait d'avoir lieu.
+    """
+    kept = [report for report in (reports or []) if report.status == "done"]
+    if not kept:
+        return ""
+    return json.dumps(
+        [report.model_dump(mode="json", exclude={"undo"}) for report in kept],
+        ensure_ascii=False,
+    )
+
+
+def _read_actions(raw: str) -> list[ActionReport]:
+    """Les actions rangées avec un message, ou rien.
+
+    **Ne lève jamais.** Le fichier s'ouvre dans un tableur, et une cellule JSON coupée en
+    deux y est une possibilité normale. Elle coûte les actions de son tour, jamais le fil —
+    c'est le même parti pris que partout ailleurs dans ce module.
+    """
+    if not raw.strip():
+        return []
+    try:
+        items = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(items, list):
+        return []
+
+    reports: list[ActionReport] = []
+    for item in items:
+        try:
+            reports.append(ActionReport.model_validate(item))
+        except ValidationError:
+            continue
+    return reports
 
 
 def _title_from(question: str) -> str:
@@ -338,7 +412,7 @@ class AssistantService:
         # tri, et un horodatage retapé à la main sans son décalage est situé plutôt que
         # comparé de travers — comparer un instant naïf à un instant situé lève.
         summaries.sort(key=_sortable, reverse=True)
-        return ThreadList(threads=summaries)
+        return ThreadList(threads=summaries, resume=_resumable(summaries))
 
     async def thread(self, thread_id: str) -> ThreadDetail:
         """Un fil et tous ses messages, dans l'ordre où ils ont été écrits."""
@@ -353,6 +427,7 @@ class AssistantService:
                 # qu'un message d'avant la colonne doit dire : rien, et non un contexte
                 # reconstitué qui n'aurait jamais servi.
                 context=message.model.context.splitlines(),
+                actions=_read_actions(message.model.actions),
             )
             for message in await self._messages.read_all()
             if message.model.thread_id == thread_id
@@ -394,6 +469,7 @@ class AssistantService:
         entries: list[tuple[str, str, list[str]]],
         *,
         moment: datetime,
+        actions: list[ActionReport] | None = None,
     ) -> None:
         """Ajoute des tours à un fil et repousse sa date d'activité.
 
@@ -417,6 +493,9 @@ class AssistantService:
                     content=content[:MAX_CONTENT],
                     created=moment,
                     context="\n".join(lines),
+                    # Rangées avec la réponse, comme le condensé : c'est ce qui permet de
+                    # rouvrir un fil et d'y retrouver la séance qu'on s'est fait proposer.
+                    actions=_render_actions(actions) if role == "assistant" else "",
                 )
                 for offset, (role, content, lines) in enumerate(entries)
             ]
@@ -601,6 +680,7 @@ class AssistantService:
                 if outcome.undo is not None
                 else None
             ),
+            link=outcome.link,
         )
 
     async def confirm(self, request: ConfirmRequest) -> ActionReport:
@@ -824,6 +904,7 @@ class AssistantService:
             thread_id,
             [("user", request.question, []), ("assistant", reply, facts)],
             moment=moment,
+            actions=reports,
         )
 
         return ChatReply(

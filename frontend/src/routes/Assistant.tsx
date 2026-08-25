@@ -39,6 +39,7 @@ import {
   Chip,
   ChipStrip,
   Empty,
+  ExternalLinkButton,
   Field,
   Markdown,
   Sheet,
@@ -46,6 +47,7 @@ import {
   SheetRow,
 } from '@/components/ui';
 import { IconBook, IconThreads } from '@/components/ui/icons';
+import { activityApi } from '@/features/activity/api';
 import { useAiStatus } from '@/features/ai/useAiStatus';
 import {
   assistantApi,
@@ -60,6 +62,7 @@ import { keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
 import styles from './Assistant.module.css';
+import { CircuitCard } from './activity/CircuitCard';
 
 /** Une question, sa réponse, et ce que l'assistant a fait à ce tour-là. */
 interface Exchange {
@@ -105,6 +108,21 @@ function ActionCard({ report }: { report: ActionReport }) {
   const client = useQueryClient();
   const { notify } = useToast();
   const [settled, setSettled] = useState<'undone' | 'confirmed' | 'dismissed' | null>(null);
+
+  /**
+   * Le circuit que cette action a créé, tel qu'il est **maintenant**.
+   *
+   * La liste n'est demandée que si l'action en a produit un : les autres cartes ne paient
+   * pas une requête pour rien. Le rapprochement se fait sur l'identifiant stable — une
+   * position se décale, un identifiant non — et un circuit supprimé depuis ne se retrouve
+   * pas, donc « Fait » disparaît de lui-même plutôt que d'échouer à l'appui.
+   */
+  const { data: circuits } = useQuery({
+    queryKey: keys.activity.circuits(),
+    queryFn: activityApi.circuits,
+    enabled: report.resource_id !== null,
+  });
+  const circuit = circuits?.circuits.find((item) => item.circuit_id === report.resource_id);
 
   /** Une écriture de l'assistant touche un domaine quelconque : on rafraîchit large. */
   function refreshEverything(): void {
@@ -152,6 +170,45 @@ function ActionCard({ report }: { report: ActionReport }) {
           {settled === 'undone' ? 'Annulé.' : settled === 'confirmed' ? 'Fait.' : report.summary}
         </p>
       </div>
+
+      {/* Le lien arrive **fabriqué par le serveur** et se rend en bouton, jamais recopié
+          dans le texte de la réponse. Une adresse tapée par un modèle est du texte non
+          vérifié : le suffixe qui distingue quinze répétitions de quinze secondes s'y perd
+          en silence, et la séance se lance quand même — fausse.
+
+          Il vient **avant** « Annuler », et c'est le point de l'écran : ce qu'on veut faire
+          d'une séance qu'on vient de recevoir, c'est l'ouvrir. La défaire est le geste
+          rare, et il reste à un appui. */}
+      {settled === null && report.link !== null && (
+        <ExternalLinkButton
+          variant="primary"
+          className={styles.actionOpen}
+          href={report.link}
+          aria-label="Ouvrir cette séance dans Cadence"
+        >
+          Ouvrir dans Cadence
+        </ExternalLinkButton>
+      )}
+
+      {/* « Fait » juste à côté du lien : après la séance, on revient dans le fil et on la
+          consigne sans changer d'écran. La durée est **proposée** par l'estimation et se
+          corrige avant de partir — le même geste et les mêmes mots qu'à
+          `/activite/seances`, pas un second vocabulaire pour le même acte.
+
+          Le circuit est retrouvé par son identifiant **stable**, jamais par la position
+          qu'il occupait au moment de la réponse : elle a pu se décaler depuis. */}
+      {/* La carte de séance est celle de `/activite/seances` — **la seule
+          implémentation**. Trois copies auraient donné trois façons de dire « Fait »,
+          trois arrondis de durée, et le jour où l'une change les deux autres mentent.
+
+          L'import traverse `routes/` : c'est inhabituel, et c'est le moindre mal. La
+          séance appartient au domaine Activité ; ce qui est partagé ici, c'est un geste
+          métier, pas une primitive d'interface. */}
+      {settled === null && circuit !== undefined && (
+        <div className={styles.actionCircuit}>
+          <CircuitCard circuit={circuit} />
+        </div>
+      )}
 
       {settled === null && report.status === 'done' && report.undo !== null && (
         <Button
@@ -703,7 +760,21 @@ export function Assistant() {
    */
   const [params, setParams] = useSearchParams();
   const asked = params.get('ouvre');
-  const [threadId, setThreadId] = useState<string | null>(params.get('fil'));
+  const [chosen, setChosen] = useState<string | null>(params.get('fil'));
+  /**
+   * Vrai dès que l'utilisateur a **pris la main** sur le fil : ouvert celui-ci, fermé
+   * celui-là, ou posé une question. Tant que c'est faux, la reprise automatique peut
+   * décider ; après, elle se tait — un rattrapage qui rouvrirait un fil qu'on vient de
+   * fermer serait une porte qui se rouvre toute seule.
+   *
+   * Un `?fil` dans l'adresse compte comme un choix : c'est une adresse, pas un défaut.
+   */
+  const [decided, setDecided] = useState(params.has('fil'));
+
+  function openThread(id: string | null): void {
+    setDecided(true);
+    setChosen(id);
+  }
   const [threadsOpen, setThreadsOpen] = useState(asked === 'discussions');
   const [memoryOpen, setMemoryOpen] = useState(asked === 'memoire');
 
@@ -725,6 +796,35 @@ export function Assistant() {
    */
   const following = useRef(true);
 
+  /**
+   * Reprendre la conversation en cours, quand il y en a une.
+   *
+   * Ouvrir l'assistant deux minutes après l'avoir fermé et retomber sur une page vide,
+   * c'est perdre le contexte de ce qu'on était en train de faire — et devoir le réexpliquer
+   * au modèle. Au-delà d'une heure, on revient pour autre chose, et rouvrir donnerait au
+   * modèle un passé qui ne parle plus de rien.
+   *
+   * **C'est le serveur qui tranche.** Il rend un identifiant ou rien ; l'écran n'a aucun
+   * écart de temps à mesurer, ce qui serait un second calcul de date (`HEAT-32`).
+   *
+   * Ne s'applique **qu'au montage et sur un écran vierge** : ni sur un `?fil` explicite —
+   * qui est une adresse —, ni après avoir fermé un fil à la main, geste qu'un rattrapage
+   * automatique annulerait sous le doigt.
+   */
+  const resume = useQuery({
+    queryKey: keys.assistant.threads(),
+    queryFn: assistantApi.threads,
+  });
+
+  /**
+   * Le fil réellement ouvert — **dérivé au rendu**, pas posé par un effet.
+   *
+   * Un `useEffect` qui appellerait `setThreadId` provoquerait un rendu en cascade pour une
+   * valeur qu'on sait déjà calculer ici. La reprise n'est qu'un défaut : elle s'applique
+   * tant que rien n'a été choisi, et le choix l'emporte dès qu'il existe.
+   */
+  const threadId = chosen ?? (decided ? null : (resume.data?.resume ?? null));
+
   const opened = useQuery({
     queryKey: keys.assistant.thread(threadId ?? ''),
     queryFn: () => assistantApi.thread(threadId ?? ''),
@@ -742,10 +842,12 @@ export function Assistant() {
       rebuilt.push({
         question: turn.content,
         reply: answer?.role === 'assistant' ? answer.content : '',
-        // Les actions ne sont pas rejouées : l'annulation d'un ajout a expiré avec le
-        // jeton de sa ligne, et proposer un geste qui échouerait serait pire que de ne
-        // rien proposer.
-        actions: [],
+        // **Les actions sont rejouées**, moins leur annulation — que le serveur ne range
+        // pas, justement parce que le jeton d'une ligne périme dès qu'elle change. Ce qui
+        // reste ne périme pas : un lien Cadence porte la séance entière, et retrouver la
+        // séance qu'on s'est fait proposer est précisément ce qu'on vient chercher en
+        // rouvrant un fil.
+        actions: answer?.role === 'assistant' ? (answer.actions ?? []) : [],
         remembered: [],
         context: answer?.role === 'assistant' ? (answer.context ?? []) : [],
       });
@@ -770,7 +872,7 @@ export function Assistant() {
         },
       ),
     onSuccess: (result, asked) => {
-      setThreadId(result.thread_id);
+      openThread(result.thread_id);
       setExchanges((current) => [
         ...current.filter((turn) => turn.question !== asked || turn.failure === undefined),
         {
@@ -1110,7 +1212,7 @@ export function Assistant() {
           forget();
         }}
         onOpenThread={(id) => {
-          setThreadId(id);
+          openThread(id);
           setExchanges([]);
           following.current = true;
           // L'adresse cesse d'annoncer le fil qu'on vient de quitter.

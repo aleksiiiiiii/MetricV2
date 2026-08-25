@@ -74,6 +74,29 @@ const THREADS = {
     { thread_id: 'fil-1', title: 'Où j’en suis cette semaine', messages: 4 },
     { thread_id: 'fil-2', title: 'Pourquoi je stagne', messages: 2 },
   ],
+  // Aucun fil récent par défaut : l'écran s'ouvre vierge, comme avant ce lot.
+  resume: null as string | null,
+};
+
+/** Le circuit que `circuit.create` a produit, tel que la liste le rend maintenant. */
+const CIRCUITS = {
+  circuits: [
+    {
+      id: 3,
+      token: 'jeton-circuit',
+      circuit_id: 'c-abdos',
+      name: 'Abdos express',
+      rounds: 4,
+      round_rest_s: 60,
+      created: '2026-08-25',
+      note: null,
+      exercises: [],
+      url: 'https://cadence.exemple.fr?w=Abdos+express~4~60~Plank:45s:15',
+      estimated_duration_min: 9,
+      exact: false,
+    },
+  ],
+  linkable: true,
 };
 
 interface Call {
@@ -93,7 +116,10 @@ function stub(
     reply?: ChatReply;
     aiEnabled?: boolean;
     chatFails?: boolean;
-    threads?: { threads: { thread_id: string; title: string; messages: number }[] };
+    threads?: {
+      threads: { thread_id: string; title: string; messages: number }[];
+      resume?: string | null;
+    };
     /** Réponse sur mesure, consultée avant tout le reste. */
     custom?: (url: string, init?: RequestInit) => Response | undefined;
   } = {},
@@ -119,6 +145,10 @@ function stub(
         );
       }
       return Promise.resolve(json(200, options.reply ?? REPLY));
+    }
+    if (url.includes('/api/activity/circuits')) {
+      if (init?.method === 'POST') return Promise.resolve(json(201, { id: 9, type: 'HIIT' }));
+      return Promise.resolve(json(200, CIRCUITS));
     }
     if (url.includes('/api/assistant/threads')) {
       return Promise.resolve(json(200, options.threads ?? THREADS));
@@ -637,6 +667,8 @@ const ADDED = {
   summary: 'Pesée de 82,4 kg notée le 08/08/2026.',
   args: { date: '2026-08-08', weight_kg: 82.4 },
   undo: { domain: 'body/weight', row_id: 0, token: 'jeton-pesee' },
+  link: null,
+  resource_id: null,
 };
 
 const PENDING = {
@@ -646,6 +678,20 @@ const PENDING = {
   summary: 'Supprimer une pesée',
   args: { row_id: 0, token: 'jeton-pesee' },
   undo: null,
+  link: null,
+  resource_id: null,
+};
+
+/** Ce que `circuit.create` rend : une séance enregistrée, ouvrable, annulable. */
+const CIRCUIT = {
+  name: 'circuit.create',
+  level: 'add' as const,
+  status: 'done' as const,
+  summary: 'Séance « Abdos express » enregistrée — 4 rounds, 3 exercices, ~9 min.',
+  args: { name: 'Abdos express' },
+  undo: { domain: 'activity/circuits', row_id: 2, token: 'jeton-circuit' },
+  link: 'https://cadence.exemple.fr?w=Abdos+express~4~60~Plank:45s:15',
+  resource_id: 'c-abdos',
 };
 
 describe('actions', () => {
@@ -655,6 +701,42 @@ describe('actions', () => {
     await askSomething();
 
     expect(await screen.findByText(ADDED.summary)).toBeInTheDocument();
+  });
+
+  it('rend le lien du serveur en bouton, jamais en texte à recopier', async () => {
+    // Une adresse tapée par un modèle est du texte non vérifié : le suffixe qui distingue
+    // quinze répétitions de quinze secondes s'y perd en silence.
+    stub({ reply: { ...REPLY, actions: [CIRCUIT] } });
+    renderScreen();
+    await askSomething();
+
+    const open = await screen.findByRole('link', { name: 'Ouvrir cette séance dans Cadence' });
+    expect(open).toHaveAttribute('href', CIRCUIT.link);
+    expect(open).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('garde l’annulation à côté du lien, et la retire une fois annulé', async () => {
+    stub({ reply: { ...REPLY, actions: [CIRCUIT] } });
+    renderScreen();
+    await askSomething();
+
+    expect(await screen.findByRole('button', { name: 'Annuler' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('link', { name: 'Ouvrir cette séance dans Cadence' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it('n’affiche aucun bouton d’ouverture quand l’action n’a pas de lien', async () => {
+    stub({ reply: { ...REPLY, actions: [ADDED] } });
+    renderScreen();
+    await askSomething();
+
+    await screen.findByText(ADDED.summary);
+    expect(screen.queryByRole('link', { name: /Cadence/ })).not.toBeInTheDocument();
   });
 
   it('« Annuler » appelle la route du domaine, pas une route d’assistant', async () => {
@@ -921,5 +1003,112 @@ describe('attente', () => {
     expect(await screen.findByText(REPLY.reply)).toBeInTheDocument();
     // Le tour raté a laissé la place au tour réussi, il n'en reste pas deux.
     expect(screen.queryByRole('button', { name: 'Réessayer' })).toBeNull();
+  });
+});
+
+// ── Ce qu'on retrouve en rouvrant (**D5**) ────────────
+
+describe('reprise et suivi d’une séance', () => {
+  const REPONSE = {
+    thread_id: 'fil-1',
+    title: 'Abdos',
+    created: null,
+    updated: null,
+    messages: [
+      {
+        seq: 0,
+        role: 'user' as const,
+        content: 'fais-moi des abdos',
+        created: null,
+        context: [],
+        actions: [],
+      },
+      {
+        seq: 1,
+        role: 'assistant' as const,
+        content: 'Voilà ta séance.',
+        created: null,
+        context: [],
+        // Tel que le serveur le range : **sans son annulation**, dont le jeton a expiré.
+        actions: [{ ...CIRCUIT, undo: null }],
+      },
+    ],
+  };
+
+  it('rouvre le dernier fil quand le serveur le dit', async () => {
+    // La décision vient du serveur : l'écran n'a aucun écart de temps à mesurer, ce qui
+    // serait un second calcul de date.
+    stub({
+      threads: { ...THREADS, resume: 'fil-1' },
+      custom: (url) =>
+        url.includes('/api/assistant/threads/fil-1') ? json(200, REPONSE) : undefined,
+    });
+    renderScreen();
+
+    expect(await screen.findByText('Voilà ta séance.')).toBeInTheDocument();
+  });
+
+  it('s’ouvre vierge quand aucun fil n’est récent', async () => {
+    stub();
+    renderScreen();
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.url.includes('/api/assistant/threads'))).toBe(true);
+    });
+    expect(screen.queryByText('Voilà ta séance.')).not.toBeInTheDocument();
+  });
+
+  it('garde le lien de la séance en rouvrant le fil', async () => {
+    // Un lien Cadence porte la séance entière : il ne périme pas, contrairement au jeton
+    // d'annulation — que le serveur ne range justement pas.
+    stub({
+      threads: { ...THREADS, resume: 'fil-1' },
+      custom: (url) =>
+        url.includes('/api/assistant/threads/fil-1') ? json(200, REPONSE) : undefined,
+    });
+    renderScreen();
+
+    expect(
+      await screen.findByRole('link', { name: 'Ouvrir cette séance dans Cadence' }),
+    ).toBeInTheDocument();
+    // L'annulation, elle, a disparu : proposer un geste qui rendrait un `409` serait pire
+    // que de ne rien proposer.
+    expect(screen.queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument();
+  });
+
+  it('consigne la séance depuis le fil, durée pré-remplie et corrigeable', async () => {
+    stub({ reply: { ...REPLY, actions: [CIRCUIT] } });
+    renderScreen();
+    await askSomething();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Déclarer Abdos express faite' }),
+    );
+    const field = screen.getByLabelText(/Durée réelle/);
+    expect(field).toHaveValue('9');
+
+    await userEvent.clear(field);
+    await userEvent.type(field, '12');
+    await userEvent.click(screen.getByRole('button', { name: 'Consigner au journal' }));
+
+    await waitFor(() => {
+      const call = calls.find(
+        (item) => item.init?.method === 'POST' && item.url.includes('/circuits/3/done'),
+      );
+      expect(JSON.parse(call?.init?.body as string)).toEqual({ duration_min: 12 });
+    });
+  });
+
+  it('n’offre pas « Fait » quand le circuit a été supprimé depuis', async () => {
+    // Il est retrouvé par son identifiant stable ; absent, le bouton disparaît de lui-même
+    // plutôt que d'échouer à l'appui.
+    stub({
+      reply: { ...REPLY, actions: [{ ...CIRCUIT, resource_id: 'c-disparu' }] },
+    });
+    renderScreen();
+    await askSomething();
+
+    await screen.findByRole('link', { name: 'Ouvrir cette séance dans Cadence' });
+    expect(screen.queryByRole('button', { name: /Déclarer/ })).not.toBeInTheDocument();
   });
 });

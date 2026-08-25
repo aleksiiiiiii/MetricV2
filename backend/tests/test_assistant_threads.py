@@ -325,3 +325,58 @@ def test_renaming_needs_no_api_key(
         ).status_code
         == 200
     )
+
+
+# ── Ce qu'un fil rouvert redonne ──────────────────────
+
+
+def test_a_reopened_thread_keeps_what_the_turn_did(
+    ai_app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """**Le lien d'une séance ne périme pas**, contrairement au jeton d'une ligne.
+
+    Rouvrir un fil pour y retrouver la séance qu'on s'est fait proposer est précisément ce
+    qu'on vient y chercher ; les actions sont donc rangées avec la réponse.
+    """
+    from app.domains.assistant.schemas import ActionReport, UndoRef
+    from app.domains.assistant.service import _read_actions, _render_actions
+
+    report = ActionReport(
+        name="circuit.create",
+        level="add",
+        status="done",
+        summary="Séance « Abdos » enregistrée.",
+        link="https://cadence.exemple.fr?w=Abdos~4~60~Plank:45s:15",
+        resource_id="c-abdos",
+        undo=UndoRef(domain="activity/circuits", row_id=0, token="jeton"),
+    )
+
+    relu = _read_actions(_render_actions([report]))
+
+    assert len(relu) == 1
+    assert relu[0].link == report.link
+    assert relu[0].resource_id == "c-abdos"
+    # Le jeton périme dès que la ligne change : proposer « annuler » trois jours plus tard
+    # rendrait un `409` que rien n'explique.
+    assert relu[0].undo is None
+
+
+def test_a_refused_action_is_not_replayed() -> None:
+    """Elle n'a rien produit. La relire ferait réapparaître un échec passé comme s'il
+    venait d'avoir lieu."""
+    from app.domains.assistant.schemas import ActionReport
+    from app.domains.assistant.service import _render_actions
+
+    refused = ActionReport(name="x.y", level="add", status="refused", summary="Inconnue.")
+
+    assert _render_actions([refused]) == ""
+
+
+def test_a_mangled_actions_cell_costs_its_turn_not_the_thread() -> None:
+    """Le fichier s'ouvre dans un tableur : une cellule JSON coupée en deux y est une
+    possibilité normale, et elle ne doit pas emporter le fil."""
+    from app.domains.assistant.service import _read_actions
+
+    assert _read_actions('[{"name": "circuit.create"') == []
+    assert _read_actions('{"pas": "une liste"}') == []
+    assert _read_actions("   ") == []

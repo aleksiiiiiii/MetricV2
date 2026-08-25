@@ -440,6 +440,7 @@ def test_every_undo_domain_is_a_real_delete_route(ai_app_client: TestClient) -> 
         "activity/runs",
         "activity/workouts",
         "activity/exercises",
+        "activity/circuits",
         "planning/sessions",
     }
     for domain in domains:
@@ -535,3 +536,49 @@ def test_a_value_out_of_range_does_not_pretend_the_field_is_missing() -> None:
     assert "kind" in refusal
     assert "'course'" in refusal, "la valeur possible doit être dite, pas seulement refusée"
     assert " or " not in refusal, "le message est lu par l'utilisateur, et il est français"
+
+
+# ── Ce que le modèle lit d'un argument imbriqué ───────
+
+
+def test_a_nested_argument_is_described_field_by_field() -> None:
+    """**Le trou que `circuit.create` a ouvert.**
+
+    C'est la première action dont un argument est une liste d'objets, et elle était
+    annoncée `exercises (texte, requis)` — une description dont aucun modèle ne peut rien
+    faire. La réponse était juste, l'action refusée, et le message ne disait pas ce qui
+    manquait. Même leçon que le `kind` de `plan.add` : la description que le modèle lit
+    doit venir de la même source que la validation.
+    """
+    from app.domains.assistant import actions as catalogue
+
+    line = next(
+        spec.describe for spec in catalogue.catalogue().values() if spec.name == "circuit.create"
+    )
+
+    assert "liste 1–40 de {" in line
+    assert "rest_s (nombre 0–999" in line
+
+
+def test_a_closed_list_shows_its_values_and_not_the_word_texte() -> None:
+    """Un validateur ne laisse aucune trace dans le schéma JSON. Les neuf groupes
+    musculaires doivent donc être portés par une énumération, sans quoi le modèle envoie
+    « pecs » et se fait refuser sans comprendre."""
+    from app.domains.assistant import actions as catalogue
+
+    line = next(
+        spec.describe for spec in catalogue.catalogue().values() if spec.name == "circuit.create"
+    )
+
+    for group in ("pectoraux", "abdos", "fessiers"):
+        assert f'"{group}"' in line
+
+
+def test_the_exclusive_pair_is_said_where_the_schema_cannot() -> None:
+    """`duration_s` et `reps` s'excluent, et c'est un `model_validator` — invisible dans le
+    schéma. Le libellé de l'action est le seul endroit qui puisse le dire."""
+    from app.domains.assistant import actions as catalogue
+
+    spec = next(s for s in catalogue.catalogue().values() if s.name == "circuit.create")
+
+    assert "ou" in spec.label and "jamais les deux" in spec.label

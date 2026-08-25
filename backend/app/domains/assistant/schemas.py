@@ -155,6 +155,16 @@ class ActionReport(BaseModel):
     #: Les arguments relus, renvoyés pour qu'un `pending` puisse être confirmé tel quel.
     args: dict[str, Any] = Field(default_factory=dict)
     undo: UndoRef | None = None
+    #: Une adresse **hors de l'application**, rendue en bouton et jamais en texte.
+    #:
+    #: C'est ce qui permet à l'assistant de proposer une séance Cadence ouvrable sans que
+    #: le modèle ait jamais à écrire une URL. Une adresse tapée par un modèle est du texte
+    #: non vérifié, avec le suffixe `x` du format en embuscade : quinze répétitions
+    #: deviennent quinze secondes, la séance se lance, et elle est fausse en silence.
+    link: str | None = None
+    #: L'identifiant **stable** de la ligne créée, quand elle en porte un. Il survit à ce
+    #: que `undo.row_id` ne survit pas : une position se décale, un identifiant non.
+    resource_id: str | None = None
 
 
 class ConfirmRequest(BaseModel):
@@ -314,6 +324,13 @@ class ThreadMessage(BaseModel):
     #: sur les réponses écrites avant que la colonne existe — un fil ancien ne ment pas,
     #: il dit qu'il ne sait pas.
     context: list[str] = Field(default_factory=list)
+    #: Ce que ce tour a fait, tel qu'il a été écrit.
+    #:
+    #: **Sans son annulation.** Le jeton d'une ligne périme dès qu'elle change, et proposer
+    #: « annuler » trois jours plus tard mènerait à un `409` que rien n'explique. Ce qui
+    #: reste — la phrase, le lien, l'identifiant — ne périme pas : un lien Cadence porte la
+    #: séance entière, et c'est justement ce qu'on veut retrouver en rouvrant un fil.
+    actions: list[ActionReport] = Field(default_factory=list)
 
 
 class ThreadDetail(BaseModel):
@@ -330,3 +347,15 @@ class ThreadList(BaseModel):
     """Les fils, du plus récemment actif au plus ancien."""
 
     threads: list[ThreadSummary] = Field(default_factory=list)
+    #: Le fil que l'écran doit **rouvrir de lui-même**, ou `null`.
+    #:
+    #: Ouvrir l'assistant deux minutes après l'avoir fermé et retomber sur une page vide,
+    #: c'est perdre le contexte de ce qu'on était en train de faire. Au-delà d'une heure,
+    #: en revanche, on revient pour autre chose — et rouvrir une vieille conversation
+    #: donnerait au modèle un passé qui ne parle plus de rien.
+    #:
+    #: **La décision est prise par le serveur, pas par l'écran.** C'est lui qui tient
+    #: l'heure et le fuseau (`HEAT-32`), et un `Date.now()` côté client serait un second
+    #: calcul de temps — celui que l'invariant « le jour vient du serveur » interdit. Le
+    #: client reçoit un identifiant ou rien : il n'a aucun écart à mesurer.
+    resume: str | None = None

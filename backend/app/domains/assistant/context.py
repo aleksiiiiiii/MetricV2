@@ -540,6 +540,59 @@ async def _exercises(store: FileStore, _today: date) -> list[str]:
     ]
 
 
+async def _cadence_circuits(store: FileStore, _today: date) -> list[str]:
+    """Les séances Cadence enregistrées, **et les noms qui affichent une illustration**.
+
+    Les deux dans la même tranche, et ce n'est pas un fourre-tout : elles répondent à la
+    même question — « de quoi je dispose pour créer ou rejouer une séance ». Les séparer
+    coûterait une passe de plus au modèle, alors que le plafond est de deux.
+
+    ## Pourquoi les 35 noms sont ici
+
+    N'importe quel nom fait tourner une séance dans Cadence. Le nom décide seulement si une
+    **illustration** s'affiche pendant le repos qui précède l'exercice, et la correspondance
+    approximative de l'application est un piège documenté : « Push-Ups » y donne l'image de
+    *Pike Push-ups*, c'est-à-dire un autre mouvement. Un modèle qui invente « Pompes »
+    n'aura simplement aucune image ; un modèle qui écrit « Push-Ups » en aura une fausse.
+
+    La liste vient de `circuit_link.ILLUSTRATED`, jamais recopiée : c'est la règle du
+    catalogue d'actions, et une liste tenue à la main à côté de celle qui fait foi finit
+    par mentir.
+    """
+    from app.domains.activity.circuit_link import ILLUSTRATED
+    from app.domains.activity.service import CircuitService
+
+    view = await CircuitService(store).list()
+
+    lines = ["Séances Cadence enregistrées : aucune"] if not view.circuits else []
+    for circuit in view.circuits:
+        detail = ", ".join(
+            f"{item.name} {item.reps}×"
+            if item.reps is not None
+            else f"{item.name} {item.duration_s}s"
+            for item in circuit.exercises
+        )
+        minutes = f"{circuit.estimated_duration_min:.0f} min"
+        lines.append(
+            f"Séance Cadence « {circuit.name} » (circuit_id={circuit.circuit_id}) — "
+            f"{circuit.rounds} rounds, repos {circuit.round_rest_s}s, "
+            f"{minutes if circuit.exact else '~' + minutes} : {detail}"
+        )
+
+    if not view.linkable:
+        # Le dire au modèle plutôt que de le laisser promettre un lien qui n'existera pas.
+        lines.append(
+            "Adresse de Cadence non réglée : une séance créée maintenant ne sera pas ouvrable "
+            "tant qu'elle n'est pas renseignée dans les réglages."
+        )
+
+    lines.append(
+        "Noms d'exercices qui affichent une illustration dans Cadence (à reprendre "
+        "exactement, tout autre nom fonctionne mais sans image) : " + ", ".join(ILLUSTRATED)
+    )
+    return lines
+
+
 async def _lift_progress(store: FileStore, _today: date) -> list[str]:
     """Charges, écarts et records par exercice — **le trou que ce lot comble**.
 
@@ -899,6 +952,11 @@ SLICES: dict[str, Slice] = {
         _exercises,
         "le catalogue des exercices, avec leur groupe musculaire et leur identifiant "
         "— à demander avant d'ajouter une série",
+    ),
+    "seances_cadence": Slice(
+        _cadence_circuits,
+        "les séances Cadence déjà enregistrées, et les noms d'exercices qui affichent une "
+        "illustration — à demander avant de créer une séance Cadence",
     ),
     "progression_charges": Slice(
         _lift_progress,

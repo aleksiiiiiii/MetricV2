@@ -55,7 +55,12 @@ if TYPE_CHECKING:  # pragma: no cover - annotations seulement, jamais exécuté
     # Les annotations sont des chaînes (`from __future__ import annotations`) : les
     # importer ici donne des types à mypy sans rien charger à l'exécution, donc sans
     # rouvrir le cycle.
-    from app.domains.activity.schemas import ExercisePayload, RunPayload, WorkoutPayload
+    from app.domains.activity.schemas import (
+        CircuitPayload,
+        ExercisePayload,
+        RunPayload,
+        WorkoutPayload,
+    )
     from app.domains.body.schemas import WeightPayload
     from app.domains.hydration.schemas import IntakePayload
     from app.domains.nutrition.schemas import MealPayload
@@ -111,19 +116,80 @@ class Outcome:
 
     summary: str
     undo: Undo | None = None
+    #: Une adresse **hors de l'application**, que l'écran rend en bouton.
+    #:
+    #: Elle existe pour une raison précise : un modèle à qui on demanderait d'écrire une
+    #: URL dans sa réponse en écrirait une plausible. `Pompes:15:20` au lieu de
+    #: `Pompes:15x:20` est la faute la plus fréquente du format de Cadence, et elle est
+    #: **silencieuse** — la séance se lance, elle est simplement fausse. Le modèle nomme
+    #: des exercices ; c'est le service du domaine qui fabrique le lien, et il voyage ici.
+    link: str | None = None
+    #: L'identifiant **stable** de ce qui a été créé, quand la ligne en porte un.
+    #:
+    #: `Undo.row_id` est une **position** dans un fichier, et elle se décale à la première
+    #: suppression. Elle suffit à annuler dans la seconde qui suit ; elle ne suffit pas à
+    #: retrouver la même ligne en rouvrant le fil trois jours plus tard. C'est ce que cet
+    #: identifiant permet — et c'est ce qui rend le bouton « Fait » possible dans le fil.
+    resource_id: str | None = None
 
 
 Runner = Callable[[FileStore, Any], Awaitable[Outcome]]
 
 
-def _field_doc(name: str, schema: dict[str, Any], required: bool) -> str:
+def _resolve(schema: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    """Un `$ref` suivi jusqu'à sa définition, une fois.
+
+    Pydantic sort les sous-modèles et les énumérations dans `$defs` et laisse un `$ref` à
+    leur place. Sans ce déréférencement, un champ typé par une énumération est décrit
+    « texte » alors qu'il n'accepte que neuf valeurs — c'est exactement ce qui a fait
+    échouer `circuit.create` cinq fois : le modèle envoyait « pecs ».
+
+    Une seule passe, et c'est assez : les schémas d'action n'imbriquent pas au-delà.
+    """
+    ref = schema.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
+        return schema
+    return {
+        **defs.get(ref.removeprefix("#/$defs/"), {}),
+        **{k: v for k, v in schema.items() if k != "$ref"},
+    }
+
+
+def _nested_doc(item: dict[str, Any], defs: dict[str, Any]) -> str:
+    """La forme d'un objet contenu dans une liste, champ par champ.
+
+    **Le trou que ce correctif comble.** `circuit.create` est la première action dont un
+    argument est une liste d'objets, et elle était annoncée `exercises (texte, requis)` —
+    une description dont aucun modèle ne peut rien faire. La réponse était bonne, l'action
+    refusée, et le message ne disait pas ce qui manquait.
+    """
+    required = set(item.get("required", ()))
+    fields = ", ".join(
+        _field_doc(name, field, name in required, defs)
+        for name, field in item.get("properties", {}).items()
+        if name not in HIDDEN_ARGS
+    )
+    return "{" + fields + "}"
+
+
+def _field_doc(
+    name: str, schema: dict[str, Any], required: bool, defs: dict[str, Any] | None = None
+) -> str:
     """Un argument, décrit depuis son schéma."""
-    branches = schema.get("anyOf") or [schema]
+    known = defs or {}
+    schema = _resolve(schema, known)
+    branches = [_resolve(b, known) for b in (schema.get("anyOf") or [schema])]
     main = next((b for b in branches if b.get("type") != "null"), branches[0])
     nullable = any(b.get("type") == "null" for b in branches)
 
     enum = main.get("enum")
-    if enum:
+    if main.get("type") == "array":
+        item = _resolve(main.get("items", {}), known)
+        low, high = main.get("minItems"), main.get("maxItems")
+        span = f" {low}–{high}" if low is not None and high is not None else ""
+        shape = _nested_doc(item, known) if item.get("properties") else "texte"
+        kind = f"liste{span} de {shape}"
+    elif enum:
         kind = " | ".join(f'"{value}"' for value in enum)
     elif main.get("format") == "date":
         kind = '"AAAA-MM-JJ"'
@@ -170,9 +236,10 @@ def _args_doc(payload: type[BaseModel]) -> str:
     cette ligne : elle doit venir de la même source que la validation.
     """
     schema = payload.model_json_schema()
+    defs = schema.get("$defs", {})
     required = set(schema.get("required", ()))
     return ", ".join(
-        _field_doc(name, field, name in required)
+        _field_doc(name, field, name in required, defs)
         for name, field in schema.get("properties", {}).items()
         if name not in HIDDEN_ARGS
     )
@@ -317,6 +384,32 @@ async def _create_exercise(store: FileStore, payload: ExercisePayload) -> Outcom
     )
 
 
+async def _create_circuit(store: FileStore, payload: CircuitPayload) -> Outcome:
+    """Enregistre une séance Cadence, et rend son adresse.
+
+    Niveau `AJOUT` : elle n'écrit aucune mesure, seulement un patron, et se défait d'un
+    appui. Le lien part dans `Outcome.link` — jamais dans le texte de la réponse.
+    """
+    from app.domains.activity.service import (
+        CircuitService,
+    )
+
+    circuit = await CircuitService(store).create(payload)
+    minutes = f"{circuit.estimated_duration_min:.0f} min"
+    return Outcome(
+        summary=(
+            f"Séance « {circuit.name} » enregistrée — {circuit.rounds} rounds, "
+            f"{len(circuit.exercises)} exercices, "
+            # Le tilde n'est pas une coquetterie : dès qu'un exercice est en répétitions,
+            # personne ne connaît la durée, et Cadence lui-même préfixe ces totaux.
+            f"{minutes if circuit.exact else '~' + minutes}."
+        ),
+        undo=Undo("activity/circuits", circuit.id, circuit.token),
+        link=circuit.url,
+        resource_id=circuit.circuit_id,
+    )
+
+
 async def _add_plan(store: FileStore, payload: PlanPayload) -> Outcome:
     from app.domains.planning.service import (
         PlanningService,
@@ -389,7 +482,12 @@ def catalogue() -> dict[str, ActionSpec]:
     partir les paquets de domaine dans le mauvais ordre. `@cache` la rend équivalente à
     une constante après le premier appel.
     """
-    from app.domains.activity.schemas import ExercisePayload, RunPayload, WorkoutPayload
+    from app.domains.activity.schemas import (
+        CircuitPayload,
+        ExercisePayload,
+        RunPayload,
+        WorkoutPayload,
+    )
     from app.domains.body.schemas import WeightPayload
     from app.domains.hydration.schemas import IntakePayload
     from app.domains.nutrition.schemas import MealPayload
@@ -447,9 +545,20 @@ def catalogue() -> dict[str, ActionSpec]:
             _create_exercise,
         ),
         _spec(
+            "circuit.create",
+            Level.ADD,
+            "créer une séance Cadence, ouvrable d'un appui. Chaque exercice porte "
+            "duration_s **ou** reps, jamais les deux — c'est ce qui distingue 15 secondes "
+            "de 15 répétitions. Demande d'abord la tranche « seances_cadence » : elle "
+            "donne les noms d'exercices qui affichent une illustration",
+            CircuitPayload,
+            _create_circuit,
+        ),
+        _spec(
             "plan.add",
             Level.ADD,
-            "prévoir une séance",
+            "prévoir une séance — avec circuit_id, la séance Cadence correspondante est "
+            "jointe à la note",
             PlanPayload,
             _add_plan,
         ),

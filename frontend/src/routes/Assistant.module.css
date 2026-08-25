@@ -292,6 +292,36 @@
   flex: none;
 }
 
+/* La séance proposée, rendue par la carte du domaine Activité.
+
+   Pleine largeur de la carte d'action, et en colonne : la carte est faite pour une rangée
+   d'historique, où le texte et les actions se répartissent horizontalement. Dans un fil déjà
+   réduit à 85 % de l'écran, cette répartition ne laisse la place ni au nom ni au bouton. */
+.actionCircuit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  width: 100%;
+}
+
+/* Le lien vers Cadence dans une carte d'action.
+
+   `--tap-lg` parce qu'il **termine** un geste : recevoir une séance et l'ouvrir est la
+   suite naturelle, et c'est la seule action de cette carte qui fait partir l'utilisateur
+   de l'application. Pleine largeur sous 480 px — à 85 % de la largeur du fil, une carte
+   d'action n'a pas la place de poser un bouton et son libellé sur la même ligne que le
+   texte. */
+.actionOpen {
+  min-height: var(--tap-lg);
+  flex: none;
+}
+
+@media (max-width: 479px) {
+  .actionOpen {
+    width: 100%;
+  }
+}
+
 .action_effort {
   border-left-color: var(--effort);
 }
