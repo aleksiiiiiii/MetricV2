@@ -250,6 +250,16 @@ class CircuitExerciseRow(CsvModel):
     duration_s: int = 20
     reps: int = -1
     rest_s: int = 0
+    #: La note libre affichée **sous le nom pendant l'effort** — le 4ᵉ champ du lien
+    #: (`llms.txt` §1). « genoux au sol », « tempo lent », « banc incliné ».
+    #:
+    #: Ce que l'application ne peut pas savoir : la charge, elle, vient de
+    #: `circuit_loads.csv` et se compose au moment de fabriquer le lien. Les deux
+    #: cohabitent sur la même ligne — voir `CircuitService.note_of`.
+    #:
+    #: Colonne en fin d'en-tête : les lignes écrites avant ce lot portent une cellule
+    #: vide, ce qui est une valeur légitime et non un fichier cassé (`STO-04`).
+    note: str = ""
 
 
 class CircuitLoadRow(CsvModel):

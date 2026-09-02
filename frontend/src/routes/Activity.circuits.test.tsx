@@ -52,7 +52,8 @@ const HAUT = {
       duration_s: null,
       reps: 15,
       rest_s: 20,
-      note: null,
+      note: '',
+      link_note: null,
     },
     {
       position: 2,
@@ -61,7 +62,8 @@ const HAUT = {
       duration_s: 45,
       reps: null,
       rest_s: 15,
-      note: null,
+      note: '',
+      link_note: null,
     },
   ],
   url: `${BASE}?w=Haut+du+corps~4~60~Push-Ups+Classic:15x:20~Plank:45s:15`,
@@ -84,7 +86,8 @@ const GAINAGE = {
       duration_s: 60,
       reps: null,
       rest_s: 30,
-      note: null,
+      note: '',
+      link_note: null,
     },
   ],
   url: `${BASE}?w=Gainage~2~60~Plank:60s:30`,
@@ -229,11 +232,11 @@ describe('séances Cadence', () => {
 
     await waitFor(() => {
       const body = JSON.parse(posted('/circuits')?.init?.body as string) as {
-        exercises: { muscle_group: string; duration_s?: number; reps?: number }[];
+        exercises: { muscle_group: string; duration_s?: number; reps?: number; note: string }[];
       };
       // Le sélecteur écrit `duration_s` **ou** `reps` — jamais les deux, jamais `-1`.
       expect(body.exercises).toEqual([
-        { name: 'Plank', muscle_group: 'jambes', duration_s: 30, rest_s: 10 },
+        { name: 'Plank', muscle_group: 'jambes', duration_s: 30, rest_s: 10, note: '' },
       ]);
     });
   });
@@ -255,7 +258,7 @@ describe('séances Cadence', () => {
         exercises: { duration_s?: number; reps?: number }[];
       };
       expect(body.exercises).toEqual([
-        { name: 'Push-Ups Classic', muscle_group: 'abdos', reps: 30, rest_s: 10 },
+        { name: 'Push-Ups Classic', muscle_group: 'abdos', reps: 30, rest_s: 10, note: '' },
       ]);
     });
   });

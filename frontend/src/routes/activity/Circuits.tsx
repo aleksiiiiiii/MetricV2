@@ -386,6 +386,29 @@ export function Circuits() {
                   />
                 </div>
 
+                {/* Le 4ᵉ champ du lien : ce que Cadence affiche sous le nom pendant
+                    l'effort, et sur la carte « PROCHAIN » du repos qui précède
+                    (`llms.txt` §10). Une ligne, pas plus — au-delà, ça pousse le reste
+                    hors de l'écran de quelqu'un qui force, et le serveur refuse.
+
+                    **La charge ne se retape pas ici.** Elle vient de `circuit_loads.csv`
+                    et se joint à la note au moment de fabriquer le lien : l'écrire à la
+                    main la figerait, et elle cesserait de suivre les changements de la
+                    page Charges. */}
+                <Field
+                  // Sans indice, comme « Secondes » et « Repos après » juste au-dessus :
+                  // la carte porte déjà « Exercice 1 », et trois libellés numérotés sur
+                  // cinq qui ne le sont pas se lisent comme une incohérence.
+                  label="Note pendant l’effort"
+                  value={line.note}
+                  maxLength={60}
+                  hint="Ce que Cadence montre sous le nom. La charge s’y ajoute toute seule."
+                  placeholder="genoux au sol, tempo lent…"
+                  onChange={(event) => {
+                    setLine(index, { note: event.target.value });
+                  }}
+                />
+
                 {lines.length > 1 && (
                   <Chip
                     aria-label={`Retirer l’exercice ${String(index + 1)}`}

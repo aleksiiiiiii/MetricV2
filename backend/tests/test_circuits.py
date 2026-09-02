@@ -87,7 +87,9 @@ def test_a_circuit_is_written_across_two_readable_files(
     items = dav.content_of(ITEMS_FILE)
 
     assert circuits.splitlines()[0] == "id,name,rounds,round_rest_s,created,note"
-    assert items.splitlines()[0] == "circuit_id,position,name,muscle_group,duration_s,reps,rest_s"
+    assert items.splitlines()[0] == (
+        "circuit_id,position,name,muscle_group,duration_s,reps,rest_s,note"
+    )
     assert "Haut du corps" in circuits
 
 
@@ -100,8 +102,8 @@ def test_a_timed_exercise_carries_the_sentinel_in_the_file(
 
     lines = dav.content_of(ITEMS_FILE).splitlines()
 
-    assert lines[1].endswith("Push-Ups Classic,pectoraux,20,15,20")  # reps = 15
-    assert lines[2].endswith("Plank,abdos,45,-1,15")  # au temps
+    assert lines[1].endswith("Push-Ups Classic,pectoraux,20,15,20,")  # reps = 15
+    assert lines[2].endswith("Plank,abdos,45,-1,15,")  # au temps
 
 
 def test_the_position_is_written_and_not_deduced_from_the_file_order(

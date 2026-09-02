@@ -67,6 +67,10 @@ function toDrafts(proposal: CircuitProposal): Draft[] {
     mode: item.reps === null ? 'time' : 'reps',
     value: String(item.reps ?? item.duration_s ?? ''),
     rest: String(item.rest_s),
+    // **Le modèle ne propose pas de note.** Elle porte ce que l'application n'a aucun
+    // moyen de savoir — « genoux au sol », « épaule qui tire » — donc lui non plus. Une
+    // note inventée s'afficherait sous le nom pendant l'effort et se croirait.
+    note: '',
   }));
 }
 
@@ -343,6 +347,21 @@ export function Compose() {
                   onChange={(mode) => {
                     edit(index, { mode }, 'mode');
                   }}
+                />
+              </div>
+
+              {/* Le 4ᵉ champ du lien : ce que Cadence affichera sous le nom pendant
+                  l'effort (`llms.txt` §1). La charge, elle, s'y joint toute seule côté
+                  serveur — on ne la retape pas ici, sinon elle cesserait de suivre. */}
+              <div className={styles.composeRow}>
+                <Field
+                  label="Note pendant l’effort"
+                  value={line.note}
+                  maxLength={60}
+                  onChange={(event) => {
+                    edit(index, { note: event.target.value }, 'note');
+                  }}
+                  placeholder="genoux au sol, tempo lent…"
                 />
               </div>
 

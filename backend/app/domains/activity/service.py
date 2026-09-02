@@ -1187,21 +1187,51 @@ class CircuitService:
 
     # ── Conversions ───────────────────────────────────
 
-    @staticmethod
-    def note_of(load: CircuitLoadRow | None) -> str:
-        """La note que le lien porte pour un exercice, d'après sa charge (**C7**).
+    #: Ce qui sépare la charge de la note sur la même ligne. Un point médian, comme partout
+    #: ailleurs dans l'application — deux ponctuations pour la même jointure se
+    #: remarqueraient, et celle-ci s'affiche chez quelqu'un d'autre.
+    NOTE_JOIN = " · "
 
-        **Un seul endroit au monde où « 12 » devient « 12 kg »** : la note du lien et le
-        champ que l'écran affiche sortent d'ici tous les deux. Deux compositions
-        divergeraient, et le symptôme serait un lien qui n'annonce pas ce que la carte dit.
+    #: Longueur au-delà de laquelle la note composée est coupée.
+    #:
+    #: `llms.txt` §11 : « les notes sont courtes : elles s'affichent sur une ligne ». La
+    #: saisie est déjà bornée à 60 ; la **composée** peut la dépasser en y ajoutant la
+    #: charge, et c'est le seul endroit où ça se produit. Couper ici plutôt que laisser
+    #: Cadence pousser le reste hors de l'écran de quelqu'un qui force.
+    NOTE_MAX = 72
 
-        Le poids du corps ne produit **aucune** note : un tabata sans charge n'a rien de
-        plus à dire sous le nom de l'exercice, et une ligne « poids du corps » sur chaque
-        écran de repos serait du bruit qui pousse le reste hors de vue.
+    @classmethod
+    def note_of(cls, load: CircuitLoadRow | None, typed: str = "") -> str:
+        """La note que le lien porte pour un exercice — sa charge **et** ce qu'on a écrit.
+
+        **Un seul endroit au monde où « 12 » devient « 12 kg » et où les deux se joignent.**
+        La note du lien et le champ que l'écran affiche sortent d'ici tous les deux ; deux
+        compositions divergeraient, et le symptôme serait un lien qui n'annonce pas ce que
+        la carte dit.
+
+        ## La charge d'abord, la note ensuite
+
+        La charge est le chiffre qu'on cherche des yeux entre deux séries ; « genoux au
+        sol » se relit une fois et se sait. L'inverse ferait chercher le nombre derrière
+        une phrase, sur un écran qu'on regarde une seconde.
+
+        ## Le poids du corps ne produit aucune note
+
+        Un tabata sans charge n'a rien de plus à dire, et une ligne « poids du corps » sur
+        chaque écran de repos serait du bruit qui pousse le reste hors de vue. La note
+        saisie, elle, s'affiche seule dans ce cas — c'est bien qu'on a voulu l'y mettre.
+
+        **C7 est révisée** : la note n'est plus « jamais saisie ». Elle reste fabriquée
+        ici — le client ne compose toujours aucune URL, l'invariant du §2 tient — mais elle
+        peut porter ce que l'application n'a aucun moyen de savoir.
         """
-        if load is None or load.bodyweight or load.weight_kg is None:
-            return ""
-        return f"{fr(load.weight_kg)} kg"
+        charge = (
+            ""
+            if load is None or load.bodyweight or load.weight_kg is None
+            else f"{fr(load.weight_kg)} kg"
+        )
+        parts = [part for part in (charge, typed.strip()) if part]
+        return cls.NOTE_JOIN.join(parts)[: cls.NOTE_MAX]
 
     @classmethod
     def _to_link(
@@ -1231,7 +1261,7 @@ class CircuitService:
                     duration_s=item.duration_s,
                     reps=item.reps,
                     rest_s=item.rest_s,
-                    note=cls.note_of(found.get(fold(item.name))),
+                    note=cls.note_of(found.get(fold(item.name)), item.note),
                 )
                 for item in items
             ),
@@ -1264,7 +1294,8 @@ class CircuitService:
                     reps=None if item.reps == circuit_link.TIMED else item.reps,
                     name=item.name,
                     rest_s=item.rest_s,
-                    note=self.note_of((loads or {}).get(fold(item.name))) or None,
+                    note=item.note,
+                    link_note=self.note_of((loads or {}).get(fold(item.name)), item.note) or None,
                 )
                 for item in items
             ],
@@ -1292,6 +1323,7 @@ class CircuitService:
                 duration_s=exercise.duration_s or circuit_link.DEFAULT_DURATION_S,
                 reps=circuit_link.TIMED if exercise.reps is None else exercise.reps,
                 rest_s=exercise.rest_s,
+                note=exercise.note.strip(),
             )
             for index, exercise in enumerate(payload.exercises, start=1)
         ]

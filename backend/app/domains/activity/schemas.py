@@ -841,6 +841,14 @@ CircuitDurationS = Annotated[int, Field(ge=_link.DURATION_S[0], le=_link.DURATIO
 CircuitReps = Annotated[int, Field(ge=_link.REPS[0], le=_link.REPS[1])]
 CircuitRestS = Annotated[int, Field(ge=_link.REST_S[0], le=_link.REST_S[1])]
 
+#: La note d'un exercice, telle qu'elle tiendra sous son nom pendant l'effort.
+#:
+#: Soixante caractères et non les 500 de `Note` : `llms.txt` §11 le demande — « les notes
+#: sont courtes : elles s'affichent sur une ligne, sous le nom ». Une note qui déborde ne
+#: se tronque pas dans Cadence, elle pousse le reste hors de l'écran de quelqu'un qui est
+#: en train de forcer. La borne est ici parce que c'est ici qu'on peut encore la refuser.
+CircuitNote = Annotated[str, Field(max_length=60)]
+
 
 class CircuitExercisePayload(BaseModel):
     """Un exercice d'un circuit, tel qu'on le saisit.
@@ -869,6 +877,13 @@ class CircuitExercisePayload(BaseModel):
     duration_s: CircuitDurationS | None = None
     reps: CircuitReps | None = None
     rest_s: CircuitRestS = 0
+    #: Ce qu'on veut lire sous le nom pendant l'effort — « genoux au sol », « tempo lent ».
+    #:
+    #: **C7 est révisée par ce lot** : la note du lien n'est plus « fabriquée par le
+    #: serveur, jamais saisie ». Elle reste fabriquée par le serveur — le client ne compose
+    #: toujours aucune URL, l'invariant tient — mais elle peut désormais porter ce que
+    #: l'application n'a aucun moyen de savoir. La charge s'y ajoute toute seule.
+    note: CircuitNote = ""
 
     @model_validator(mode="after")
     def exactly_one_length(self) -> CircuitExercisePayload:
@@ -918,13 +933,17 @@ class CircuitExercise(BaseModel):
     duration_s: int | None = None
     reps: int | None = None
     rest_s: int
-    #: Ce que le **lien** porte en 4ᵉ champ pour cet exercice — sa charge, mise en forme
-    #: (**C7**). `null` au poids du corps et tant que rien n'est déclaré.
+    #: La note **saisie** sur cet exercice, telle qu'elle se corrige. Vide, pas `null` :
+    #: c'est un champ de formulaire qui fait l'aller-retour.
+    note: str = ""
+    #: Ce que le **lien** porte réellement en 4ᵉ champ — la charge et la note, composées
+    #: (**C7**). `null` quand il n'y a ni l'une ni l'autre.
     #:
     #: Servi plutôt que recomposé par l'écran : il n'y a qu'un endroit au monde où « 12 »
-    #: devient « 12 kg », et c'est celui qui fabrique le lien. Deux compositions
-    #: divergeraient, et le symptôme serait une carte qui annonce autre chose que le lien.
-    note: str | None = None
+    #: devient « 12 kg » et où les deux se joignent, et c'est celui qui fabrique le lien.
+    #: Deux compositions divergeraient, et le symptôme serait une carte qui annonce autre
+    #: chose que ce que Cadence affichera.
+    link_note: str | None = None
 
 
 class Circuit(BaseModel):

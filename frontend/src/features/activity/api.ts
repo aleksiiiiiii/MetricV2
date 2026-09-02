@@ -447,15 +447,17 @@ export interface CircuitExercise {
   duration_s: number | null;
   reps: number | null;
   rest_s: number;
+  /** Ce qui a été **saisi** sur cet exercice. Vide et jamais `null` : c'est un champ. */
+  note: string;
   /**
-   * Ce que le **lien** porte en 4ᵉ champ pour cet exercice — sa charge, déjà mise en forme.
+   * Ce que le **lien** porte en 4ᵉ champ — la charge et la note, déjà composées.
    *
-   * `null` au poids du corps et tant que rien n'est déclaré. Servi plutôt que recomposé
-   * ici : il n'y a qu'un endroit au monde où « 12 » devient « 12 kg », et c'est celui qui
-   * fabrique le lien. Deux compositions divergeraient, et la carte annoncerait autre chose
-   * que ce que la séance affichera.
+   * `null` quand il n'y a ni l'une ni l'autre. Servi plutôt que recomposé
+   * ici : il n'y a qu'un endroit au monde où « 12 » devient « 12 kg » et où les deux se
+   * joignent, et c'est celui qui fabrique le lien. Deux compositions divergeraient, et la
+   * carte annoncerait autre chose que ce que la séance affichera.
    */
-  note: string | null;
+  link_note: string | null;
 }
 
 export interface Circuit {
@@ -514,6 +516,8 @@ export interface CircuitExercisePayload {
   duration_s?: number;
   reps?: number;
   rest_s: number;
+  /** Ce qu'on veut lire sous le nom pendant l'effort. Le serveur y joint la charge. */
+  note: string;
 }
 
 export interface CircuitPayload {

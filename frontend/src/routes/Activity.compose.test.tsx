@@ -130,6 +130,31 @@ describe('composition assistée', () => {
     expect(calls.some((call) => call.url.includes('/circuits/exercises?q=pl'))).toBe(true);
   });
 
+  it('laisse écrire ce que Cadence affichera sous le nom', async () => {
+    // Le 4ᵉ champ du lien (`llms.txt` §1). Il porte ce que l'application n'a aucun moyen
+    // de savoir — et le modèle non plus, c'est pourquoi il arrive vide.
+    const user = userEvent.setup();
+    stub();
+    renderCompose();
+
+    await propose(user);
+    const note = screen.getAllByLabelText(/Note pendant l’effort/)[0];
+    expect(note).toHaveValue('');
+
+    await user.type(note as HTMLElement, 'genoux au sol');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la séance' }));
+
+    await waitFor(() => {
+      const call = writes().find((entry) => entry.url === '/api/activity/circuits');
+      const body = JSON.parse(call?.init?.body as string) as {
+        exercises: { note: string }[];
+      };
+      expect(body.exercises[0]?.note).toBe('genoux au sol');
+      // La charge ne se retape pas : le serveur la joint au moment de fabriquer le lien.
+      expect(body.exercises[0]?.note).not.toMatch(/kg/);
+    });
+  });
+
   it('n’écrit rien tant qu’on n’a pas appuyé sur Enregistrer', async () => {
     // **Le test qui porte la page.** Un circuit à dix exercices se corrige mal une fois
     // enregistré : proposer, ajuster et écrire sont trois temps séparés.

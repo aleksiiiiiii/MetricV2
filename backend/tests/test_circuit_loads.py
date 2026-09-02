@@ -376,7 +376,11 @@ def test_the_link_carries_the_load_as_its_fourth_field(
     view = app_client.get(f"{ACTIVITY}/circuits", headers=auth).json()["circuits"][0]
 
     assert view["url"] == f"{BASE}?w=Haut+du+corps~4~60~Rowing:12x:30:12+kg~Gainage:45s:15"
-    assert [item["note"] for item in view["exercises"]] == ["12 kg", None]
+    # `link_note` est ce que Cadence affichera ; `note` est ce qui a été saisi, et personne
+    # n'a rien saisi ici. Les confondre ferait recopier « 12 kg » dans le champ de saisie
+    # au premier affichage, et l'enregistrement suivant l'écrirait en dur.
+    assert [item["link_note"] for item in view["exercises"]] == ["12 kg", None]
+    assert [item["note"] for item in view["exercises"]] == ["", ""]
 
 
 def test_bodyweight_adds_nothing_to_the_link(
@@ -522,3 +526,127 @@ def test_the_load_history_is_read_by_its_latest_date_not_its_last_line(
     )
 
     assert card(app_client, auth, "Rowing")["days_since_change"] == 3
+
+
+# ── 10. La note saisie, 4ᵉ champ du lien (`llms.txt` §1) ──
+#
+# **C7 est révisée par ce lot.** La note n'est plus « fabriquée par le serveur, jamais
+# saisie » : elle reste fabriquée ici — le client ne compose toujours aucune URL — mais
+# elle peut porter ce que l'application n'a aucun moyen de savoir, « genoux au sol »,
+# « tempo lent ». La charge s'y ajoute toute seule.
+
+
+def created(client: TestClient, auth: dict[str, str], **exercise: Any) -> Any:
+    """Un circuit d'un seul exercice, avec ce qu'on veut dessus."""
+    body = {
+        "name": "Haut du corps",
+        "rounds": 4,
+        "round_rest_s": 60,
+        "exercises": [
+            {"name": "Rowing", "muscle_group": "dos", "reps": 12, "rest_s": 30, **exercise}
+        ],
+    }
+    response = client.post(f"{ACTIVITY}/circuits", json=body, headers=auth)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_a_typed_note_reaches_the_fourth_field_of_the_link(
+    app_client: TestClient, auth: dict[str, str], linked: None
+) -> None:
+    """Ce que l'application n'a aucun moyen de savoir : « genoux au sol » ne se déduit
+    d'aucune donnée, et c'est pourtant ce qu'on veut lire sous le nom pendant l'effort."""
+    view = created(app_client, auth, note="genoux au sol")
+
+    assert view["url"] == f"{BASE}?w=Haut+du+corps~4~60~Rowing:12x:30:genoux+au+sol"
+    assert view["exercises"][0]["note"] == "genoux au sol"
+    assert view["exercises"][0]["link_note"] == "genoux au sol"
+
+
+def test_the_load_comes_first_and_the_note_follows(
+    app_client: TestClient, auth: dict[str, str], linked: None
+) -> None:
+    """**Les deux sur la même ligne, la charge devant.**
+
+    La charge est le chiffre qu'on cherche des yeux entre deux séries ; « tempo lent » se
+    relit une fois et se sait. L'inverse ferait chercher le nombre derrière une phrase, sur
+    un écran qu'on regarde une seconde.
+    """
+    created(app_client, auth, note="tempo lent")
+    declare(app_client, auth, name="Rowing", weight_kg=12)
+
+    view = app_client.get(f"{ACTIVITY}/circuits", headers=auth).json()["circuits"][0]
+
+    assert view["exercises"][0]["link_note"] == "12 kg · tempo lent"
+    # Le champ de saisie ne porte **que** ce qui a été saisi : y recopier la charge la
+    # ferait écrire en dur au prochain enregistrement, et elle cesserait de suivre.
+    assert view["exercises"][0]["note"] == "tempo lent"
+
+
+def test_a_note_survives_a_correction_of_the_circuit(
+    app_client: TestClient, auth: dict[str, str], linked: None
+) -> None:
+    """Les exercices sont remplacés en bloc à la correction : la note doit faire
+    l'aller-retour comme le reste, sinon corriger un repos effacerait ce qu'on avait
+    écrit sur chaque ligne."""
+    view = created(app_client, auth, note="genoux au sol")
+
+    response = app_client.patch(
+        f"{ACTIVITY}/circuits/{view['id']}",
+        json={
+            "name": "Haut du corps",
+            "rounds": 5,
+            "round_rest_s": 60,
+            "exercises": [
+                {
+                    "name": item["name"],
+                    "muscle_group": item["muscle_group"],
+                    "reps": item["reps"],
+                    "rest_s": item["rest_s"],
+                    "note": item["note"],
+                }
+                for item in view["exercises"]
+            ],
+        },
+        headers={**auth, "If-Match": view["token"]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["exercises"][0]["note"] == "genoux au sol"
+
+
+def test_a_note_too_long_for_one_line_is_refused(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """`llms.txt` §11 : « les notes sont courtes : elles s'affichent sur une ligne ». Une
+    note qui déborde ne se tronque pas dans Cadence — elle pousse le reste hors de l'écran
+    de quelqu'un qui est en train de forcer. La borne est ici parce que c'est ici qu'on
+    peut encore la refuser."""
+    response = app_client.post(
+        f"{ACTIVITY}/circuits",
+        json={
+            "name": "Haut du corps",
+            "rounds": 4,
+            "round_rest_s": 60,
+            "exercises": [{"name": "Rowing", "muscle_group": "dos", "reps": 12, "note": "x" * 61}],
+        },
+        headers=auth,
+    )
+
+    assert response.status_code == 422
+
+
+def test_a_pasted_link_still_ignores_the_note(
+    app_client: TestClient, auth: dict[str, str], linked: None
+) -> None:
+    """**C8 tient.** Une note relue peut être celle que le serveur a composée — « 12 kg » —
+    et la réimporter comme note saisie l'écrirait en dur, puis la doublerait au prochain
+    lien. Elle est ignorée, comme avant ce lot."""
+    response = app_client.post(
+        f"{ACTIVITY}/circuits/import",
+        json={"url": f"{BASE}?w=Test~3~45~Rowing:12x:30:12+kg"},
+        headers=auth,
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["exercises"][0]["note"] == ""

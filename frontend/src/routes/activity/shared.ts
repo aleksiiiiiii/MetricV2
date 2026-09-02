@@ -120,6 +120,8 @@ export interface Draft {
   mode: 'time' | 'reps';
   value: string;
   rest: string;
+  /** Ce qu'on veut lire sous le nom pendant l'effort — le 4ᵉ champ du lien Cadence. */
+  note: string;
 }
 
 export const NEW_LINE: Draft = {
@@ -128,6 +130,7 @@ export const NEW_LINE: Draft = {
   mode: 'time',
   value: '30',
   rest: '10',
+  note: '',
 };
 
 export const MODES = [
@@ -142,6 +145,10 @@ export function toDrafts(circuit: Circuit): Draft[] {
     mode: item.reps === null ? 'time' : 'reps',
     value: String(item.reps ?? item.duration_s ?? ''),
     rest: String(item.rest_s),
+    // La note **saisie**, jamais celle du lien : `link_note` y joint la charge, et la
+    // recopier dans le champ l'écrirait en dur au prochain enregistrement — elle cesserait
+    // alors de suivre les changements de charge.
+    note: item.note,
   }));
 }
 
@@ -174,6 +181,7 @@ export function toPayload(
       muscle_group: line.muscle_group,
       ...(line.mode === 'time' ? { duration_s: value } : { reps: value }),
       rest_s: whole(line.rest) ?? 0,
+      note: line.note.trim(),
     });
   }
 
