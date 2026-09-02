@@ -27,9 +27,9 @@ TRACKS_FILE = "Metric/settings/heatmap_tracks.csv"
 CADENCES_FILE = "Metric/settings/heatmap_cadences.csv"
 OFF_FILE = "Metric/settings/heatmap_off_days.csv"
 
-EXERCISE_LOG = "Metric/activity/exercise_log.csv"
+SESSION_SETS = "Metric/activity/circuit_session_sets.csv"
 RUNS = "Metric/activity/runs.csv"
-WORKOUTS = "Metric/activity/workouts.csv"
+SESSIONS = "Metric/activity/circuit_sessions.csv"
 HYDRATION = "Metric/hydration/intake_log.csv"
 SUPPLEMENT_LOG = "Metric/supplements/intake_log.csv"
 
@@ -117,11 +117,11 @@ async def test_a_muscle_grid_counts_sets_of_the_filtered_groups(
         f"torse,Torse,activity.muscle_group,pectoraux;épaules,1,1;3;6;10,false,effort,0,true,{today - timedelta(days=30)}\n",
     )
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{today},e1,Développé,pectoraux,80,4,8,\n"
-        f"w1,{today},e2,Élévations,épaules,10,3,12,\n"
-        f"w1,{today},e3,Squat,jambes,120,5,5,\n",
+        SESSION_SETS,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n"
+        f"s1,{today},Développé,pectoraux,4,8\n"
+        f"s1,{today},Élévations,épaules,3,12\n"
+        f"s1,{today},Squat,jambes,5,5\n",
     )
 
     grid = (await GridService(store).grid("torse", window=Range(today, today))).grid
@@ -274,18 +274,22 @@ async def test_a_muscle_cell_lists_its_exercises(store: FileStore, dav: FakeWebD
         f"torse,Torse,activity.muscle_group,pectoraux,1,1;3;6;10,false,effort,0,true,{today}\n",
     )
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{today},e1,Développé couché,pectoraux,80,4,8,\n"
-        f"w1,{today},e3,Squat,jambes,120,5,5,\n",
+        SESSION_SETS,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n"
+        f"s1,{today},Développé couché,pectoraux,4,8\n"
+        f"s1,{today},Squat,jambes,5,5\n",
     )
 
     detail = await GridService(store).day("torse", today)
 
     assert len(detail) == 1
     assert detail[0].label == "Développé couché"
-    assert (detail[0].sets, detail[0].reps, detail[0].weight_kg) == (4, 8, 80)
+    assert (detail[0].sets, detail[0].reps) == (4, 8)
     assert detail[0].unit == "série"
+    # **Aucune charge** (**C4**) : `circuit_session_sets.csv` n'en porte pas, et remonter
+    # celle de `circuit_loads.csv` l'annoncerait comme la charge de ce jour-là — ce
+    # qu'elle n'est pas, puisqu'elle se corrige après coup.
+    assert detail[0].weight_kg is None
 
 
 async def test_a_run_cell_carries_distance_duration_and_pace(
@@ -379,9 +383,9 @@ async def test_a_peri_workout_supplement_is_not_missed_on_a_rest_day(
         f"c1,sup-s1,conditional,trigger=workout,{today - timedelta(days=10)}\n",
     )
     dav.seed(
-        WORKOUTS,
-        "date,type,duration_min,calories,rpe,note,source,id\n"
-        f"{today - timedelta(days=3)},musculation,60,,,,manual,w1\n",
+        SESSIONS,
+        "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n"
+        f"s1,c1,{today - timedelta(days=3)},Haut du corps,4,60,,cadence\n",
     )
 
     grid = (
@@ -413,10 +417,10 @@ async def test_a_weekly_track_reports_its_weeks(store: FileStore, dav: FakeWebDa
         f"id,track_id,type,params,valid_from\nc1,dos,per_week,count=2,{start}\n",
     )
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{start},e1,Tractions,dos,0,4,8,\n"
-        f"w2,{start + timedelta(days=2)},e1,Tractions,dos,0,4,8,\n",
+        SESSION_SETS,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n"
+        f"s1,{start},Tractions,dos,4,8\n"
+        f"s2,{start + timedelta(days=2)},Tractions,dos,4,8\n",
     )
 
     grid = (

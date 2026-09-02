@@ -43,3 +43,23 @@
   line-height: 1.6;
   list-style: disc;
 }
+
+/* La grille de matériel. Elle s'enroule au lieu de défiler comme un `ChipStrip` : ces
+   cases se cochent en plusieurs fois et se relisent d'un coup d'œil, alors qu'une bande
+   qui défile cache la moitié de son contenu et se parcourt une seule fois. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  margin-bottom: var(--s3);
+}
+
+/* Le dépliant du matériel rare, aligné sur les pastilles et non sur son propre cadre.
+   Un `Button` transparent porte les 18 px de rembourrage de tous les boutons ; sans ce
+   décalage, son libellé commence 18 px à droite de la première pastille, et la colonne
+   se lit de travers. Le décalage est ici et non dans `primitives.module.css` : c'est un
+   alignement propre à cette section, pas une variante de bouton. */
+.disclose {
+  margin-left: -18px;
+}

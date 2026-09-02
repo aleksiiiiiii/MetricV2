@@ -17,17 +17,24 @@ Trois familles :
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 
 from app.core.dates import today_local, tz
+from app.domains.activity.models import CircuitExerciseRow, CircuitRow
 from app.domains.activity.schemas import (
     ExerciseEntryPayload,
     ExercisePayload,
     RunPayload,
     WorkoutPayload,
 )
-from app.domains.activity.service import ExerciseService, RunService, WorkoutService
-from app.domains.assistant import context
+from app.domains.activity.service import (
+    CircuitSessionService,
+    ExerciseService,
+    RunService,
+    WorkoutService,
+)
+from app.domains.assistant import context, profile
 from app.domains.assistant.actions import Level, catalogue
 from app.domains.assistant.conversation import Need
 from app.domains.body.schemas import WeightPayload
@@ -70,6 +77,47 @@ async def _seance(
             ],
         )
     )
+
+
+async def _tabata(
+    store: FileStore,
+    jour: date,
+    *,
+    nom: str = "Haut du corps",
+    exercices: Sequence[tuple[str, str]] = (),
+    rounds: int = 4,
+    reps: int = 8,
+    duree: float = 60,
+    rpe: int | None = 7,
+) -> None:
+    """Un circuit **déclaré fait**, écrit par le vrai chemin.
+
+    `_seance` reste au-dessus et sert les deux tranches encore branchées sur l'ancien
+    monde — `progression_charges` et `detail_seances`, que la phase 5 supprimera. Tout ce
+    qui compte une séance lit celui-ci depuis le rebranchement
+    (`docs/refonte-activite.md` §4).
+    """
+    await CircuitSessionService(store).record(
+        CircuitRow(id="c1", name=nom),
+        [
+            CircuitExerciseRow(
+                circuit_id="c1", position=index, name=exo, muscle_group=groupe, reps=reps
+            )
+            for index, (exo, groupe) in enumerate(exercices, start=1)
+        ],
+        day=jour,
+        rounds=rounds,
+        duration_min=duree,
+        rpe=rpe,
+    )
+
+
+async def _materiel(store: FileStore, *valeurs: str) -> None:
+    """Coche du matériel au profil, par le vrai chemin d'écriture."""
+    from app.domains.app_settings.service import SettingsService
+
+    reglages = SettingsService(store)
+    await reglages.update_keys({profile.EQUIPMENT: ",".join(valeurs)}, await reglages.token())
 
 
 async def _rendu(
@@ -179,9 +227,9 @@ async def test_une_course_porte_son_allure_et_sa_cardio(store: FileStore) -> Non
 
 
 async def test_une_seance_porte_son_effort_percu(store: FileStore) -> None:
-    """`WorkoutRow.rpe` se disait « transmis à l'IA » sans l'être."""
-    exercise_id = await _exercice(store, "Tractions", groupe="dos")
-    await _seance(store, HIER, exercise_id, charge=0, series=4, reps=8)
+    """Le RPE se disait « transmis à l'IA » sans l'être. Il l'est, et depuis
+    `circuit_sessions.csv` où la déclaration le pose."""
+    await _tabata(store, HIER, exercices=[("Tractions", "dos")])
 
     assert "effort perçu 7/10" in await _rendu(store, "activites_recentes")
 
@@ -320,42 +368,47 @@ async def test_l_eau_du_jour_part_sans_qu_on_la_demande(store: FileStore) -> Non
     assert "il reste" in rendu
 
 
-async def test_les_exercices_du_jour_partent_avec_leurs_charges(store: FileStore) -> None:
-    """« Les exos » de la demande, et rendus **exactement** comme `detail_seances` les rend.
+async def test_les_exercices_du_jour_partent_avec_leurs_series(store: FileStore) -> None:
+    """« Les exos » de la demande : ce que la séance a contenu, exercice par exercice.
 
-    Deux formulations pour la même chose finiraient par diverger, et un coach lirait deux
-    charges différentes selon la rubrique qu'il regarde.
+    **Sans charge**, et c'est une décision (**C4**) : `circuit_session_sets.csv` n'en porte
+    pas, et aller chercher celle de `circuit_loads.csv` l'annoncerait comme la charge de ce
+    jour-là — or une charge se corrige, une séance passée non.
     """
-    exercise_id = await _exercice(store, "Développé couché")
-    await _seance(store, TODAY, exercise_id, charge=65, series=3, reps=7)
+    await _tabata(store, TODAY, exercices=[("Développé couché", "pectoraux")], rounds=3, reps=7)
 
     rendu = await _aujourdhui(store)
 
-    assert "séance : muscu" in rendu
-    assert "Développé couché 3×7 à 65 kg" in rendu
+    assert "séance : Haut du corps" in rendu
+    assert "Développé couché 3×7" in rendu
 
 
 async def test_une_seance_d_hier_ne_passe_pas_pour_celle_du_jour(store: FileStore) -> None:
     """Sans le filtre par date, le bloc dirait « aujourd'hui » sur la séance d'avant-hier —
     et un coach conseillerait du repos à quelqu'un qui n'a rien fait."""
-    exercise_id = await _exercice(store, "Squat", "jambes")
-    await _seance(store, HIER, exercise_id, charge=90, series=4, reps=6)
+    await _tabata(store, HIER, exercices=[("Squat", "jambes")])
 
     rendu = await _aujourdhui(store)
 
     assert "Squat" not in rendu
 
 
-async def test_le_poids_du_corps_reste_le_poids_du_corps(store: FileStore) -> None:
-    """`ACT-07` : « 0 » n'est pas une charge nulle. Rendre « 0 kg » inviterait le modèle à
-    conseiller d'augmenter une charge qui n'existe pas."""
-    exercise_id = await _exercice(store, "Tractions", "dos")
-    await _seance(store, TODAY, exercise_id, charge=0, series=4, reps=8)
+async def test_les_exercices_du_jour_ne_portent_aucune_charge(store: FileStore) -> None:
+    """La question « 0 kg ou poids du corps ? » ne se pose plus ici : il n'y a **pas de
+    colonne de charge** dans le monde tabata (**C4**).
 
-    rendu = await _aujourdhui(store)
+    `ACT-07` continue de valoir là où une charge s'écrit — `progression_charges` et
+    `detail_seances` le vérifient encore. Ce qui est vérifié ici est l'autre moitié : que
+    rien ne vienne en poser une pour meubler.
+    """
+    await _tabata(store, TODAY, exercices=[("Tractions", "dos")])
 
-    assert "Tractions 4×8 à poids du corps" in rendu
-    assert "0 kg" not in rendu
+    exercices = next(
+        ligne for ligne in await context.today_lines(store, TODAY) if "exercices" in ligne
+    )
+
+    assert "Tractions 4×8" in exercices
+    assert "kg" not in exercices
 
 
 async def test_le_condense_nomme_demain(store: FileStore) -> None:
@@ -796,19 +849,11 @@ async def test_une_seance_dit_les_groupes_musculaires_travailles(store: FileStor
     C'est une **lecture** : `muscle_group` est une colonne d'`exercise_log`, recopiée du
     catalogue à l'écriture. Les lister ne dérive rien.
     """
-    pec = await _exercice(store, "Développé couché", "pectoraux")
-    tri = await _exercice(store, "Extensions", "triceps")
-    await WorkoutService(store).create(
-        WorkoutPayload(
-            date=HIER,
-            type="muscu",
-            duration_min=45,
-            rpe=7,
-            exercises=[
-                ExerciseEntryPayload(exercise_id=pec, weight_kg=65, sets=3, reps=7),
-                ExerciseEntryPayload(exercise_id=tri, weight_kg=25, sets=3, reps=12),
-            ],
-        )
+    await _tabata(
+        store,
+        HIER,
+        exercices=[("Développé couché", "pectoraux"), ("Extensions", "triceps")],
+        duree=45,
     )
 
     lignes = await context.week_lines(store, TODAY)
@@ -819,19 +864,7 @@ async def test_une_seance_dit_les_groupes_musculaires_travailles(store: FileStor
 async def test_les_groupes_suivent_l_ordre_de_la_seance(store: FileStore) -> None:
     """L'ordre d'apparition plutôt que l'alphabétique : « pectoraux, triceps » dit qu'on a
     poussé avant de finir sur les bras, et un coach lit ça."""
-    jambes = await _exercice(store, "Squat", "jambes")
-    dos = await _exercice(store, "Tractions", "dos")
-    await WorkoutService(store).create(
-        WorkoutPayload(
-            date=HIER,
-            type="muscu",
-            duration_min=50,
-            exercises=[
-                ExerciseEntryPayload(exercise_id=jambes, weight_kg=90, sets=4, reps=6),
-                ExerciseEntryPayload(exercise_id=dos, weight_kg=0, sets=4, reps=8),
-            ],
-        )
-    )
+    await _tabata(store, HIER, exercices=[("Squat", "jambes"), ("Tractions", "dos")], duree=50)
 
     lignes = await context.week_lines(store, TODAY)
 
@@ -839,13 +872,243 @@ async def test_les_groupes_suivent_l_ordre_de_la_seance(store: FileStore) -> Non
 
 
 async def test_une_seance_sans_serie_ne_recoit_pas_un_tiret_vide(store: FileStore) -> None:
-    """Une séance typée sans exercice est une possibilité normale — un footing noté
-    « autre ». Lui coller un « — » suivi de rien serait une ponctuation qui ment."""
-    await WorkoutService(store).create(
-        WorkoutPayload(date=HIER, type="autre", duration_min=30, exercises=[])
-    )
+    """Une séance sans exercice est une possibilité normale — un circuit corrigé à la
+    main, ou vidé de ses lignes. Lui coller un « — » suivi de rien serait une ponctuation
+    qui ment."""
+    await _tabata(store, HIER, nom="Sortie libre", exercices=[], duree=30, rpe=None)
 
     lignes = await context.week_lines(store, TODAY)
 
-    assert any("autre, 30 min" in ligne for ligne in lignes)
+    assert any("Sortie libre, 30 min" in ligne for ligne in lignes)
     assert not any(ligne.rstrip().endswith("—") for ligne in lignes)
+
+
+# ── Le coach sur le monde tabata (§5 bis) ─────────────
+
+
+async def _circuit(store: FileStore, *exercices: tuple[str, str]) -> None:
+    """Un circuit enregistré. **La page Charges — et donc la tranche — ne montre que ce
+    qui est constitutif d'une séance tabata** : sans circuit, un exercice n'a pas de carte,
+    même s'il porte une charge et un historique."""
+    from app.domains.activity.schemas import CircuitExercisePayload, CircuitPayload
+    from app.domains.activity.service import CircuitService
+
+    await CircuitService(store).create(
+        CircuitPayload(
+            name="Haut du corps",
+            rounds=4,
+            round_rest_s=60,
+            exercises=[
+                CircuitExercisePayload(name=nom, muscle_group=groupe, reps=12)
+                for nom, groupe in exercices
+            ],
+        )
+    )
+
+
+async def _charge(store: FileStore, nom: str, kg: float) -> None:
+    """Déclare une charge par le vrai chemin — donc en écrivant au journal (**C2**)."""
+    from app.domains.activity.schemas import LoadPayload
+    from app.domains.activity.service import CircuitLoadService
+
+    await CircuitLoadService(store).create(LoadPayload(name=nom, weight_kg=kg))
+
+
+async def test_la_progression_tabata_dit_la_charge_et_ce_qu_elle_a_tenu(
+    store: FileStore,
+) -> None:
+    """Les deux chiffres qui manquaient : depuis quand la charge n'a pas bougé, et combien
+    de séances elle a tenu. Le constat, pas la conclusion (**R10**)."""
+    await _circuit(store, ("Rowing", "dos"))
+    await _tabata(store, TODAY, exercices=[("Rowing", "dos")])
+    await _charge(store, "Rowing", 12)
+
+    rendu = await _rendu(store, "progression_tabata")
+
+    assert "Rowing : 12 kg" in rendu
+    assert "dernier changement il y a 0 jour(s)" in rendu
+    assert "1 séance(s) tenue(s) depuis" in rendu
+
+
+async def test_la_progression_tabata_n_estime_aucun_maximum(store: FileStore) -> None:
+    """**Ni 1RM ni record**, contrairement à `progression_charges`.
+
+    Un tabata au poids du corps ou à répétitions n'a pas de charge maximale lisible, et
+    l'estimer depuis quinze répétitions à 10 kg serait une valeur inventée que le modèle
+    prendrait au sérieux (§5 bis).
+    """
+    await _circuit(store, ("Rowing", "dos"))
+    await _tabata(store, TODAY, exercices=[("Rowing", "dos")])
+    await _charge(store, "Rowing", 12)
+
+    rendu = await _rendu(store, "progression_tabata")
+
+    assert "1RM" not in rendu
+    assert "record" not in rendu.lower()
+
+
+async def test_la_progression_tabata_porte_les_groupes_negliges(store: FileStore) -> None:
+    """L'autre moitié de la question : quoi travailler, et pas seulement à quelle charge.
+
+    Lus chez `ActivityStats`, où `ACT-16` vit déjà — « jamais travaillé » rend `None` et
+    non un nombre géant, et deux implémentations finiraient par répondre autrement.
+    """
+    await _tabata(store, HIER, exercices=[("Rowing", "dos")])
+
+    rendu = await _rendu(store, "progression_tabata")
+
+    assert "dos : il y a 1 jour(s)" in rendu
+    assert "jambes : jamais travaillé" in rendu
+
+
+async def test_un_exercice_sans_charge_declaree_ne_fait_pas_de_ligne(store: FileStore) -> None:
+    """Une ligne « — » par exercice du catalogue n'apprendrait rien et coûterait des jetons
+    à chaque tour. L'absence de charge se dit une fois, pour toute la tranche."""
+    await _circuit(store, ("Rowing", "dos"))
+    await _tabata(store, TODAY, exercices=[("Rowing", "dos")])
+
+    rendu = await _rendu(store, "progression_tabata")
+
+    assert "Charges de tabata : aucune déclarée" in rendu
+
+
+# ── La tranche cherchée : les noms exacts de Cadence ──
+
+
+async def test_le_catalogue_cadence_ne_se_liste_pas_sans_mot_cle(store: FileStore) -> None:
+    """1324 exercices ne rentrent pas dans une consigne, et un extrait arbitraire ferait
+    croire au modèle qu'il a vu le catalogue. La tranche dit quoi demander."""
+    lines = await context.slices(store, [Need("exercices_cadence")])
+
+    assert len(lines) == 1
+    assert "mot-clé" in lines[0]
+    assert "anglais" in lines[0]
+
+
+async def test_un_mot_cle_rend_les_noms_exacts_du_catalogue(store: FileStore) -> None:
+    """La raison d'être de la tranche : c'est l'orthographe **exacte** qui décide de la
+    démonstration affichée pendant l'effort, et le modèle n'a aucun moyen de la deviner."""
+    lines = await context.slices(store, [Need("exercices_cadence", query="push up")])
+
+    assert len(lines) == 1
+    assert "push-up" in lines[0]
+    # Zone et matériel avec chaque nom : c'est ce qui permet de composer « haut du corps »
+    # ou « je n'ai que des haltères » sans une seconde requête.
+    assert "chest" in lines[0]
+    assert "body weight" in lines[0]
+
+
+async def test_le_francais_ne_trouve_rien_et_la_tranche_le_dit(store: FileStore) -> None:
+    """Le catalogue est en anglais. Traduire mot à mot côté serveur serait une seconde
+    implémentation du rapprochement de Cadence, celle que ce lot s'interdit — alors on le
+    dit au modèle, qui sait traduire."""
+    lines = await context.slices(store, [Need("exercices_cadence", query="pompes")])
+
+    assert len(lines) == 1
+    assert "aucun exercice" in lines[0].lower()
+    # Et surtout : ce n'est pas une impasse. Un nom hors catalogue reste utilisable.
+    assert "sans démonstration" in lines[0]
+
+
+async def test_sans_materiel_declare_la_recherche_ne_filtre_rien(store: FileStore) -> None:
+    """**Rien de déclaré n'est pas « aucun matériel » : c'est « on ne sait pas ».**
+
+    Ce test remplace celui qui promettait l'inverse — « la recherche ne lit aucune donnée
+    de l'utilisateur ». Ce n'est plus vrai depuis le réglage matériel (**R8**), et la
+    signature de `Slice.search` le dit maintenant. Ce qui reste garanti est plus utile :
+    un profil vide ne rétrécit pas le catalogue. Filtrer sur l'ensemble vide ne laisserait
+    que le poids du corps, et l'assistant deviendrait plus pauvre pour n'avoir jamais été
+    renseigné.
+    """
+    lines = await context.slices(store, [Need("exercices_cadence", query="burpee")])
+
+    assert "burpee" in lines[0]
+    assert "limité à ton matériel" not in lines[0]
+
+
+async def test_le_materiel_declare_filtre_la_recherche(store: FileStore) -> None:
+    """La raison d'être du réglage : proposer un développé couché à qui n'a ni banc ni
+    barre est pire que de ne rien proposer (**R8**).
+
+    Le poids du corps est toujours joint — 325 des 1324 exercices — sans quoi cocher
+    « dumbbell » viderait le tabata de sa moitié la plus utile.
+    """
+    await _materiel(store, "dumbbell")
+
+    lines = await context.slices(store, [Need("exercices_cadence", query="press")])
+
+    assert "dumbbell" in lines[0]
+    assert "barbell" not in lines[0]
+    assert "cable" not in lines[0]
+    # Le filtre est **annoncé** : un catalogue rétréci en silence ferait conclure au modèle
+    # que Cadence ne connaît que ça, au lieu de demander une case de plus.
+    assert "limité à ton matériel : dumbbell" in lines[0]
+
+
+async def test_le_poids_du_corps_reste_toujours_faisable(store: FileStore) -> None:
+    """Il ne se coche pas pour être disponible : on l'a sur soi."""
+    await _materiel(store, "dumbbell")
+
+    lines = await context.slices(store, [Need("exercices_cadence", query="push-up")])
+
+    assert "body weight" in lines[0]
+
+
+async def test_rien_avec_son_materiel_ne_se_dit_pas_comme_rien_du_tout(
+    store: FileStore,
+) -> None:
+    """Deux absences, deux réponses.
+
+    « Rien pour ce mot » se corrige en cherchant autrement ; « rien avec ton matériel » se
+    corrige en cochant une case de plus. Les confondre enverrait le modèle chercher un
+    synonyme qui n'existe pas, indéfiniment.
+    """
+    await _materiel(store, "body weight")
+
+    lines = await context.slices(store, [Need("exercices_cadence", query="smith machine")])
+
+    assert "aucun avec le matériel déclaré" in lines[0]
+    assert "Réglages" in lines[0]
+
+
+async def test_une_tranche_cherchee_ne_se_deroule_sur_aucune_periode(store: FileStore) -> None:
+    """Une semaine de recherche n'aurait aucun sens : le catalogue n'est pas daté. Le
+    mot-clé l'emporte, et rien n'est servi sept fois."""
+    lines = await context.slices(
+        store, [Need("exercices_cadence", date(2026, 8, 12), True, "jump rope")]
+    )
+
+    assert len(lines) == 1
+    assert "jump rope" in lines[0]
+
+
+async def test_la_langue_des_noms_est_dite_partout_pareil(store: FileStore) -> None:
+    """**Deux consignes qui se contredisent valent moins qu'une seule.**
+
+    Ce test existe parce que la contradiction a eu lieu : en retirant la liste des 35 noms,
+    la tranche disait « écris-les naturellement, en français si tu veux » pendant que la
+    recherche du catalogue répondait en anglais et rien qu'en anglais. Le modèle lit les
+    deux dans la même consigne.
+
+    La règle tient en une phrase — **noms d'exercices en anglais, tout le reste en
+    français** — et elle est vérifiée aux deux endroits où le modèle la lit : la ligne de
+    l'action, lue à chaque tour, et celle de la tranche, lue au moment de choisir.
+    """
+    from app.domains.assistant.actions import catalogue as actions_catalogue
+
+    action = actions_catalogue()["circuit.create"].describe
+    tranche = context.SLICES["exercices_cadence"].describes
+
+    assert "anglais" in action
+    assert "français" in action
+    assert "anglais" in tranche
+    assert "français" in tranche
+    # La tranche annonce aussi son filtre : la description que le modèle lit doit venir de
+    # la même source que le comportement, sinon elle finit par mentir.
+    assert "matériel" in tranche
+
+    # Et la tranche des séances ne dit plus le contraire.
+    lines = await context.slices(store, [Need("seances_cadence")])
+    naming = next(line for line in lines if line.startswith("Noms d'exercices"))
+    assert "anglais" in naming
+    assert "en français si tu veux" not in naming

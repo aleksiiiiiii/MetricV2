@@ -447,6 +447,15 @@ export interface CircuitExercise {
   duration_s: number | null;
   reps: number | null;
   rest_s: number;
+  /**
+   * Ce que le **lien** porte en 4ᵉ champ pour cet exercice — sa charge, déjà mise en forme.
+   *
+   * `null` au poids du corps et tant que rien n'est déclaré. Servi plutôt que recomposé
+   * ici : il n'y a qu'un endroit au monde où « 12 » devient « 12 kg », et c'est celui qui
+   * fabrique le lien. Deux compositions divergeraient, et la carte annoncerait autre chose
+   * que ce que la séance affichera.
+   */
+  note: string | null;
 }
 
 export interface Circuit {
@@ -475,16 +484,17 @@ export interface Circuit {
 /**
  * Un nom d'exercice proposé à la saisie d'un circuit.
  *
- * **Servi par le serveur, jamais écrit ici.** Les 35 noms de Cadence recopiés dans l'écran
- * divergeraient du jour où l'application en ajoute un, et le symptôme serait une
- * illustration qui n'apparaît pas — sans message, sans erreur, sans rien à chercher.
+ * **Servi par le serveur, jamais écrit ici.** Cadence embarque 1324 démonstrations : les
+ * recopier ici mettrait 70 ko dans le paquet de l'application et les ferait diverger du
+ * jour où elle en ajoute une. Le serveur cherche, l'écran affiche.
  */
 export interface CircuitSuggestion {
   name: string;
-  /** Vrai si ce nom **exact** affiche une illustration dans Cadence. */
-  illustrated: boolean;
   /** Le groupe musculaire quand l'exercice est au catalogue de Metric, `null` sinon. */
   muscle_group: string | null;
+  /** Zone du corps et matériel quand la suggestion vient du catalogue de Cadence. */
+  body_part: string | null;
+  equipment: string | null;
 }
 
 export interface CircuitList {
@@ -517,6 +527,113 @@ export interface CircuitPayload {
 export interface CircuitDonePayload {
   duration_min: number;
   rpe?: number | null;
+}
+
+// ── Charges des exercices de tabata ───────────────────
+
+/**
+ * L'état d'une charge, **décidé par le serveur**.
+ *
+ * Trois valeurs et non deux : « pas encore renseigné » n'est pas « poids du corps ». La
+ * page groupe ses sections sur cette étiquette ; la déduire d'un `weight_kg` à `null`
+ * reviendrait à tenir ici une règle qui vit là-bas.
+ */
+export type LoadState = 'unset' | 'bodyweight' | 'weighted';
+
+/** Un exercice **proposé** par la composition assistée — ajustable, jamais écrit. */
+export interface ProposedCircuitExercise {
+  name: string;
+  muscle_group: string;
+  duration_s: number | null;
+  reps: number | null;
+  rest_s: number;
+  /**
+   * Vrai quand le nom est exactement celui d'un exercice du catalogue Cadence, donc quand
+   * une démonstration s'affichera pendant l'effort.
+   *
+   * Faux **n'est pas une erreur** : un nom hors catalogue reste valide et la séance
+   * tourne. C'est l'écran qui le dit, pour qu'on choisisse de corriger ou non.
+   */
+  illustrated: boolean;
+}
+
+export interface CircuitProposal {
+  name: string;
+  rounds: number;
+  round_rest_s: number;
+  exercises: ProposedCircuitExercise[];
+  /** Ce sur quoi la proposition s'appuie — matériel pris en compte, groupes les plus anciens. */
+  basis: string[];
+  /** Exercices écartés à la relecture, et pourquoi. */
+  dropped: string[];
+}
+
+export interface Load {
+  /**
+   * `null` tant qu'aucune charge n'a été déclarée : il n'y a alors **aucune ligne**, donc
+   * ni position ni jeton. C'est ce couple à `null` qui dit à l'écran de créer plutôt que
+   * de corriger.
+   */
+  id: number | null;
+  token: string | null;
+  name: string;
+  state: LoadState;
+  weight_kg: number | null;
+  updated: string | null;
+  /** Nombre de séances tabata qui emploient cet exercice. */
+  circuits: number;
+  /**
+   * Jours depuis le dernier **changement** de charge, lu au journal des décisions.
+   *
+   * `null` quand le journal ne porte rien — jamais `0`, qui voudrait dire « changée
+   * aujourd'hui ».
+   */
+  days_since_change: number | null;
+  /**
+   * Séances tenues à cette charge depuis ce changement.
+   *
+   * `0` est une mesure : « montée il y a trois jours, aucune séance depuis ». C'est `null`
+   * qui dit qu'il n'y a rien depuis quoi compter.
+   */
+  sessions_since: number | null;
+}
+
+export interface LoadList {
+  loads: Load[];
+  /** Le pas des boutons plus et moins, servi plutôt que codé ici. */
+  step_kg: number;
+}
+
+export interface LoadPoint {
+  date: string;
+  /**
+   * `null` quand ce point est un passage au poids du corps : la courbe s'y **interrompt**
+   * plutôt que de retomber à zéro, qui serait une charge nulle.
+   */
+  weight_kg: number | null;
+}
+
+export interface LoadDay {
+  date: string;
+  /** Séances de ce jour portant cet exercice. Zéro est une mesure, pas une absence. */
+  count: number;
+}
+
+export interface LoadDetail {
+  name: string;
+  state: LoadState;
+  weight_kg: number | null;
+  /** Les décisions de charge, dans l'ordre. Vient du journal des changements. */
+  history: LoadPoint[];
+  /** **Exactement 30 entrées**, la dernière étant le jour du serveur. */
+  sessions: LoadDay[];
+  circuits: string[];
+}
+
+export interface LoadPayload {
+  name: string;
+  weight_kg?: number;
+  bodyweight?: boolean;
 }
 
 export const activityApi = {
@@ -555,7 +672,20 @@ export const activityApi = {
       headers: guard(token),
     }),
   circuits: () => request<CircuitList>('/api/activity/circuits'),
-  circuitExercises: () => request<CircuitSuggestion[]>('/api/activity/circuits/exercises'),
+  circuitExercises: (query = '') =>
+    request<CircuitSuggestion[]>(`/api/activity/circuits/exercises?q=${encodeURIComponent(query)}`),
+
+  loads: () => request<LoadList>('/api/activity/loads'),
+  loadDetail: (name: string) =>
+    request<LoadDetail>(`/api/activity/loads/detail?name=${encodeURIComponent(name)}`),
+  createLoad: (payload: LoadPayload) =>
+    request<Load>('/api/activity/loads', { method: 'POST', body: payload }),
+  updateLoad: (id: number, token: string, payload: LoadPayload) =>
+    request<Load>(`/api/activity/loads/${id}`, {
+      method: 'PATCH',
+      headers: guard(token),
+      body: payload,
+    }),
   createCircuit: (payload: CircuitPayload) =>
     request<Circuit>('/api/activity/circuits', { method: 'POST', body: payload }),
   importCircuit: (url: string) =>
@@ -570,6 +700,17 @@ export const activityApi = {
     request<undefined>(`/api/activity/circuits/${id}`, {
       method: 'DELETE',
       headers: guard(token),
+    }),
+  /**
+   * Une phrase → un circuit **proposé**. N'écrit rien : c'est `createCircuit` qui écrit.
+   *
+   * Le matériel possédé, les contraintes et les groupes négligés partent avec la demande
+   * côté serveur — l'écran n'a rien à leur sujet à envoyer, ni à tenir.
+   */
+  composeCircuit: (wish: string) =>
+    request<CircuitProposal>('/api/activity/circuits/propose', {
+      method: 'POST',
+      body: { wish },
     }),
   completeCircuit: (id: number, payload: CircuitDonePayload) =>
     request<Workout>(`/api/activity/circuits/${id}/done`, { method: 'POST', body: payload }),

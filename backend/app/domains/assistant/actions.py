@@ -549,8 +549,10 @@ def catalogue() -> dict[str, ActionSpec]:
             Level.ADD,
             "créer une séance Cadence, ouvrable d'un appui. Chaque exercice porte "
             "duration_s **ou** reps, jamais les deux — c'est ce qui distingue 15 secondes "
-            "de 15 répétitions. Demande d'abord la tranche « seances_cadence » : elle "
-            "donne les noms d'exercices qui affichent une illustration",
+            "de 15 répétitions. **Les `name` des exercices s'écrivent en anglais**, repris "
+            "mot pour mot du catalogue : demande « exercices_cadence:<mot-clé anglais> » "
+            "avant, c'est cette orthographe qui décide de la démonstration affichée pendant "
+            "l'effort. Le `name` de la séance, lui, reste en français",
             CircuitPayload,
             _create_circuit,
         ),

@@ -5,6 +5,8 @@ import { Shell } from '@/app/Shell';
 import { Activity } from '@/routes/Activity';
 import { Catalogue } from '@/routes/activity/Catalogue';
 import { Circuits } from '@/routes/activity/Circuits';
+import { Compose } from '@/routes/activity/Compose';
+import { Loads } from '@/routes/activity/Loads';
 import { Run } from '@/routes/activity/Run';
 import { Runs } from '@/routes/activity/Runs';
 import { Stats } from '@/routes/activity/Stats';
@@ -54,6 +56,8 @@ export function App() {
             avec la séance ouverte au lieu de quitter l'application. */}
         <Route path="/activite/catalogue" element={<Catalogue />} />
         <Route path="/activite/seances" element={<Circuits />} />
+        <Route path="/activite/creer" element={<Compose />} />
+        <Route path="/activite/charges" element={<Loads />} />
         <Route path="/activite/statistiques" element={<Stats />} />
         {/* Deux adresses, un seul écran. Sans paramètre, c'est la dernière course —
             l'adresse que le plan nomme. Avec, celle qu'on ouvre depuis l'historique :

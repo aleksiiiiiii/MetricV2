@@ -38,7 +38,7 @@ TRACKS_FILE = "Metric/settings/heatmap_tracks.csv"
 CADENCES_FILE = "Metric/settings/heatmap_cadences.csv"
 OFF_FILE = "Metric/settings/heatmap_off_days.csv"
 
-EXERCISE_LOG = "Metric/activity/exercise_log.csv"
+SESSION_SETS = "Metric/activity/circuit_session_sets.csv"
 HYDRATION = "Metric/hydration/intake_log.csv"
 
 TRACK_HEADER = (
@@ -279,10 +279,7 @@ async def test_a_per_week_track_never_paints_a_missed_day(
         "id,track_id,type,params,valid_from\n"
         f"c1,torse,per_week,count=2,{today - timedelta(days=90)}\n",
     )
-    dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n",
-    )
+    dav.seed(SESSION_SETS, "session_id,date,exercise_name,muscle_group,sets,reps\n")
 
     body = get(app_client, auth, f"{GRIDS}/torse")
 
@@ -367,10 +364,10 @@ async def test_a_cell_can_be_opened_to_see_what_composes_it(
     day = today - timedelta(days=2)
     seed_tracks(dav, torso(today - timedelta(days=60)))
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{day},e1,Développé couché,pectoraux,80,4,8,\n"
-        f"w1,{day},e2,Écarté,pectoraux,20,3,12,léger\n",
+        SESSION_SETS,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n"
+        f"s1,{day},Développé couché,pectoraux,4,8\n"
+        f"s1,{day},Écarté,pectoraux,3,12\n",
     )
 
     body = get(app_client, auth, f"{GRIDS}/torse/day/{day}")
@@ -382,8 +379,13 @@ async def test_a_cell_can_be_opened_to_see_what_composes_it(
     assert [entry["label"] for entry in body["entries"]] == ["Développé couché", "Écarté"]
     assert body["entries"][0]["sets"] == 4
     assert body["entries"][0]["reps"] == 8
-    assert body["entries"][0]["weight_kg"] == 80
-    assert body["entries"][1]["note"] == "léger"
+    # **Aucune charge** (**C4**) : elle vit dans `circuit_loads.csv`, se corrige, et
+    # l'annoncer ici la ferait passer pour la charge de ce jour-là.
+    assert body["entries"][0]["weight_kg"] is None
+    # **La note par exercice disparaît avec `exercise_log.csv`** : un tabata ne se saisit
+    # pas série par série, il n'y a donc plus de geste où l'écrire. Rendre la note du
+    # circuit à sa place attribuerait le même commentaire à tous ses exercices.
+    assert body["entries"][1]["note"] is None
 
 
 async def test_a_day_without_entries_still_reports_its_state(
@@ -610,10 +612,10 @@ async def test_rebranching_a_track_onto_another_source_is_retroactive(
     today = today_local()
     seed_tracks(dav, torso(today - timedelta(days=60)))
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
+        SESSION_SETS,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n"
         + "".join(
-            f"w{offset},{today - timedelta(days=offset)},e1,Développé,pectoraux,60,4,10,\n"
+            f"s{offset},{today - timedelta(days=offset)},Développé,pectoraux,4,10\n"
             for offset in range(1, 6)
         ),
     )

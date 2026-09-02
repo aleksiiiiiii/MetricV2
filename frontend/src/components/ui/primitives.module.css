@@ -866,3 +866,32 @@
   font-size: var(--t-meta);
   color: var(--ink-mid);
 }
+
+/* L'unité posée dans le champ, à droite de la valeur. Le conteneur porte la position ;
+   le champ garde sa cellule de grille et sa hauteur de cible. */
+.stepperField {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.stepperField > input {
+  width: 100%;
+}
+
+/* La réserve à droite est celle de l'unité. Sans elle, une valeur à quatre chiffres
+   passerait sous « kg » au lieu de s'arrêter avant. */
+.stepperInputWithUnit {
+  padding-right: 30px;
+}
+
+.stepperUnit {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-low);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  pointer-events: none;
+}

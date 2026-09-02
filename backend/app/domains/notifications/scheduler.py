@@ -41,7 +41,7 @@ from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 
 from app.core.dates import now_local
-from app.domains.activity.service import RunService, WorkoutService
+from app.domains.activity.service import CircuitSessionService, RunService
 from app.domains.hydration.service import HydrationService
 from app.domains.notifications.push import PushSender
 from app.domains.notifications.reminders import (
@@ -303,7 +303,12 @@ class ReminderScheduler:
         # Le « réalisé » se compte chez le domaine Activité, comme le fait `PLAN-06` : une
         # course et une séance de musculation comptent toutes deux comme une séance faite.
         runs = [row for row in await RunService(self._store).all() if row.model.date == day]
-        workouts = [row for row in await WorkoutService(self._store).all() if row.model.date == day]
+        # Les séances viennent de `circuit_sessions.csv` depuis le rebranchement, et elles
+        # seules : `workouts.csv` porte encore les mêmes tabatas, et les additionner
+        # ferait croire à deux séances faites là où il y en a une — donc taire un rappel.
+        sessions = [
+            row for row in await CircuitSessionService(self._store).all() if row.model.date == day
+        ]
 
         return DaySnapshot(
             sessions_at=tuple(
@@ -320,7 +325,7 @@ class ReminderScheduler:
             protein_g=repas.protein_g,
             protein_target_g=repas.protein_target_g,
             workouts_planned=len(prevues),
-            workouts_logged=len(runs) + len(workouts),
+            workouts_logged=len(runs) + len(sessions),
         )
 
     # ── Cycle de vie ──────────────────────────────────

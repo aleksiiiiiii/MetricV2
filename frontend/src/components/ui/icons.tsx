@@ -199,3 +199,34 @@ export function IconCheck(props: IconProps) {
     </Svg>
   );
 }
+
+/**
+ * Poids du corps — une silhouette, pas une balance.
+ *
+ * `IconScale` sert déjà à la pesée, où « poids » désigne celui de la personne mesurée.
+ * Ici il désigne l'absence de charge. Deux sens pour un glyphe se paient à l'appui : on
+ * distingue donc le corps qui porte de la balance qui mesure.
+ */
+export function IconBodyweight(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="5" r="2.5" />
+      <path d="M12 8v7" />
+      <path d="M6.5 10.5 12 9l5.5 1.5" />
+      <path d="m9 21 3-6 3 6" />
+    </Svg>
+  );
+}
+
+/** Une charge — l'haltère, pour remettre un chiffre là où il n'y en a plus. */
+export function IconWeight(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 9v6" />
+      <path d="M7 6.5v11" />
+      <path d="M17 6.5v11" />
+      <path d="M20 9v6" />
+      <path d="M7 12h10" />
+    </Svg>
+  );
+}

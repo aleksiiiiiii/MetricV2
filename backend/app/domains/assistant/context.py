@@ -16,12 +16,13 @@ promesse vérifiable à l'écran plutôt que déclarative dans un commentaire.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, NamedTuple
 
 from app.core.dates import now_local, today_local, week_start
 from app.domains.aggregates.service import DashboardService
+from app.domains.assistant import profile
 from app.domains.assistant.conversation import Need
 from app.domains.goals.progress import fr
 from app.domains.goals.service import GoalService, WeeklyInsightService
@@ -31,7 +32,9 @@ if TYPE_CHECKING:  # pragma: no cover - import de typage seulement
     # Même arrangement qu'au lot L14, et pour la même raison : importer quoi que ce soit
     # de `app.domains.planning` exécute le `__init__` du paquet, donc son routeur. Le taux
     # de respect arrive **construit par le routeur**, jamais recalculé (`PLAN-06`).
+    from app.domains.activity.models import CircuitSessionSetRow
     from app.domains.planning.schemas import AdherenceView
+    from app.storage.csv_repo import Row
 
 #: Bilans hebdomadaires rappelés. Deux suffisent à situer une tendance ; au-delà, ils
 #: prennent la place des chiffres qu'ils commentaient.
@@ -257,28 +260,26 @@ async def week_lines(store: FileStore, today: date) -> list[str]:
 
     Aujourd'hui est exclu : `today_lines` le porte déjà, avec ses exercices en prime.
     """
-    from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+    from app.domains.activity.service import CircuitSessionService, RunService
 
     debut = today - timedelta(days=WEEK_BACK)
     lines: list[str] = []
-    entries = [
-        ExerciseService.entry_to_schema(row) for row in await ExerciseService(store).log_entries()
-    ]
+    sets = await CircuitSessionService(store).sets()
 
-    for row in await WorkoutService(store).all():
+    for row in await CircuitSessionService(store).all():
         seance = row.model
         if not debut <= seance.date < today:
             continue
         details = [f"{fr(seance.duration_min)} min"]
         if seance.rpe is not None:
             details.append(f"effort perçu {seance.rpe}/10")
-        # **Ce qu'une séance a travaillé, pas seulement qu'elle a eu lieu.** « muscu,
-        # 45 min » ne dit pas si les jambes ont été touchées cette semaine — or c'est
+        # **Ce qu'une séance a travaillé, pas seulement qu'elle a eu lieu.** « tabata,
+        # 18 min » ne dit pas si les jambes ont été touchées cette semaine — or c'est
         # exactement ce qu'un coach doit savoir avant de proposer la suivante.
-        groupes = _muscles(list(entries), seance.id)
+        groupes = _muscles(_groups_of(sets, seance.session_id))
         travail = f" — {groupes}" if groupes else ""
         lines.append(
-            f"Séance du {seance.date:%d/%m} : {seance.type}, {', '.join(details)}{travail}"
+            f"Séance du {seance.date:%d/%m} : {seance.name}, {', '.join(details)}{travail}"
         )
 
     for sortie in await RunService(store).all():
@@ -386,34 +387,31 @@ async def _training_today(store: FileStore, today: date) -> list[str]:
     que c'est la question suivante — « j'ai fait combien au développé ? » ne doit pas
     coûter une seconde passe le jour même.
     """
-    from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+    from app.domains.activity.service import CircuitSessionService, RunService
 
     lines: list[str] = []
 
-    entries = [
-        ExerciseService.entry_to_schema(row) for row in await ExerciseService(store).log_entries()
-    ]
+    sets = await CircuitSessionService(store).sets()
 
-    for row in await WorkoutService(store).all():
+    for row in await CircuitSessionService(store).all():
         seance = row.model
         if seance.date != today:
             continue
         details = [f"{fr(seance.duration_min)} min"]
         if seance.rpe is not None:
             details.append(f"effort perçu {seance.rpe}/10")
-        groupes = _muscles(list(entries), seance.id)
+        groupes = _muscles(_groups_of(sets, seance.session_id))
         travail = f" — {groupes}" if groupes else ""
-        lines.append(f"Aujourd'hui — séance : {seance.type}, {', '.join(details)}{travail}")
+        lines.append(f"Aujourd'hui — séance : {seance.name}, {', '.join(details)}{travail}")
 
-    # Les séries du jour, rendues **exactement** comme `detail_seances` les rend : deux
-    # formulations pour la même chose finiraient par diverger, et un coach lirait deux
-    # charges différentes selon la rubrique qu'il regarde. `_charge` porte `ACT-07` — « 0 »
-    # est le poids du corps, jamais une absence.
-    du_jour = [entry for entry in entries if entry.date == today]
+    # Les séries du jour : ce que la séance a réellement contenu, exercice par exercice.
+    # **Aucune charge** — `circuit_session_sets.csv` n'en porte pas (**C4**), et aller
+    # chercher la charge courante dans `circuit_loads.csv` l'annoncerait comme celle du
+    # jour, ce qu'elle n'est pas : une charge se corrige, une séance passée non.
+    du_jour = [row.model for row in sets if row.model.date == today]
     if du_jour:
         rendu = " · ".join(
-            f"{entry.exercise_name} {entry.sets}×{entry.reps} à {_charge(entry.weight_kg)}"
-            for entry in sorted(du_jour, key=lambda e: e.id)
+            f"{item.exercise_name} {item.sets}×{_reps(item.reps)}" for item in du_jour
         )
         lines.append(f"Aujourd'hui — exercices : {rendu}")
 
@@ -499,23 +497,48 @@ MAX_SESSIONS = 5
 MAX_SERIES = 6
 
 
-def _muscles(entries: list[object], workout_id: str) -> str:
+def _muscles(groups: Iterable[str]) -> str:
     """Les groupes musculaires d'une séance, dans l'ordre où ils ont été travaillés.
 
-    **C'est une lecture, pas un calcul.** `muscle_group` est une colonne d'`exercise_log`,
-    recopiée du catalogue à l'écriture — trois lecteurs s'en servent déjà plutôt que de
-    remonter au catalogue. Les lister ne dérive donc rien, et « le serveur calcule » n'est
-    pas mis en cause.
+    **C'est une lecture, pas un calcul.** `muscle_group` est une colonne de
+    `circuit_session_sets.csv`, recopiée du circuit à l'écriture. Les lister ne dérive
+    donc rien, et « le serveur calcule » n'est pas mis en cause.
 
     L'ordre d'apparition plutôt que l'alphabétique : « pectoraux, triceps » dit qu'on a
     poussé avant de finir sur les bras, et un coach lit ça.
+
+    Il reçoit les groupes **déjà filtrés** sur leur séance, et ne les cherche plus
+    lui-même : les trois rubriques qui l'appellent lisent la même colonne d'un même
+    fichier, et le rattachement — `session_id` — se lit mieux sur place qu'à travers un
+    `getattr`.
     """
     vus: list[str] = []
-    for entry in entries:
-        groupe = getattr(entry, "muscle_group", "")
-        if getattr(entry, "workout_id", None) == workout_id and groupe and groupe not in vus:
+    for groupe in groups:
+        if groupe and groupe not in vus:
             vus.append(groupe)
     return ", ".join(vus)
+
+
+def _groups_of(sets: Sequence[Row[CircuitSessionSetRow]], session_id: str) -> list[str]:
+    """Les groupes d'une séance, dans l'ordre écrit du fichier.
+
+    Sur un `session_id` vide — une ligne de session corrigée à la main — rien n'est rendu
+    plutôt que toutes les séries orphelines du fichier : c'est la garde de `_items_of`
+    chez les circuits, et pour la même raison.
+    """
+    if not session_id:
+        return []
+    return [row.model.muscle_group for row in sets if row.model.session_id == session_id]
+
+
+def _reps(value: int) -> str:
+    """Les répétitions d'une série, ou « au temps » pour la sentinelle.
+
+    `-1` est une convention de stockage : la faire lire à un modèle lui ferait écrire
+    « moins une répétition » un jour ou l'autre. C'est la règle de l'API — aucune
+    sentinelle ne sort du fichier.
+    """
+    return "au temps" if value < 0 else str(value)
 
 
 def _charge(kg: float) -> str:
@@ -547,19 +570,20 @@ async def _cadence_circuits(store: FileStore, _today: date) -> list[str]:
     même question — « de quoi je dispose pour créer ou rejouer une séance ». Les séparer
     coûterait une passe de plus au modèle, alors que le plafond est de deux.
 
-    ## Pourquoi les 35 noms sont ici
+    ## Pourquoi il n'y a plus de liste de noms ici
 
-    N'importe quel nom fait tourner une séance dans Cadence. Le nom décide seulement si une
-    **illustration** s'affiche pendant le repos qui précède l'exercice, et la correspondance
-    approximative de l'application est un piège documenté : « Push-Ups » y donne l'image de
-    *Pike Push-ups*, c'est-à-dire un autre mouvement. Un modèle qui invente « Pompes »
-    n'aura simplement aucune image ; un modèle qui écrit « Push-Ups » en aura une fausse.
+    Elle en portait 35, les seuls qui affichaient alors une illustration. Cadence en
+    embarque maintenant **1324**, avec un rapprochement qui tolère la casse, les pluriels,
+    les graphies collées et traduit le français mot à mot : « Pompes » y trouve *push-up*,
+    « Gainage » *power point plank*.
 
-    La liste vient de `circuit_link.ILLUSTRATED`, jamais recopiée : c'est la règle du
-    catalogue d'actions, et une liste tenue à la main à côté de celle qui fait foi finit
-    par mentir.
+    Les injecter tous coûterait la fenêtre de contexte pour un gain nul, et en tenir une
+    sélection reviendrait à la liste tenue à la main qui finit par mentir. Ce qui reste est
+    la seule règle qui décide encore de quelque chose : **un nom précis**. En dessous de la
+    moitié des mots reconnus, Cadence n'affiche aucune démonstration plutôt qu'une fausse —
+    donc « fentes marchées » et non « jambes ». Un nom sans correspondance reste valide, la
+    séance se déroule, simplement sans image.
     """
-    from app.domains.activity.circuit_link import ILLUSTRATED
     from app.domains.activity.service import CircuitService
 
     view = await CircuitService(store).list()
@@ -587,8 +611,11 @@ async def _cadence_circuits(store: FileStore, _today: date) -> list[str]:
         )
 
     lines.append(
-        "Noms d'exercices qui affichent une illustration dans Cadence (à reprendre "
-        "exactement, tout autre nom fonctionne mais sans image) : " + ", ".join(ILLUSTRATED)
+        "Noms d'exercices : en **anglais**, repris mot pour mot du catalogue Cadence — "
+        "« push-up », « mountain climber », « jump rope ». C'est cette orthographe qui "
+        "affiche la démonstration, et « exercices_cadence:<mot-clé> » la donne. Le nom de "
+        "la séance et tout ce que tu me dis restent en français. Un nom hors catalogue "
+        "reste utilisable : la séance tourne, simplement sans démonstration."
     )
     return lines
 
@@ -629,6 +656,63 @@ async def _lift_progress(store: FileStore, _today: date) -> list[str]:
             f"« {item.name} » ({item.muscle_group}, exercise_id={item.exercise_id}) : "
             + " — ".join(details or ["jamais chargé"])
         )
+    return lines
+
+
+async def _tabata_progress(store: FileStore, today: date) -> list[str]:
+    """Par exercice de tabata : la charge, depuis quand, et combien de séances tenues.
+
+    ## Ce que cette tranche est, et ce qu'elle n'est pas
+
+    Elle remplacera `progression_charges`, qui vit sur `exercise_log.csv` et disparaîtra
+    avec lui. Elle ne le recopie pas : il n'y a **ni 1RM estimé, ni record, ni écart avec
+    la fois d'avant** (`docs/refonte-activite.md` §5 bis). Un tabata au poids du corps ou
+    à répétitions n'a pas de charge maximale lisible, et l'estimer depuis quinze
+    répétitions à 10 kg serait une valeur inventée que le modèle prendrait au sérieux.
+
+    Ce qu'elle porte à la place, ce sont les deux chiffres qui manquaient : **depuis quand
+    la charge n'a pas bougé**, et **combien de séances elle a tenu**. C'est le constat, pas
+    la conclusion — le modèle dit « trois séances tenues à 10 kg », l'utilisateur décide
+    (**R10**).
+
+    ## Les groupes négligés viennent avec
+
+    Ils répondent à l'autre moitié de la question — quoi travailler, et pas seulement à
+    quelle charge — et ils sont lus chez `ActivityStats`, où la règle `ACT-16` vit déjà.
+    Deux implémentations de « jamais travaillé rend `None` » finiraient par répondre
+    autrement.
+    """
+    from app.domains.activity.service import CircuitLoadService
+    from app.domains.activity.stats import ActivityStats
+
+    lines: list[str] = []
+
+    for load in (await CircuitLoadService(store).list()).loads:
+        if load.state == "unset":
+            # Rien de déclaré : il n'y a aucune charge à commenter, et écrire « — » ferait
+            # une ligne par exercice du catalogue sans rien apprendre.
+            continue
+        charge = "poids du corps" if load.state == "bodyweight" else f"{fr(load.weight_kg or 0)} kg"
+        details: list[str] = []
+        if load.days_since_change is not None:
+            details.append(f"dernier changement il y a {load.days_since_change} jour(s)")
+            # `sessions_since` accompagne toujours `days_since_change` : sans le premier il
+            # n'y a pas de date depuis laquelle compter, et le chiffre seul ne voudrait
+            # rien dire.
+            details.append(f"{load.sessions_since} séance(s) tenue(s) depuis")
+        suite = f" — {', '.join(details)}" if details else ""
+        lines.append(f"{load.name} : {charge}{suite}")
+
+    if not lines:
+        lines.append("Charges de tabata : aucune déclarée")
+
+    negliges = [
+        f"{groupe.muscle_group} : jamais travaillé"
+        if groupe.days_since is None
+        else f"{groupe.muscle_group} : il y a {groupe.days_since} jour(s)"
+        for groupe in (await ActivityStats(store).overview(today, limit=1)).neglected
+    ]
+    lines.append("Groupes par ancienneté de sollicitation — " + " · ".join(negliges))
     return lines
 
 
@@ -781,10 +865,10 @@ async def _activity_recent(store: FileStore, _today: date) -> list[str]:
     à 4'30 avec 140 de moyenne et une course de 8 km à 6'00 avec 165 ne se coachent pas
     pareil, et l'assistant lisait la même ligne pour les deux.
     """
-    from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+    from app.domains.activity.service import CircuitSessionService, RunService
 
     runs = [RunService.to_schema(row) for row in (await RunService(store).all())[-5:]]
-    workouts = (await WorkoutService(store).all())[-5:]
+    sessions = (await CircuitSessionService(store).all())[-5:]
 
     lines: list[str] = []
     for run in runs:
@@ -806,23 +890,20 @@ async def _activity_recent(store: FileStore, _today: date) -> list[str]:
 
     # Les mêmes groupes que le condensé sert pour la semaine : deux rubriques qui
     # décriraient la même séance différemment feraient douter de la bonne.
-    entries = [
-        ExerciseService.entry_to_schema(entry)
-        for entry in await ExerciseService(store).log_entries()
-    ]
+    sets = await CircuitSessionService(store).sets()
 
-    for row in workouts:
+    for row in sessions:
         seance = row.model
-        details = [f"{fr(seance.duration_min)} min"]
+        details = [f"{fr(seance.duration_min)} min", f"{seance.rounds} rounds"]
         if seance.rpe is not None:
             details.append(f"effort perçu {seance.rpe}/10")
-        if seance.calories is not None:
-            details.append(f"{seance.calories} kcal")
-        groupes = _muscles(list(entries), seance.id)
+        groupes = _muscles(_groups_of(sets, seance.session_id))
         travail = f" — {groupes}" if groupes else ""
+        # **Aucun `row_id` ni jeton pour une séance.** Les courses en portent parce que
+        # `run.delete` existe ; rien ne supprime une séance tabata, et annoncer un jeton
+        # pour un geste qui n'a pas d'action inviterait le modèle à l'inventer.
         lines.append(
-            f"Séance du {seance.date:%d/%m/%Y} : {seance.type}, {', '.join(details)}{travail} "
-            f"(row_id={row.index}, token={row.token})"
+            f"Séance du {seance.date:%d/%m/%Y} : {seance.name}, {', '.join(details)}{travail}"
         )
     return lines or ["Activités récentes : aucune"]
 
@@ -939,6 +1020,121 @@ class Slice(NamedTuple):
     #: Une ligne, à la première personne du serveur — « je te donne … ». Elle part telle
     #: quelle dans la consigne, c'est donc elle que le modèle lit pour choisir.
     describes: str
+    #: La variante **cherchée** de la tranche, quand le modèle joint un mot-clé
+    #: (`exercices_cadence:push up`). Sans mot-clé, c'est `load` qui répond — et pour une
+    #: tranche cherchable, il répond en disant quoi demander.
+    #:
+    #: Elle a la signature de `load`, et ce n'était pas le cas : la recherche était
+    #: synchrone et sans `FileStore`, « elle lit un catalogue figé du dépôt, pas les
+    #: données de l'utilisateur ». **Ce n'est plus vrai** depuis le réglage matériel
+    #: (**R8**) : la recherche ne sert que ce qui est faisable avec ce qu'on possède, et
+    #: ça se lit dans le profil. La signature suit, plutôt qu'un accès au store passé en
+    #: contrebande derrière une fonction qui se déclare pure.
+    search: Callable[[FileStore, str], Awaitable[list[str]]] | None = None
+
+
+#: Ce qu'on rend quand la tranche est demandée sans mot-clé. Dire quoi demander plutôt que
+#: servir 1324 noms : c'est la même conduite que la coupe d'une semaine trop longue, qui
+#: finit par « demande un jour précis pour les voir ».
+_ASK_FOR_QUERY = (
+    "Catalogue Cadence : 1324 exercices, trop pour être listés. Joins un mot-clé "
+    "**en anglais** — `exercices_cadence:push up`, `exercices_cadence:mountain climber`. "
+    "Le catalogue est anglais et je ne traduis pas : traduis avant de chercher, puis "
+    "reprends le nom rendu tel quel. Ce que tu me dis, toi, reste en français."
+)
+
+#: Combien de noms une recherche rend au modèle. Vingt, et non les cinquante de l'écran :
+#: une liste qu'on lit à l'œil se parcourt, une liste qui entre dans une consigne se paie
+#: en jetons à chaque tour.
+CADENCE_HITS = 20
+
+#: La valeur du catalogue qui veut dire « sans matériel ». Toujours jointe au filtre : elle
+#: porte 325 des 1324 exercices, et l'omettre viderait le tabata de sa moitié la plus utile.
+BODYWEIGHT = "body weight"
+
+
+async def _cadence_exercises(_store: FileStore, _today: date) -> list[str]:
+    """La tranche sans mot-clé — elle dit quoi demander, elle ne liste rien.
+
+    C'est la moitié qui répond quand `search` n'est pas sollicitée, et elle n'est pas un
+    repli poli : servir un extrait arbitraire des 1324 laisserait croire au modèle qu'il a
+    vu le catalogue.
+    """
+    return [_ASK_FOR_QUERY]
+
+
+async def _owned_equipment(store: FileStore) -> list[str]:
+    """Le matériel déclaré au profil (**R8**), ou rien du tout.
+
+    Rien du tout **n'est pas « aucun matériel »** : c'est « on ne sait pas », et les deux
+    ne se filtrent pas pareil. Un profil vide qui filtrerait sur l'ensemble vide ne
+    laisserait que le poids du corps, sans que rien ne dise pourquoi — l'assistant
+    deviendrait subitement plus pauvre pour n'avoir jamais été renseigné.
+    """
+    from app.domains.app_settings.service import SettingsService
+
+    found, _inconnus = profile.equipment(
+        (await SettingsService(store).all()).get(profile.EQUIPMENT, "")
+    )
+    return found
+
+
+async def _search_cadence_exercises(store: FileStore, query: str) -> list[str]:
+    """Les noms **exacts** du catalogue de Cadence qui correspondent au mot-clé.
+
+    ## Pourquoi cette tranche existe
+
+    Un nom sans correspondance reste valide — la séance se déroule, simplement sans
+    démonstration. Un nom qui correspond **au mauvais exercice** met une mauvaise animation
+    devant quelqu'un en plein effort, et c'est silencieux. Le modèle n'a aucun moyen de
+    distinguer les deux tout seul : cette tranche est ce moyen.
+
+    ## Pourquoi le résultat n'est pas rapproché du français
+
+    `exercise_catalog.search` compare des noms anglais, ceux du catalogue. « pompes » n'y
+    trouve rien, et c'est écrit dans `_ASK_FOR_QUERY` plutôt que corrigé ici : traduire
+    mot à mot côté serveur serait une seconde implémentation du rapprochement de Cadence,
+    celle que `docs/charges.md` §4 s'interdit. Le modèle traduit — c'est ce qu'il sait
+    faire — et le serveur confirme l'orthographe.
+    """
+    from app.domains.activity import exercise_catalog
+
+    # Le poids du corps est **toujours** faisable, quel que soit le profil : ne pas
+    # l'ajouter d'office ferait disparaître la moitié du catalogue tabata — 325 exercices —
+    # pour qui n'a coché que « dumbbell ».
+    possede = await _owned_equipment(store)
+    faisable = {*possede, BODYWEIGHT} if possede else None
+
+    found = [
+        item
+        for item in exercise_catalog.search(query, limit=exercise_catalog.LIMIT)
+        if faisable is None or item.equipment in faisable
+    ][:CADENCE_HITS]
+
+    if not found:
+        # Deux absences, deux réponses. « Rien pour ce mot » se corrige en cherchant
+        # autrement ; « rien avec ton matériel » se corrige en cochant une case de plus, et
+        # confondre les deux enverrait le modèle chercher un synonyme qui n'existe pas.
+        if faisable is not None and exercise_catalog.search(query, limit=1):
+            return [
+                f"Catalogue Cadence : des exercices existent pour « {query} », mais aucun "
+                f"avec le matériel déclaré ({', '.join(possede)}). Propose autre chose, ou "
+                "dis-lui d'ajouter son matériel dans Réglages, section « Ce que je suis »."
+            ]
+        return [
+            f"Catalogue Cadence : aucun exercice pour « {query} ». Cherche en anglais et "
+            "en un mot ou deux. Un nom hors catalogue reste utilisable : la séance tourne, "
+            "sans démonstration."
+        ]
+
+    noms = ", ".join(f"{item.name} ({item.body_part} · {item.equipment})" for item in found)
+    # Le filtre est **annoncé**. Un catalogue rétréci en silence ferait conclure au modèle
+    # que Cadence ne connaît que ça, et il cesserait de chercher là où il aurait dû
+    # demander une case de plus.
+    portee = f" (limité à ton matériel : {', '.join(possede)})" if faisable is not None else ""
+    return [
+        f"Exercices Cadence pour « {query} »{portee} — reprends le nom **exactement** : {noms}",
+    ]
 
 
 #: Les tranches, par nom. **La liste des clés est ce que le modèle a le droit de demander,
@@ -953,15 +1149,31 @@ SLICES: dict[str, Slice] = {
         "le catalogue des exercices, avec leur groupe musculaire et leur identifiant "
         "— à demander avant d'ajouter une série",
     ),
+    "exercices_cadence": Slice(
+        _cadence_exercises,
+        "les noms exacts du catalogue Cadence pour un mot-clé **en anglais** "
+        "(`exercices_cadence:push up`) — à demander avant de créer une séance Cadence. "
+        "Les noms d'exercices s'écrivent en anglais, tout le reste en français. "
+        "Filtré sur le matériel déclaré au profil quand il y en a un, poids du corps "
+        "compris ; je te le dis dans la réponse",
+        search=_search_cadence_exercises,
+    ),
     "seances_cadence": Slice(
         _cadence_circuits,
-        "les séances Cadence déjà enregistrées, et les noms d'exercices qui affichent une "
-        "illustration — à demander avant de créer une séance Cadence",
+        "les séances Cadence déjà enregistrées, et la façon de nommer un exercice "
+        "— à demander avant de créer une séance Cadence",
     ),
     "progression_charges": Slice(
         _lift_progress,
         "par exercice : dernière charge, écart avec la fois d'avant, record, 1RM estimé "
         "et les charges des dernières séances",
+    ),
+    "progression_tabata": Slice(
+        _tabata_progress,
+        "par exercice de tabata : la charge déclarée, depuis quand elle n'a pas bougé et "
+        "combien de séances elle a tenu, plus les groupes par ancienneté de sollicitation "
+        "— à demander avant de conseiller de monter ou de composer une séance. "
+        "Ni 1RM ni record : un tabata n'a pas de charge maximale lisible",
     ),
     "detail_seances": Slice(
         _session_detail,
@@ -1045,6 +1257,12 @@ async def slices(store: FileStore, wanted: list[Need], *, today: date | None = N
     for need in wanted:
         tranche = SLICES.get(need.name)
         if tranche is None:  # pragma: no cover - `read_need` a déjà filtré
+            continue
+
+        # Une tranche cherchée ne se déroule sur aucune période : elle ne lit rien de daté.
+        # Le mot-clé absent retombe volontairement sur `load`, qui dit alors quoi demander.
+        if tranche.search is not None and need.query:
+            lines.extend(await tranche.search(store, need.query))
             continue
 
         rendu: list[str] = []

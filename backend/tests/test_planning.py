@@ -24,7 +24,7 @@ PLANNING = "/api/planning"
 PLAN_FILE = "Metric/planning/plan.csv"
 PLAN_HEADER = "id,date,time,kind,title,duration_min,note,source\n"
 RUNS_FILE = "Metric/activity/runs.csv"
-WORKOUTS_FILE = "Metric/activity/workouts.csv"
+SESSIONS_FILE = "Metric/activity/circuit_sessions.csv"
 
 
 @pytest.fixture
@@ -489,9 +489,9 @@ def test_adherence_counts_a_planned_session_as_honoured_when_the_day_carries_act
     day = today_local()
     write(
         dav,
-        WORKOUTS_FILE,
-        "date,type,duration_min,calories,rpe,note,source,id\n"
-        f"{day.isoformat()},musculation,60,,,,manual,w1\n",
+        SESSIONS_FILE,
+        "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n"
+        f"s1,c1,{day.isoformat()},Haut du corps,4,60,,cadence\n",
     )
     plan(app_client, auth, date=day.isoformat())
 
@@ -511,9 +511,9 @@ def test_adherence_does_not_credit_a_session_on_another_day(
     monday = today_local() - timedelta(days=today_local().weekday())
     write(
         dav,
-        WORKOUTS_FILE,
-        "date,type,duration_min,calories,rpe,note,source,id\n"
-        f"{monday.isoformat()},musculation,60,,,,manual,w1\n",
+        SESSIONS_FILE,
+        "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n"
+        f"s1,c1,{monday.isoformat()},Haut du corps,4,60,,cadence\n",
     )
     plan(app_client, auth, date=(monday + timedelta(days=2)).isoformat())
 
@@ -532,9 +532,9 @@ def test_two_sessions_the_same_day_need_two_activities(
     day = today_local()
     write(
         dav,
-        WORKOUTS_FILE,
-        "date,type,duration_min,calories,rpe,note,source,id\n"
-        f"{day.isoformat()},musculation,60,,,,manual,w1\n",
+        SESSIONS_FILE,
+        "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n"
+        f"s1,c1,{day.isoformat()},Haut du corps,4,60,,cadence\n",
     )
     plan(app_client, auth, date=day.isoformat(), time="08:00")
     plan(app_client, auth, date=day.isoformat(), time="19:00")

@@ -66,6 +66,7 @@ from app.domains.assistant.schemas import (
     ChatReply,
     ChatRequest,
     ConfirmRequest,
+    EquipmentOption,
     MemoryEntry,
     MemoryPayload,
     ProfilePayload,
@@ -332,14 +333,23 @@ class AssistantService:
 
     async def profile(self, *, today: date | None = None) -> ProfileView:
         """Le profil, tel que l'écran le reçoit — âge et lignes de consigne compris."""
+        from app.domains.activity import exercise_catalog
+
         settings = SettingsService(self._store)
         stored = await settings.all()
+        materiel, inconnus = profile.equipment(stored.get(profile.EQUIPMENT, ""))
         return ProfileView(
             height_cm=profile.height_cm(stored.get(profile.HEIGHT, "")),
             birth_year=_int_or_none(stored.get(profile.BIRTH_YEAR, "")),
             training_days=stored.get(profile.TRAINING_DAYS, ""),
-            equipment=stored.get(profile.EQUIPMENT, ""),
+            equipment=materiel,
+            equipment_unknown=inconnus,
+            equipment_catalogue=[
+                EquipmentOption(value=value, common=common)
+                for value, common in exercise_catalog.equipment_options()
+            ],
             preferences=stored.get(profile.PREFERENCES, ""),
+            constraints=stored.get(profile.CONSTRAINTS, ""),
             age=profile.age(stored.get(profile.BIRTH_YEAR, ""), today=today),
             # Publiées avec le profil pour la même raison que le condensé l'est avec la
             # réponse : ce qui part au modèle se vérifie à l'écran, il ne se déclare pas.
@@ -361,8 +371,13 @@ class AssistantService:
                 profile.HEIGHT: "" if payload.height_cm is None else str(payload.height_cm),
                 profile.BIRTH_YEAR: "" if payload.birth_year is None else str(payload.birth_year),
                 profile.TRAINING_DAYS: (payload.training_days or "").strip(),
-                profile.EQUIPMENT: (payload.equipment or "").strip(),
+                # **L'écriture ne garde que le catalogue.** Ce qui n'était pas reconnu à
+                # la lecture — le texte libre d'un profil d'avant la phase 3 — disparaît
+                # au premier enregistrement, et c'est le geste de l'utilisateur qui
+                # l'efface : l'écran le lui a montré, avec les cases à cocher à côté.
+                profile.EQUIPMENT: profile.EQUIPMENT_SEPARATOR.join(payload.equipment or []),
                 profile.PREFERENCES: (payload.preferences or "").strip(),
+                profile.CONSTRAINTS: (payload.constraints or "").strip(),
             },
             token,
         )
@@ -774,7 +789,7 @@ class AssistantService:
 
         available = list(context.SLICES)
 
-        def prompt_for(extra: list[str]) -> str:
+        def prompt_for(extra: list[str], *, final: bool = False) -> str:
             return conversation.build_prompt(
                 question=request.question,
                 context=facts + extra,
@@ -784,6 +799,10 @@ class AssistantService:
                 actions=catalogue.describe_catalogue(),
                 slices=context.describe_slices(),
                 naming=opening,
+                # `final` à la seconde passe : sans lui, le modèle relit une consigne qui
+                # promet d'aller chercher une tranche de plus, redemande, et sa réponse
+                # d'attente — « je vérifie, puis je crée » — est celle qui s'affiche.
+                final=final,
             )
 
         async def consult(prompt: str, *, assured: bool) -> dict[str, Any]:
@@ -851,7 +870,7 @@ class AssistantService:
             # ici — et c'est aussi ce qui fait que la question la plus lente de toutes est
             # celle qui se diffuse à coup sûr.
             payload = await consult(
-                prompt_for(await context.slices(self._store, need, today=current)),
+                prompt_for(await context.slices(self._store, need, today=current), final=True),
                 assured=True,
             )
 

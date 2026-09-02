@@ -39,6 +39,27 @@ EXERCISE_LOG = "activity/exercise_log.csv"
 CIRCUITS = "activity/circuits.csv"
 CIRCUIT_EXERCISES = "activity/circuit_exercises.csv"
 
+#: La charge de chaque exercice de tabata, et le journal de ses changements (**C1**,
+#: **C2**). Deux fichiers, pour la raison qui les sépare : le premier dit ce qu'on charge
+#: **aujourd'hui** et se corrige, le second dit ce qu'on a décidé et **ne se corrige
+#: jamais**. Les mélanger ferait porter à une même ligne deux sens selon la date.
+CIRCUIT_LOADS = "activity/circuit_loads.csv"
+CIRCUIT_LOAD_LOG = "activity/circuit_load_log.csv"
+
+#: Ce qu'une séance tabata a **eu lieu** — le circuit joué, sa date, sa durée — et les
+#: séries qu'elle a produites, par groupe musculaire (`docs/refonte-activite.md` §3).
+#:
+#: Le pendant de `circuits.csv`, et la raison de la paire : un circuit est un patron qui
+#: se rejoue, une session est une mesure qui ne se rejoue pas. C'est la même séparation
+#: que `CIRCUIT_LOADS` et `CIRCUIT_LOAD_LOG` ci-dessus, pour la même raison — un fichier
+#: dont une ligne veut dire deux choses selon la date est un fichier qu'on ne relit pas.
+#:
+#: Deux fichiers plutôt qu'une liste de groupes sérialisée dans une cellule de sessions :
+#: l'assiduité compte des **séries par groupe et par jour**, et une cellule à rallonge
+#: perdrait ce compte tout en cessant d'être lisible dans un tableur (`STO-02`).
+CIRCUIT_SESSIONS = "activity/circuit_sessions.csv"
+CIRCUIT_SESSION_SETS = "activity/circuit_session_sets.csv"
+
 MEALS = "nutrition/meals.csv"
 MEAL_FAVORITES = "nutrition/favorites.csv"
 MEAL_PHOTOS = "nutrition/photos"

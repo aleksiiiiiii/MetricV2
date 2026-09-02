@@ -84,6 +84,7 @@ from app.storage.csv_repo import CsvRepository, Row
 from app.storage.errors import StorageConflictError, StorageNotFoundError
 from app.storage.files import FileStore
 from app.storage.paths import (
+    CIRCUIT_SESSIONS,
     GOALS,
     HYDRATION_LOG,
     MEALS,
@@ -92,7 +93,6 @@ from app.storage.paths import (
     SUPPLEMENT_SCHEDULE,
     WEEKLY_INSIGHTS,
     WEIGHT,
-    WORKOUTS,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - import de typage seulement
@@ -114,7 +114,7 @@ if TYPE_CHECKING:  # pragma: no cover - import de typage seulement
 CONTEXT_FILES = (
     WEIGHT,
     RUNS,
-    WORKOUTS,
+    CIRCUIT_SESSIONS,
     MEALS,
     HYDRATION_LOG,
     SUPPLEMENT_SCHEDULE,

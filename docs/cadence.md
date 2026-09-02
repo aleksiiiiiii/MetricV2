@@ -207,11 +207,13 @@ Trois conséquences, toutes à écrire :
 3. Le champ va dans [`routes/settings/Profile.tsx`](../frontend/src/routes/settings/Profile.tsx),
    avec les autres réglages d'application.
 
-**Le catalogue des 35 noms.** D2 dit que les deux catalogues ne se parlent pas — donc pas de
-correspondance stockée. Mais `llms.txt` §8 documente un piège qui coûte cher sans rien
-coûter à éviter : « Push-Ups » affiche l'illustration d'un **autre** exercice. Les 35 noms
-partent donc dans la consigne de l'assistant (§8), sous forme de liste, avec l'instruction
-d'y puiser. C'est une constante Python dans `cadence.py`, pas une donnée utilisateur.
+> **Périmé depuis [`charges.md`](charges.md).** Ce paragraphe décrivait les 35 noms de
+> Cadence, partis dans la consigne du modèle parce qu'eux seuls affichaient une
+> illustration. Cadence en embarque **1324**, avec un rapprochement qui tolère le français :
+> `circuit_link.ILLUSTRATED` n'existe plus, et la consigne dit désormais d'écrire des noms
+> **précis** plutôt que d'appartenir à une liste. Le catalogue figé
+> (`exercise_catalog.json`) sert la saisie ; **D2 tient toujours** — aucune correspondance
+> n'est stockée entre les deux mondes.
 
 ---
 
@@ -394,8 +396,10 @@ Nommé plutôt qu'oublié.
   le volume est nul — ce qui est vrai. Ils comptent en **séries** par groupe musculaire,
   en séances et en durée.
 - **Aucune notification, aucun rappel.** D6.
-- **Aucune correspondance entre les deux catalogues d'exercices.** D2. Le seul filet est la
-  liste des 35 noms dans la consigne du modèle.
+- **Aucune correspondance entre les deux catalogues d'exercices.** D2, toujours vrai :
+  rien n'est stocké qui relie un nom de Cadence à un exercice de Metric. Le filet n'est
+  plus la liste des 35 noms — elle a disparu ([`charges.md`](charges.md) §4) — mais le
+  catalogue figé, qui **sert des noms exacts à la saisie** sans en apparier aucun.
 - **Le format reste en version 1.** Si Cadence évolue, `cadence.py` est le seul fichier à
   rouvrir — c'est la raison d'être du §3.
 - **Rien n'est fait pour partager un circuit à quelqu'un d'autre.** L'URL le permettrait
@@ -507,8 +511,8 @@ la voir disparaître de l'équilibre par groupe musculaire n'a aucun sens. Ce qu
   panne laisse au pire une entrée de catalogue en trop — visible et corrigeable. L'ordre
   inverse laisserait une séance sans ses séries, c'est-à-dire une mesure incomplète.
 
-**Ce qui reste séparé** : les 35 noms anglais de Cadence ne sont rapprochés d'aucune donnée
-de Metric. Ils servent à choisir un intitulé qui affiche une image, et rien d'autre.
+**Ce qui reste séparé** : les noms anglais de Cadence ne sont rapprochés d'aucune donnée de
+Metric. Ils servent à choisir un intitulé qui affiche une démonstration, et rien d'autre.
 
 **Un cas qui reste imparfait** : un lien Cadence collé n'apporte aucun groupe musculaire —
 le format n'a pas de champ pour ça. L'import écrit donc `autre`, et l'écran laissera
@@ -585,9 +589,10 @@ choix de *ne pas* ouvrir de retour depuis Cadence — et D7 a été rendue à la
 - **Le modèle ne tape jamais d'URL.** `Outcome.link` porte l'adresse fabriquée par le
   service, `ActionReport.link` la transporte, l'écran la rend en bouton. Une adresse écrite
   par un modèle est du texte non vérifié, où le suffixe `x` se perd en silence.
-- Tranche `seances_cadence` : les séances enregistrées **et** les 35 noms qui affichent une
-  illustration, tirés de `circuit_link.ILLUSTRATED` et jamais recopiés. Les deux ensemble
-  parce qu'elles répondent à la même question, et que le plafond est de deux passes.
+- Tranche `seances_cadence` : les séances enregistrées, **et la règle de nommage** — écrire
+  des noms précis, en français si besoin. La liste des 35 noms qui vivait ici est partie
+  avec `circuit_link.ILLUSTRATED` ([`charges.md`](charges.md) §4) : 1324 noms coûteraient
+  la fenêtre de contexte pour un gain nul.
 - La tranche dit aussi quand l'adresse de Cadence n'est pas réglée : mieux vaut que le
   modèle le sache que de le laisser promettre un lien qui n'existera pas.
 
@@ -643,8 +648,9 @@ Le correctif vaut pour toute action future à charge utile imbriquée — c'est 
 
 #### Le champ à suggestions
 
-`components/ui/Combobox.tsx`, servi par `GET /api/activity/circuits/exercises` : les 35 noms
-de Cadence d'abord, puis les exercices du catalogue de l'utilisateur, sans doublon —
+`components/ui/Combobox.tsx`, servi par `GET /api/activity/circuits/exercises` — devenu une
+**recherche** (`?q=`) : le catalogue de l'utilisateur d'abord, ce sont les seuls noms qui
+portent un groupe musculaire, puis le catalogue figé de Cadence, sans doublon —
 reconnaissance par `fold`, celle du reste du domaine.
 
 - La liste se réduit **à chaque frappe**, sans accents ni casse ni ponctuation.

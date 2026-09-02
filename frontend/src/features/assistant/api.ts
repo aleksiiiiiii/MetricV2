@@ -153,12 +153,34 @@ export interface MemoryEntry {
   resolved: string | null;
 }
 
+/** Un matériel proposé à la case à cocher. La liste vient du serveur — voir `ProfileView`. */
+export interface EquipmentOption {
+  value: string;
+  /** Montré d'emblée, ou rangé derrière le dépliant. Choix d'affichage, pas de filtrage. */
+  common: boolean;
+}
+
 export interface ProfileView {
   height_cm: number | null;
   birth_year: number | null;
   training_days: string;
-  equipment: string;
+  /** Le matériel possédé, en valeurs du catalogue Cadence. */
+  equipment: string[];
+  /**
+   * Ce que la cellule portait et que le catalogue ne reconnaît pas — le texte libre d'un
+   * profil d'avant la fermeture du champ. Montré ici, **pas envoyé au modèle**.
+   */
+  equipment_unknown: string[];
+  /**
+   * Les 28 matériels et leur rang d'affichage, **servis par le serveur**.
+   *
+   * L'écran n'en tient aucune copie : une liste tenue dans deux langages finit par ne plus
+   * décrire la même chose, et la divergence serait muette — un matériel absent d'ici ne se
+   * cocherait jamais.
+   */
+  equipment_catalogue: EquipmentOption[];
   preferences: string;
+  constraints: string;
   /** L'âge, **calculé par le serveur**. Un âge rangé est faux au premier anniversaire. */
   age: number | null;
   /** Les lignes exactes envoyées au modèle — la promesse se vérifie à l'écran. */
@@ -170,8 +192,9 @@ export interface ProfilePayload {
   height_cm: number | null;
   birth_year: number | null;
   training_days: string;
-  equipment: string;
+  equipment: string[];
   preferences: string;
+  constraints: string;
 }
 
 export interface AssistantView {

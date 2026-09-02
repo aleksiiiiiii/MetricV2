@@ -77,6 +77,12 @@ export function CircuitsSection() {
               ? `Toutes les séances (${String(circuits.length)})`
               : 'Créer une séance'}
           </LinkButton>
+          {/* La composition assistée, à côté du formulaire et non à sa place : les deux
+              mènent au même enregistrement, et celui qui sait déjà ce qu'il veut n'a pas à
+              passer par un modèle pour l'écrire. */}
+          <LinkButton variant="quiet" to="/activite/creer">
+            Composer avec l’assistant
+          </LinkButton>
         </div>
       </Card>
     </>

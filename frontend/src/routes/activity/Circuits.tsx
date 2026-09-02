@@ -46,12 +46,7 @@ import {
   Rule,
   Segmented,
 } from '@/components/ui';
-import {
-  activityApi,
-  type Circuit,
-  type CircuitExercisePayload,
-  type CircuitPayload,
-} from '@/features/activity/api';
+import { activityApi, type Circuit, type CircuitPayload } from '@/features/activity/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
 import { plural } from '@/lib/format';
@@ -60,68 +55,7 @@ import { useToast } from '@/lib/toast';
 
 import styles from '../Activity.module.css';
 import { CircuitCard } from './CircuitCard';
-import { useInvalidateActivity } from './shared';
-
-/** Le brouillon d'un exercice. Des chaînes : un champ passe par « 1 » avant « 15 ». */
-interface Draft {
-  name: string;
-  muscle_group: string;
-  mode: 'time' | 'reps';
-  value: string;
-  rest: string;
-}
-
-const NEW_LINE: Draft = { name: '', muscle_group: 'abdos', mode: 'time', value: '30', rest: '10' };
-
-const MODES = [
-  { value: 'time' as const, label: 'Secondes' },
-  { value: 'reps' as const, label: 'Répétitions' },
-];
-
-function toDrafts(circuit: Circuit): Draft[] {
-  return circuit.exercises.map((item) => ({
-    name: item.name,
-    muscle_group: item.muscle_group,
-    mode: item.reps === null ? 'time' : 'reps',
-    value: String(item.reps ?? item.duration_s ?? ''),
-    rest: String(item.rest_s),
-  }));
-}
-
-/** Un entier saisi, ou `null` quand le champ n'en porte pas un. Le serveur borne. */
-function whole(raw: string): number | null {
-  const cleaned = raw.trim();
-  if (!/^\d+$/.test(cleaned)) return null;
-  return Number.parseInt(cleaned, 10);
-}
-
-function toPayload(
-  name: string,
-  rounds: string,
-  rest: string,
-  lines: Draft[],
-): CircuitPayload | null {
-  const exercises: CircuitExercisePayload[] = [];
-  for (const line of lines) {
-    const value = whole(line.value);
-    if (line.name.trim() === '' || value === null) return null;
-    exercises.push({
-      name: line.name.trim(),
-      muscle_group: line.muscle_group,
-      ...(line.mode === 'time' ? { duration_s: value } : { reps: value }),
-      rest_s: whole(line.rest) ?? 0,
-    });
-  }
-
-  const roundCount = whole(rounds);
-  if (name.trim() === '' || roundCount === null || exercises.length === 0) return null;
-  return {
-    name: name.trim(),
-    rounds: roundCount,
-    round_rest_s: whole(rest) ?? 0,
-    exercises,
-  };
-}
+import { MODES, NEW_LINE, toDrafts, toPayload, useInvalidateActivity, type Draft } from './shared';
 
 export function Circuits() {
   const invalidate = useInvalidateActivity();
@@ -140,23 +74,33 @@ export function Circuits() {
     queryFn: activityApi.circuits,
   });
   /**
-   * Les noms proposés à la saisie — **servis, jamais écrits ici.**
+   * Ce qu'on tape dans le champ d'exercice **en cours**, une seule fois pour toutes les
+   * lignes : c'est ce qui pilote la recherche au serveur.
    *
-   * Les 35 noms de Cadence recopiés dans cet écran divergeraient du jour où l'application
-   * en ajoute un, et le symptôme serait une illustration qui n'apparaît pas : sans
-   * message, sans erreur, sans rien à chercher.
+   * Une par ligne ferait autant de requêtes que d'exercices dans le formulaire, pour un
+   * seul champ visible à la fois — le clavier n'est ouvert que sur un.
+   */
+  const [search, setSearch] = useState('');
+
+  /**
+   * Les noms proposés à la saisie — **cherchés au serveur, jamais écrits ici.**
+   *
+   * Cadence embarque 1324 démonstrations. Les recopier ici mettrait 70 ko dans le paquet
+   * de l'application et les ferait diverger du jour où elle en ajoute une ; les servir
+   * d'un bloc ferait filtrer un téléphone. Le serveur cherche, l'écran affiche.
    */
   const { data: catalogue } = useQuery({
-    queryKey: keys.activity.circuitExercises(),
-    queryFn: activityApi.circuitExercises,
+    queryKey: keys.activity.circuitExercises(search),
+    queryFn: () => activityApi.circuitExercises(search),
   });
 
   const suggestions = useMemo(
     () =>
       (catalogue ?? []).map((item) => ({
         value: item.name,
-        // Ce que le nom exact apporte, dit à l'endroit où on choisit.
-        hint: item.illustrated ? 'illustration' : undefined,
+        // Ce que le catalogue sait de cet exercice, dit là où on le choisit : la zone du
+        // corps pour un nom de Cadence, le groupe musculaire pour un des siens.
+        hint: item.body_part ?? item.muscle_group ?? undefined,
       })),
     [catalogue],
   );
@@ -285,6 +229,9 @@ export function Circuits() {
             >
               {shown ? 'Fermer le formulaire' : 'Créer une séance'}
             </Button>
+            <LinkButton variant="quiet" to="/activite/creer">
+              Composer avec l’assistant
+            </LinkButton>
             <LinkButton variant="quiet" to="/activite">
               Retour à l’activité
             </LinkButton>
@@ -364,17 +311,23 @@ export function Circuits() {
                     frappe, `Tab` écrit le premier résultat, et choisir une suggestion
                     pré-remplit le groupe musculaire quand l'exercice est déjà au catalogue.
 
+                    **L'indice disait « écris-le en français ».** C'était vrai des 35 noms
+                    d'avant ; le catalogue en porte 1324, tous anglais, et « pompes » n'y
+                    trouve rien. Un indice faux coûte plus qu'aucun indice : il fait
+                    chercher là où il n'y a rien.
+
                     Le champ **reste libre** — un nom hors liste s'enregistre. Ces
                     suggestions ne sont pas des valeurs autorisées : n'importe quel
                     intitulé fait tourner une séance, il perd seulement son illustration. */}
                 <Combobox
                   label={`Exercice ${String(index + 1)}`}
-                  placeholder="Push-Ups Classic"
+                  placeholder="push-up"
                   value={line.name}
                   options={suggestions}
-                  hint="Une puce signale un nom du catalogue Cadence : lui seul affiche une illustration"
+                  hint="Les noms du catalogue sont en anglais — cherche « push up », « plank »"
                   onChange={(name) => {
                     setLine(index, { name });
+                    setSearch(name);
                   }}
                   onSelect={(option) => {
                     // Le groupe vient du catalogue de l'utilisateur, jamais deviné depuis

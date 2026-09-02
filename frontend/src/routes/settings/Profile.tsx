@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { Button, Card, Empty, Field, Rule } from '@/components/ui';
+import { Button, Card, Chip, Empty, Field, Rule } from '@/components/ui';
 import { assistantApi, type ProfilePayload, type ProfileView } from '@/features/assistant/api';
 import { ApiError } from '@/lib/api';
 import { cx } from '@/lib/cx';
@@ -50,8 +50,11 @@ interface Draft {
   height_cm: string;
   birth_year: string;
   training_days: string;
-  equipment: string;
+  /** Les valeurs du catalogue cochées. Un tableau et non une chaîne : c'est une liste
+   *  fermée, et la sérialiser ici puis la relire serait un format de plus à tenir. */
+  equipment: string[];
   preferences: string;
+  constraints: string;
 }
 
 function toDraft(view: ProfileView): Draft {
@@ -61,6 +64,7 @@ function toDraft(view: ProfileView): Draft {
     training_days: view.training_days,
     equipment: view.equipment,
     preferences: view.preferences,
+    constraints: view.constraints,
   };
 }
 
@@ -77,8 +81,9 @@ function toPayload(draft: Draft): ProfilePayload {
     height_cm: whole(draft.height_cm),
     birth_year: whole(draft.birth_year),
     training_days: draft.training_days.trim(),
-    equipment: draft.equipment.trim(),
+    equipment: draft.equipment,
     preferences: draft.preferences.trim(),
+    constraints: draft.constraints.trim(),
   };
 }
 
@@ -87,8 +92,9 @@ function same(a: Draft, b: Draft): boolean {
     a.height_cm === b.height_cm &&
     a.birth_year === b.birth_year &&
     a.training_days === b.training_days &&
-    a.equipment === b.equipment &&
-    a.preferences === b.preferences
+    a.equipment.join() === b.equipment.join() &&
+    a.preferences === b.preferences &&
+    a.constraints === b.constraints
   );
 }
 
@@ -102,6 +108,9 @@ export function Profile() {
   });
 
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** Le dépliant du matériel rare. Fermé d'entrée : douze cases se parcourent, vingt-huit
+   *  poussent hors de vue les trois qu'on possède vraiment. */
+  const [allEquipment, setAllEquipment] = useState(false);
 
   /**
    * Le profil vit dans `settings.csv`, avec les objectifs et les créneaux de rappel.
@@ -161,9 +170,46 @@ export function Profile() {
 
   /** `Field` rend l'événement natif : on en extrait la valeur ici, comme la section
    *  « Rappels » juste au-dessous, plutôt que d'inventer une seconde convention. */
-  const set = (key: keyof Draft) => (event: { target: { value: string } }) => {
-    setDraft({ ...fields, [key]: event.target.value });
+  const set =
+    (key: 'height_cm' | 'birth_year' | 'training_days' | 'preferences' | 'constraints') =>
+    (event: { target: { value: string } }) => {
+      setDraft({ ...fields, [key]: event.target.value });
+    };
+
+  /**
+   * Cocher ou décocher un matériel.
+   *
+   * **La forme fonctionnelle de `setDraft`, contrairement à `set` juste au-dessus.** Deux
+   * pastilles cochées coup sur coup lisaient toutes deux le même `fields` figé, et la
+   * seconde écrasait la première : « dumbbell » puis « band » ne laissait que « band ».
+   * Trouvé en pilotant l'écran, pas par un test — les deux appuis y sont séparés par un
+   * rendu, ce qui masque exactement le défaut. Un champ de texte n'a pas ce problème : on
+   * n'en remplit qu'un à la fois.
+   *
+   * L'ordre est celui du serveur et non celui des appuis : c'est lui qui décide de l'ordre
+   * de la ligne envoyée au modèle.
+   */
+  const toggle = (value: string) => () => {
+    setDraft((current) => {
+      const base = current ?? toDraft(data);
+      const owned = new Set(base.equipment);
+      if (owned.has(value)) owned.delete(value);
+      else owned.add(value);
+      return {
+        ...base,
+        equipment: data.equipment_catalogue
+          .map((item) => item.value)
+          .filter((item) => owned.has(item)),
+      };
+    });
   };
+
+  const shown = data.equipment_catalogue.filter(
+    // Un matériel coché reste visible même s'il est « rare » : le replier sous un
+    // dépliant fermé ferait croire qu'il a été décoché.
+    (item) => item.common || allEquipment || fields.equipment.includes(item.value),
+  );
+  const hidden = data.equipment_catalogue.length - shown.length;
 
   return (
     <>
@@ -206,14 +252,56 @@ export function Profile() {
           />
         </div>
 
+        {/* Une liste fermée et non un champ libre, et c'est ce qui rend le réglage utile :
+            ces valeurs filtrent la recherche d'exercices servie à l'assistant. « haltères
+            10 kg » écrit à la main ne filtrerait rien.
+
+            Les noms restent ceux du catalogue Cadence, en anglais : c'est avec eux que le
+            modèle cherche, et une traduction à l'écran serait un second vocabulaire pour
+            la même chose. */}
         <div className={styles.row}>
-          <Field
-            label="Matériel dont je dispose"
-            value={fields.equipment}
-            onChange={set('equipment')}
-            placeholder="barre, disques, pas de rack"
-          />
+          <span className={styles.name} id="equipment-label">
+            Matériel dont je dispose
+          </span>
+          <p className={cx(styles.note, styles.noteSpaced)}>
+            Ce qui est coché limite ce que l’assistant propose. Le poids du corps reste toujours
+            possible, coché ou non.
+          </p>
+          <div className={styles.chips} role="group" aria-labelledby="equipment-label">
+            {shown.map((item) => (
+              <Chip
+                key={item.value}
+                selected={fields.equipment.includes(item.value)}
+                onClick={toggle(item.value)}
+              >
+                {item.value}
+              </Chip>
+            ))}
+          </div>
+          {hidden > 0 && (
+            <Button
+              variant="quiet"
+              className={styles.disclose}
+              onClick={() => {
+                setAllEquipment(true);
+              }}
+            >
+              Tout le matériel ({hidden} de plus)
+            </Button>
+          )}
         </div>
+
+        {/* Ce que la cellule portait avant que le champ soit fermé sur le catalogue.
+            Montré plutôt que jeté en silence : une donnée ne s'invente pas, et elle ne
+            s'évapore pas non plus. Le prochain enregistrement l'efface — et c'est alors
+            un geste, avec les cases sous les yeux. */}
+        {data.equipment_unknown.length > 0 && (
+          <p className={cx(styles.note, styles.noteSpaced)}>
+            Le profil portait « {data.equipment_unknown.join(', ')} », que le catalogue Cadence ne
+            reconnaît pas — ce texte ne part pas à l’assistant. Coche ce qui correspond ci-dessus :
+            le prochain enregistrement le remplacera.
+          </p>
+        )}
 
         <div className={styles.row}>
           <Field
@@ -221,6 +309,18 @@ export function Profile() {
             value={fields.preferences}
             onChange={set('preferences')}
             placeholder="ce qu’un coach devrait savoir avant de proposer une séance"
+          />
+        </div>
+
+        {/* Un champ à part des préférences, et la distinction porte tout le sens : une
+            préférence se contourne, une contrainte est un refus. Les mélanger ôterait au
+            modèle le moyen de savoir laquelle il a le droit d'ignorer. */}
+        <div className={styles.row}>
+          <Field
+            label="Contraintes à respecter"
+            value={fields.constraints}
+            onChange={set('constraints')}
+            placeholder="épaule droite sensible, pas de banc"
           />
         </div>
 

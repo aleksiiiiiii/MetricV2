@@ -42,7 +42,9 @@ export const keys = {
     types: () => ['activity', 'types'] as const,
     muscleGroups: () => ['activity', 'muscle-groups'] as const,
     circuits: () => ['activity', 'circuits'] as const,
-    circuitExercises: () => ['activity', 'circuits', 'exercises'] as const,
+    circuitExercises: (query = '') => ['activity', 'circuits', 'exercises', query] as const,
+    loads: () => ['activity', 'loads'] as const,
+    load: (name: string) => ['activity', 'loads', name] as const,
   },
   hydration: {
     all: () => ['hydration'] as const,

@@ -18,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domains.assistant.models import MAX_CONTENT, MAX_NOTE, MAX_TITLE, MAX_TOPIC
 from app.domains.assistant.profile import (
@@ -27,6 +27,12 @@ from app.domains.assistant.profile import (
     MIN_BIRTH_YEAR,
     MIN_HEIGHT_CM,
 )
+
+#: Plafond de la liste de matériel : le catalogue en compte 28, une charge utile plus
+#: longue est forcément fautive. Écrit ici et non deviné, parce que la borne doit
+#: apparaître dans le schéma JSON que le catalogue d'actions publie — un validateur seul
+#: n'y laisse aucune trace, et c'est la faute que `plan.add` a payée sur son `kind`.
+EQUIPMENT_COUNT = 28
 
 #: Longueur d'une question. Généreuse — on décrit parfois une situation en un paragraphe —
 #: mais bornée : au-delà, ce n'est plus une question, et le coût de l'appel suit.
@@ -256,8 +262,54 @@ class ProfilePayload(BaseModel):
     height_cm: int | None = Field(default=None, ge=MIN_HEIGHT_CM, le=MAX_HEIGHT_CM)
     birth_year: int | None = Field(default=None, ge=MIN_BIRTH_YEAR, le=2200)
     training_days: str | None = Field(default=None, max_length=MAX_FREE)
-    equipment: str | None = Field(default=None, max_length=MAX_FREE)
+    #: Le matériel possédé, **choisi dans les 28 valeurs du catalogue Cadence** (**R8**).
+    #:
+    #: Une liste fermée et non un texte libre, et c'est ce qui rend le réglage utile : ces
+    #: valeurs filtrent la recherche d'exercices servie au modèle. Un « haltères 10 kg »
+    #: écrit à la main ne filtrerait rien, et un rapprochement approximatif choisirait à la
+    #: place de l'utilisateur — sa faute ferait disparaître des exercices sans se voir.
+    #:
+    #: Bornée à la taille du catalogue : au-delà, la charge utile est forcément fautive.
+    equipment: list[str] | None = Field(default=None, max_length=EQUIPMENT_COUNT)
     preferences: str | None = Field(default=None, max_length=MAX_FREE)
+    #: Ce qu'il ne faut pas me proposer. Champ à part des préférences — voir `profile.py`.
+    constraints: str | None = Field(default=None, max_length=MAX_FREE)
+
+    @field_validator("equipment")
+    @classmethod
+    def known_equipment(cls, value: list[str] | None) -> list[str] | None:
+        """Refuse un matériel absent du catalogue, **avec son nom dans le message**.
+
+        Un `422` et non un tri silencieux : l'écran ne propose que des valeurs du
+        catalogue, donc une valeur inconnue est un défaut de client, et l'accepter en la
+        jetant ferait croire à un enregistrement complet. C'est la lecture du fichier qui
+        est tolérante (`profile.equipment`), pas la saisie — le fichier s'ouvre dans un
+        tableur, l'API non.
+        """
+        if value is None:
+            return None
+
+        from app.domains.activity import exercise_catalog
+
+        known = set(exercise_catalog.catalog().equipment)
+        unknown = [name for name in value if name not in known]
+        if unknown:
+            raise ValueError(f"matériel inconnu du catalogue : {', '.join(sorted(unknown))}")
+        return value
+
+
+class EquipmentOption(BaseModel):
+    """Un matériel proposé à la case à cocher.
+
+    Servi par le serveur plutôt que recopié dans l'écran : une liste tenue dans deux
+    langages finit par ne plus décrire la même chose, et la divergence serait muette —
+    un matériel absent de l'écran ne se coche simplement jamais.
+    """
+
+    value: str
+    #: Montré d'emblée, ou rangé derrière le dépliant. C'est un choix d'affichage : les
+    #: seize autres se cochent aussi bien, elles sont un appui plus loin.
+    common: bool
 
 
 class ProfileView(BaseModel):
@@ -266,8 +318,19 @@ class ProfileView(BaseModel):
     height_cm: int | None = None
     birth_year: int | None = None
     training_days: str = ""
-    equipment: str = ""
+    equipment: list[str] = Field(default_factory=list)
+    #: Ce que la cellule portait et que le catalogue ne reconnaît pas — le texte libre d'un
+    #: profil d'avant la phase 3, ou une correction à la main.
+    #:
+    #: Rendu à l'écran et **pas au modèle** : une donnée ne s'invente pas, et elle ne
+    #: s'évapore pas non plus. L'écran le montre et invite à recocher ; la consigne, elle,
+    #: ne porte que des valeurs du catalogue.
+    equipment_unknown: list[str] = Field(default_factory=list)
+    #: Les 28 matériels et leur rang d'affichage. Publiés avec le profil parce que l'écran
+    #: en a besoin pour dessiner ses cases — et pour n'en tenir aucune copie.
+    equipment_catalogue: list[EquipmentOption] = Field(default_factory=list)
     preferences: str = ""
+    constraints: str = ""
     #: L'âge, **calculé par le serveur** à partir de l'année. Un âge stocké est faux au
     #: premier anniversaire ; un âge dérivé à l'écran serait un calcul métier côté client.
     age: int | None = None

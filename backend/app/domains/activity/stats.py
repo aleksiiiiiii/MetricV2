@@ -9,12 +9,13 @@ calcule cette borne.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from app.core.dates import week_start
 from app.core.parsing import estimate_one_rep_max, pace_min_per_km
-from app.domains.activity.models import MuscleGroup, RunRow, WorkoutRow
+from app.domains.activity.models import CircuitSessionRow, MuscleGroup, RunRow, WorkoutRow
 from app.domains.activity.schemas import (
     ActivityItem,
     ActivityOverview,
@@ -27,12 +28,52 @@ from app.domains.activity.schemas import (
     WeekTotals,
     WeekVolume,
 )
-from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+from app.domains.activity.service import (
+    CircuitSessionService,
+    ExerciseService,
+    RunService,
+    WorkoutService,
+)
 from app.storage.csv_repo import Row
 from app.storage.files import FileStore
 
 #: Profondeur de l'historique hebdomadaire (`ACT-12`).
 WEEKS_BACK = 8
+
+
+@dataclass(frozen=True, slots=True)
+class _Session:
+    """Ce qu'une séance apporte aux totaux : un jour et des minutes.
+
+    **Les totaux ne connaissent plus le fichier d'où vient une séance.** Une séance
+    historique et un tabata déclaré fait n'ont ni les mêmes colonnes ni le même
+    identifiant, mais ils pèsent la même chose dans « combien de temps cette semaine » —
+    et c'est tout ce que `_per_day`, `_week_totals` et `_split` demandent.
+
+    Le passage par cette forme n'est pas de la cérémonie : `docs/refonte-activite.md`
+    rebranche les totaux sur `circuit_sessions.csv` tandis que l'écran `/activite` lit
+    encore `workouts.csv` jusqu'à la phase 5. Sans elle, l'arithmétique aurait été
+    recopiée pour la durée de la transition, et deux copies auraient fini par répondre
+    deux chiffres différents à la même question.
+    """
+
+    date: date
+    duration_min: float
+
+
+def _sessions_of(rows: Sequence[Row[CircuitSessionRow]]) -> list[_Session]:
+    """Les séances tabata, réduites à ce qui compte dans un total."""
+    return [_Session(date=row.model.date, duration_min=row.model.duration_min) for row in rows]
+
+
+def _workouts_as_sessions(rows: Sequence[Row[WorkoutRow]]) -> list[_Session]:
+    """Les séances historiques, réduites de même.
+
+    **Cet adaptateur meurt avec `workouts.csv`** (phase 5). Il n'existe que pour l'écran
+    `/activite`, seul consommateur restant de l'ancien monde — les totaux, l'assiduité,
+    le planning et les rappels lisent déjà l'autre.
+    """
+    return [_Session(date=row.model.date, duration_min=row.model.duration_min) for row in rows]
 
 
 def _round(value: float | None, digits: int = 2) -> float | None:
@@ -46,10 +87,11 @@ class ActivityStats:
         self._runs = RunService(store)
         self._workouts = WorkoutService(store)
         self._exercises = ExerciseService(store)
+        self._tabata = CircuitSessionService(store)
 
     @staticmethod
     def _per_day(
-        runs: list[Row[RunRow]], workouts: list[Row[WorkoutRow]]
+        runs: Sequence[Row[RunRow]], sessions_in: Sequence[_Session]
     ) -> tuple[dict[date, float], dict[date, int]]:
         """Minutes et nombre de séances par jour, toutes activités confondues."""
         minutes: defaultdict[date, float] = defaultdict(float)
@@ -57,9 +99,9 @@ class ActivityStats:
         for run in runs:
             minutes[run.model.date] += run.model.duration_min
             sessions[run.model.date] += 1
-        for workout in workouts:
-            minutes[workout.model.date] += workout.model.duration_min
-            sessions[workout.model.date] += 1
+        for session in sessions_in:
+            minutes[session.date] += session.duration_min
+            sessions[session.date] += 1
         return minutes, sessions
 
     async def overview(self, today: date, *, limit: int = 30) -> ActivityOverview:
@@ -68,7 +110,10 @@ class ActivityStats:
         entries = await self._exercises.log_entries()
 
         current = week_start(today)
-        minutes, sessions = self._per_day(runs, workouts)
+        # L'écran `/activite` est le dernier consommateur de l'ancien monde, et il le
+        # reste jusqu'à la phase 5 : il compte ses propres séances, pas les tabatas.
+        history = _workouts_as_sessions(workouts)
+        minutes, sessions = self._per_day(runs, history)
 
         # Séries par séance : ce que la suppression d'une séance emporterait avec elle
         # (`ACT-04`). Compté ici, sur un journal déjà lu pour le tonnage — l'écran ne peut
@@ -79,11 +124,15 @@ class ActivityStats:
 
         return ActivityOverview(
             today=today,
-            week=self._week_totals(runs, workouts, current),
+            week=self._week_totals(runs, history, current),
             days=self._days(minutes, current),
             weeks=self._weeks(minutes, sessions, current),
             muscles=self._muscles(entries, current),
-            neglected=self._neglected(entries, today),
+            # Le seul indicateur de cet écran déjà rebranché : il sert le coach — la page
+            # de création et la proposition de planning le lisent — et non `/activite`,
+            # que la phase 5 supprime. Le tonnage juste au-dessus reste sur l'ancien monde
+            # jusque-là, faute d'avoir un sens dans le nouveau (**C4**).
+            neglected=self._neglected(await self._tabata.sets(), today),
             history=self._history(runs, workouts, per_workout)[:limit],
             total=len(runs) + len(workouts),
         )
@@ -95,61 +144,81 @@ class ActivityStats:
 
         Le journal des exercices n'est pas ouvert : `AGG-02` demande des séances et des
         minutes, pas du tonnage. Une lecture Nextcloud évitée par affichage d'accueil.
+
+        ## Les deux fichiers ne sont plus les mêmes
+
+        `runs.csv` et **`circuit_sessions.csv`**, là où c'était `runs.csv` et
+        `workouts.csv` (`docs/refonte-activite.md` §4). Le remplacement est **exclusif** et
+        c'est la seule forme correcte : depuis la phase 1, déclarer un circuit fait écrit
+        dans les deux mondes, donc lire les deux additionnerait chaque tabata deux fois.
+
+        Ce que ça coûte, et qui est assumé : la musculation historique cesse de compter
+        ici avant d'être supprimée. Elle reste **entière dans son fichier** jusqu'à la
+        phase 6, et visible sur `/activite` — c'est le tableau de bord qui a changé de
+        source, pas l'historique qui a été touché.
         """
         runs = await self._runs.all()
-        workouts = await self._workouts.all()
+        sessions_rows = await self._tabata.all()
+        tabata = _sessions_of(sessions_rows)
 
         current = week_start(today)
-        minutes, sessions = self._per_day(runs, workouts)
+        minutes, sessions = self._per_day(runs, tabata)
 
         return TrainingTotals(
-            sessions_total=len(runs) + len(workouts),
+            sessions_total=len(runs) + len(tabata),
             minutes_total=_round(sum(minutes.values())) or 0,
-            week=self._week_totals(runs, workouts, current),
+            week=self._week_totals(runs, tabata, current),
             weeks=self._weeks(minutes, sessions, current),
-            split=self._split(runs, workouts),
+            split=self._split(runs, tabata),
         )
 
     @staticmethod
-    def _split(runs: list[Row[RunRow]], workouts: list[Row[WorkoutRow]]) -> list[TrainingSplit]:
-        """Répartition courses / musculation (`AGG-02`).
+    def _split(runs: Sequence[Row[RunRow]], tabata: Sequence[_Session]) -> list[TrainingSplit]:
+        """Répartition course / tabata (`AGG-02`).
 
-        Trois parts et non deux : le champ `type` d'une séance est libre (`ACT-03`), et
-        ranger une heure de yoga sous « musculation » pour n'en afficher que deux serait
-        un chiffre faux. Ce qui n'est ni course ni musculation est nommé pour ce qu'il
-        est, et la part disparaît quand elle est vide.
+        **Deux parts et non trois.** Les trois d'avant — course, musculation, autre —
+        découpaient le champ `type` de `workouts.csv`, qui est libre (`ACT-03`) : il
+        fallait une troisième part pour ne pas ranger une heure de yoga sous
+        « musculation ». Ce champ n'existe plus dans la source ; un tabata *est* un
+        tabata, et inventer une part « autre » toujours vide serait afficher une
+        catégorie que rien ne peut remplir.
+
+        La part disparaît quand elle est vide, comme avant : une semaine sans course ne
+        montre pas une barre à zéro.
         """
-
-        def is_strength(row: Row[WorkoutRow]) -> bool:
-            return row.model.type.strip().lower() == "musculation"
-
-        strength = [row for row in workouts if is_strength(row)]
-        other = [row for row in workouts if not is_strength(row)]
-
-        total = len(runs) + len(workouts)
-        parts = (
-            ("run", "Course", runs),
-            ("strength", "Musculation", strength),
-            ("other", "Autre", other),
+        total = len(runs) + len(tabata)
+        parts: tuple[tuple[str, str, int, float], ...] = (
+            (
+                "run",
+                "Course",
+                len(runs),
+                sum(row.model.duration_min for row in runs),
+            ),
+            (
+                "tabata",
+                "Tabata",
+                len(tabata),
+                sum(item.duration_min for item in tabata),
+            ),
         )
 
         return [
             TrainingSplit(
                 kind=kind,
                 label=label,
-                sessions=len(rows),
-                minutes=_round(sum(row.model.duration_min for row in rows)) or 0,
-                ratio=len(rows) / total if total else 0.0,
+                sessions=count,
+                minutes=_round(minutes) or 0,
+                ratio=count / total if total else 0.0,
             )
-            for kind, label, rows in parts
-            if rows
+            for kind, label, count, minutes in parts
+            if count
         ]
 
     # ── Séries pour `AGG-04` ──────────────────────────
 
     async def weekly_minutes(self) -> list[tuple[date, float]]:
         """Minutes d'activité par semaine ISO, datées au lundi."""
-        minutes, _ = self._per_day(await self._runs.all(), await self._workouts.all())
+        minutes, _ = self._per_day(await self._runs.all(), _sessions_of(await self._tabata.all()))
         return self._by_week(minutes)
 
     async def weekly_sessions(self) -> list[tuple[date, float]]:
@@ -160,7 +229,7 @@ class ActivityStats:
         du registre, donc aussi bien les séries génériques (`AGG-04`) qu'un objectif de
         régularité (`GOAL-04`).
         """
-        _, sessions = self._per_day(await self._runs.all(), await self._workouts.all())
+        _, sessions = self._per_day(await self._runs.all(), _sessions_of(await self._tabata.all()))
         return self._by_week({day: float(count) for day, count in sessions.items()})
 
     async def weekly_distance(self) -> list[tuple[date, float]]:
@@ -209,10 +278,12 @@ class ActivityStats:
     # ── Semaine en cours (`ACT-10`, `ACT-11`) ─────────
 
     @staticmethod
-    def _week_totals(runs: list, workouts: list, current: date) -> WeekTotals:  # type: ignore[type-arg]
+    def _week_totals(
+        runs: Sequence[Row[RunRow]], sessions: Sequence[_Session], current: date
+    ) -> WeekTotals:
         end = current + timedelta(days=7)
         week_runs = [row.model for row in runs if current <= row.model.date < end]
-        week_workouts = [row.model for row in workouts if current <= row.model.date < end]
+        week_sessions = [item for item in sessions if current <= item.date < end]
 
         distance = sum(run.distance_km for run in week_runs)
         running_minutes = sum(run.duration_min for run in week_runs)
@@ -221,10 +292,10 @@ class ActivityStats:
             week_start=current,
             minutes=_round(
                 sum(run.duration_min for run in week_runs)
-                + sum(workout.duration_min for workout in week_workouts)
+                + sum(item.duration_min for item in week_sessions)
             )
             or 0,
-            sessions=len(week_runs) + len(week_workouts),
+            sessions=len(week_runs) + len(week_sessions),
             distance_km=_round(distance) or 0,
             # L'allure moyenne ne porte que sur la course : mélanger une heure de yoga
             # aux kilomètres n'aurait aucun sens.
@@ -311,6 +382,12 @@ class ActivityStats:
         Un groupe jamais travaillé rend `None` et non un nombre géant : « jamais » et
         « il y a très longtemps » ne se traitent pas pareil, et une valeur inventée
         fausserait la génération IA de planning (`PLAN-03`).
+
+        **Même règle, autre source.** Les lignes viennent de `circuit_session_sets.csv`
+        depuis le rebranchement du coach (`docs/refonte-activite.md` §5 bis) : c'est le
+        seul historique par groupe musculaire qui survivra à `exercise_log.csv`. La règle,
+        elle, ne bouge pas — la repenser au passage aurait mélangé deux changements dans
+        un seul chiffre, et rendu impossible de dire lequel a fait quoi.
         """
         last: dict[str, date] = {}
         for row in entries:

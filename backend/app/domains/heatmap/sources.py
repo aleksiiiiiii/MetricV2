@@ -26,7 +26,7 @@ from datetime import date, datetime
 
 from app.core.dates import local_day_of
 from app.core.parsing import pace_min_per_km
-from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+from app.domains.activity.service import CircuitSessionService, RunService
 from app.domains.aggregates.service import DashboardService
 from app.domains.hydration.service import HydrationService
 from app.domains.supplements.service import SupplementService
@@ -81,10 +81,15 @@ async def _muscle_group(store: FileStore, filter_: str) -> dict[date, float]:
     L'unité est la **série** et non le tonnage : « ai-je travaillé le dos cette
     semaine » ne se répond pas en kilos, et un jour à charge légère compte autant qu'un
     jour lourd pour l'assiduité.
+
+    C'est exactement pour cette piste que `circuit_session_sets.csv` existe en fichier
+    séparé (`docs/refonte-activite.md` §3) : elle compte des séries par groupe **et par
+    jour**, ce qu'une liste de groupes sérialisée dans une cellule de séance aurait perdu.
+    La règle ne change pas, sa source oui — `exercise_log.csv` avant le rebranchement.
     """
     groups = set(split_filter(filter_))
     per_day: defaultdict[date, float] = defaultdict(float)
-    for row in await ExerciseService(store).log_entries():
+    for row in await CircuitSessionService(store).sets():
         if not groups or row.model.muscle_group in groups:
             per_day[row.model.date] += row.model.sets
     return dict(per_day)
@@ -100,13 +105,18 @@ async def _runs(store: FileStore, filter_: str) -> dict[date, float]:
 
 
 async def _duration(store: FileStore, filter_: str) -> dict[date, float]:
-    """Minutes d'activité, courses et séances confondues."""
+    """Minutes d'activité, courses et séances confondues.
+
+    Les séances viennent de `circuit_sessions.csv` depuis le rebranchement, et **elles
+    seules** : les additionner à `workouts.csv`, que déclarer un circuit fait remplit
+    aussi, compterait chaque tabata deux fois.
+    """
     del filter_
     per_day: defaultdict[date, float] = defaultdict(float)
     for run in await RunService(store).all():
         per_day[run.model.date] += run.model.duration_min
-    for workout in await WorkoutService(store).all():
-        per_day[workout.model.date] += workout.model.duration_min
+    for session in await CircuitSessionService(store).all():
+        per_day[session.model.date] += session.model.duration_min
     return dict(per_day)
 
 
@@ -146,6 +156,13 @@ async def _entry_count(store: FileStore, filter_: str) -> dict[date, float]:
 
 
 async def _muscle_group_detail(store: FileStore, filter_: str, day: date) -> list[DayDetail]:
+    """Le détail d'une case (`HEAT-29`) : les exercices, et ce qu'ils ont porté.
+
+    **Aucune charge n'est rendue**, et ce n'est pas un oubli : `circuit_session_sets.csv`
+    n'en porte pas (**C4**), `circuit_loads.csv` reste la seule autorité sur ce qu'on
+    charge. Y remonter la charge courante d'un exercice l'annoncerait comme celle du
+    jour, ce qu'elle n'est pas — une charge se corrige, une séance passée non.
+    """
     groups = set(split_filter(filter_))
     return [
         DayDetail(
@@ -153,12 +170,12 @@ async def _muscle_group_detail(store: FileStore, filter_: str, day: date) -> lis
             value=row.model.sets,
             unit="série",
             sets=row.model.sets,
-            reps=row.model.reps,
-            weight_kg=row.model.weight_kg,
+            # `-1` dit « au temps ». Il ne remonte pas au client, qui n'a aucune sentinelle
+            # à interpréter — c'est la règle de l'API depuis `circuit_exercises.csv`.
+            reps=row.model.reps if row.model.reps >= 0 else None,
             muscle_group=row.model.muscle_group,
-            note=row.model.note,
         )
-        for row in await ExerciseService(store).log_entries()
+        for row in await CircuitSessionService(store).sets()
         if row.model.date == day and (not groups or row.model.muscle_group in groups)
     ]
 
@@ -196,14 +213,15 @@ async def _duration_detail(store: FileStore, filter_: str, day: date) -> list[Da
         if row.model.date == day
     ]
     items += [
+        # Le **nom du circuit**, là où c'était le type libre d'une séance. Il est recopié
+        # sur la session (`ACT-06`) : la case reste lisible quand le patron a disparu.
         DayDetail(
-            label=row.model.type,
+            label=row.model.name,
             value=row.model.duration_min,
             unit="min",
             duration_min=row.model.duration_min,
-            note=row.model.note,
         )
-        for row in await WorkoutService(store).all()
+        for row in await CircuitSessionService(store).all()
         if row.model.date == day
     ]
     return items
@@ -295,7 +313,7 @@ SOURCES: dict[str, Source] = {
             filter_label="Groupes musculaires",
             load=_muscle_group,
             explain=_muscle_group_detail,
-            paths=(paths.EXERCISE_LOG,),
+            paths=(paths.CIRCUIT_SESSION_SETS,),
         ),
         Source(
             key="activity.runs",
@@ -313,7 +331,7 @@ SOURCES: dict[str, Source] = {
             filter_label=None,
             load=_duration,
             explain=_duration_detail,
-            paths=(paths.RUNS, paths.WORKOUTS),
+            paths=(paths.RUNS, paths.CIRCUIT_SESSIONS),
         ),
         Source(
             key="supplement.intake",
@@ -346,7 +364,7 @@ SOURCES: dict[str, Source] = {
                 paths.WEIGHT,
                 paths.MEASUREMENTS,
                 paths.RUNS,
-                paths.WORKOUTS,
+                paths.CIRCUIT_SESSIONS,
                 paths.MEALS,
                 paths.HYDRATION_LOG,
                 paths.SUPPLEMENT_LOG,

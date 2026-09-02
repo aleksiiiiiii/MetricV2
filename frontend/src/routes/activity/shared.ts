@@ -13,7 +13,12 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 
-import type { Circuit, Workout } from '@/features/activity/api';
+import type {
+  Circuit,
+  CircuitExercisePayload,
+  CircuitPayload,
+  Workout,
+} from '@/features/activity/api';
 import { num } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
 
@@ -33,6 +38,25 @@ export function useInvalidateActivity(): () => void {
   return () => {
     void client.invalidateQueries({ queryKey: keys.activity.all() });
     for (const key of CROSS_CUTTING) void client.invalidateQueries({ queryKey: key });
+  };
+}
+
+/**
+ * Ce qu'une écriture de charge invalide — et ce qu'elle **n'invalide pas**.
+ *
+ * `keys.activity.all()` couvre les charges **et les circuits**, et le second est le point :
+ * une charge change le 4ᵉ champ du lien de chaque séance qui emploie l'exercice, et un
+ * lien périmé dans le cache est un bouton qui ouvre la mauvaise séance.
+ *
+ * `CROSS_CUTTING` est délibérément absent. Noter une charge n'écrit **aucune mesure** —
+ * `exercise_log.csv` reste à `weight_kg = 0` (**C4**) — donc ni les agrégats ni
+ * l'assiduité ne bougent. Si cette décision se rouvre un jour, cette ligne est la seconde
+ * à changer, après `mark_done`.
+ */
+export function useInvalidateLoads(): () => void {
+  const client = useQueryClient();
+  return () => {
+    void client.invalidateQueries({ queryKey: keys.activity.all() });
   };
 }
 
@@ -80,4 +104,85 @@ export function circuitDetail(circuit: Circuit): string {
         : `${item.name} ${String(item.reps)}×`,
     )
     .join(' · ');
+}
+
+// ── Le brouillon d'un circuit ─────────────────────────
+//
+// Deux écrans le manipulent : le formulaire manuel de `Circuits.tsx` et la page de
+// composition assistée. Il vit ici plutôt que recopié dans le second — deux modèles pour
+// la même saisie divergeraient au premier champ ajouté, et c'est la charge utile du
+// serveur qui en paierait la différence.
+
+/** Le brouillon d'un exercice. Des chaînes : un champ passe par « 1 » avant « 15 ». */
+export interface Draft {
+  name: string;
+  muscle_group: string;
+  mode: 'time' | 'reps';
+  value: string;
+  rest: string;
+}
+
+export const NEW_LINE: Draft = {
+  name: '',
+  muscle_group: 'abdos',
+  mode: 'time',
+  value: '30',
+  rest: '10',
+};
+
+export const MODES = [
+  { value: 'time' as const, label: 'Secondes' },
+  { value: 'reps' as const, label: 'Répétitions' },
+];
+
+export function toDrafts(circuit: Circuit): Draft[] {
+  return circuit.exercises.map((item) => ({
+    name: item.name,
+    muscle_group: item.muscle_group,
+    mode: item.reps === null ? 'time' : 'reps',
+    value: String(item.reps ?? item.duration_s ?? ''),
+    rest: String(item.rest_s),
+  }));
+}
+
+/** Un entier saisi, ou `null` quand le champ n'en porte pas un. Le serveur borne. */
+export function whole(raw: string): number | null {
+  const cleaned = raw.trim();
+  if (!/^\d+$/.test(cleaned)) return null;
+  return Number.parseInt(cleaned, 10);
+}
+
+/**
+ * Le brouillon → la charge utile, ou `null` quand il manque de quoi écrire.
+ *
+ * `null` et non une charge partielle : c'est ce qui désactive « Enregistrer » plutôt que
+ * d'envoyer une séance amputée que le serveur refuserait avec un message que personne
+ * n'aurait vu venir.
+ */
+export function toPayload(
+  name: string,
+  rounds: string,
+  rest: string,
+  lines: Draft[],
+): CircuitPayload | null {
+  const exercises: CircuitExercisePayload[] = [];
+  for (const line of lines) {
+    const value = whole(line.value);
+    if (line.name.trim() === '' || value === null) return null;
+    exercises.push({
+      name: line.name.trim(),
+      muscle_group: line.muscle_group,
+      ...(line.mode === 'time' ? { duration_s: value } : { reps: value }),
+      rest_s: whole(line.rest) ?? 0,
+    });
+  }
+
+  const roundCount = whole(rounds);
+  if (name.trim() === '' || roundCount === null || exercises.length === 0) return null;
+  return {
+    name: name.trim(),
+    rounds: roundCount,
+    round_rest_s: whole(rest) ?? 0,
+    exercises,
+  };
 }

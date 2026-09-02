@@ -33,7 +33,7 @@ GOALS_FILE = "Metric/goals/goals.csv"
 GOALS_HEADER = "id,created,title,metric,target,unit,deadline,rationale,source,status,outcome"
 WEEKLY_FILE = "Metric/insights/weekly.csv"
 MEALS_FILE = "Metric/nutrition/meals.csv"
-WORKOUTS_FILE = "Metric/activity/workouts.csv"
+SESSIONS_FILE = "Metric/activity/circuit_sessions.csv"
 PLAN_FILE = "Metric/planning/plan.csv"
 
 TODAY = today_local()
@@ -65,11 +65,14 @@ def seed_sessions(dav: FakeWebDav, count: int) -> None:
     """`count` séances réparties sur les quatre semaines révolues."""
     monday = week_start(TODAY)
     lines = "".join(
+        f"s{index},c1,"
         f"{(monday - timedelta(weeks=1 + index % 4, days=index % 5)).isoformat()},"
-        f"musculation,60,,,,manual,w{index}\n"
+        f"Haut du corps,4,60,,cadence\n"
         for index in range(count)
     )
-    dav.seed(WORKOUTS_FILE, "date,type,duration_min,calories,rpe,note,source,id\n" + lines)
+    dav.seed(
+        SESSIONS_FILE, "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n" + lines
+    )
 
 
 # ── La relecture, sans rien monter (`GOAL-01`) ────────

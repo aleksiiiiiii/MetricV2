@@ -849,3 +849,245 @@
   align-items: center;
   gap: var(--s2);
 }
+
+/* ── Charges (`/activite/charges`) ──────────────────── */
+
+/*
+ * L'espacement entre deux cartes, qui manquait.
+ *
+ * L'écran écrivait `styles.section` sans que la classe existe : `cx` rendait `undefined`,
+ * les cartes se touchaient, et rien ne le signalait — ni le compilateur, qui ne sait pas
+ * qu'un module CSS n'a pas cette clé, ni l'audit, qui mesure des cibles et pas des
+ * gouttières. C'est le genre de défaut qui ne sort qu'en regardant la page.
+ */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+/*
+ * Une carte par exercice, sur une colonne au téléphone et **deux** dès 600 px.
+ *
+ * La carte est courte — un nom, une ligne de contexte, un pas-à-pas — et sur une tablette
+ * une colonne unique la laissait s'étirer sur toute la largeur en gardant sa hauteur : de
+ * la place perdue à droite, et une liste qui défile deux fois plus qu'il ne faut. Les deux
+ * points de rupture du projet sont `600` et `960`, tous deux en `min-width` ; celui de
+ * 960 n'ajoute pas de troisième colonne, qui ramènerait le pas-à-pas sous sa largeur
+ * confortable.
+ */
+.cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s3);
+}
+
+@media (min-width: 600px) {
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Le nom à gauche, le contexte à droite, sur une ligne. */
+.loadHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+/*
+ * La commande de charge : le pas-à-pas prend toute la place, l'icône vient après le `+`.
+ *
+ * `align-items: center` et non `stretch` : la demande est que le milieu du bonhomme tombe
+ * au même niveau que le milieu du `+`, et c'est exactement ce que fait un centrage sur une
+ * ligne dont les deux enfants ont la même hauteur de cible.
+ */
+/*
+ * `margin-top: auto` et la carte en colonne pleine hauteur : sans les deux, un nom qui
+ * passe sur deux lignes décale son pas-à-pas d'une ligne par rapport à celui d'à côté, et
+ * la grille rend deux cartes de hauteurs inégales. C'est le défaut que `LogButton` traîne
+ * déjà — il n'entre pas ici en même temps que la deuxième colonne.
+ */
+.loadCard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.loadControl {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: auto;
+  padding-top: var(--s2);
+}
+
+/* Le pas-à-pas absorbe la largeur restante. C'est ce qui garde son champ au-dessus de
+   44 px : enfermé dans une colonne de 146 px, il tombait à 41 et l'audit le voyait. */
+.loadControl > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Le nom d'un exercice ouvre son détail. La cible tient la largeur restante : sur un
+   téléphone, viser vingt caractères au pouce demande la ligne, pas le mot. */
+.loadName {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+
+/*
+ * Les deux bascules d'état — vers le poids du corps, et retour vers une charge.
+ *
+ * **44 px malgré l'apparence discrète.** L'icône fait 20 px ; c'est la cible qui fait le
+ * plancher, pas le dessin.
+ */
+.loadIcon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink-low);
+}
+
+.loadIcon:disabled {
+  opacity: 0.4;
+}
+
+@media (hover: hover) {
+  .loadIcon:hover {
+    color: var(--ink);
+    background: var(--surface-2);
+  }
+}
+
+.loadDense {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.loadDense + .loadDense {
+  border-top: 1px solid var(--line);
+}
+
+.loadDenseName {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s2);
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+/* Le chiffre en tête de la feuille de détail : c'est ce qu'on vient lire. */
+.reading {
+  margin: 0 0 var(--s3);
+  font-size: var(--t-num-xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Composition assistée (`/activite/creer`) ───────── */
+
+.composeRow {
+  margin-top: var(--s3);
+}
+
+/* Deux pas-à-pas côte à côte. Ils tiennent à 390 px parce qu'ils ne portent que des
+   nombres courts ; au moindre débordement la grille passerait à une colonne, et c'est
+   `minmax(0, 1fr)` qui l'autorise sans laisser le contenu élargir la piste. */
+.composePair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.composeAction {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+
+/* Le nom d'un exercice et ce qu'il vaut dans Cadence, sur la même ligne — l'étiquette
+   suit le champ plutôt que de lui prendre une colonne, qui manquerait à 360 px. */
+.composeHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s2);
+}
+
+/* Le champ prend la ligne entière et pousse l'étiquette sur la suivante.
+   `flex: 1` seul la laissait à côté : sur « Gainage latéral maison », le champ tombait à
+   la moitié de la largeur et on ne voyait plus ce qu'on éditait. Vu en capture — la
+   mesure disait `0 défaut`, parce qu'un champ étroit reste au-dessus de 44 px. */
+.composeHead > :first-child {
+  flex: 1 0 100%;
+  min-width: 0;
+}
+
+.composeLabel {
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Le sélecteur de groupe. Il reprend le cadre d'un `Field` — même rayon, même hauteur de
+   cible, même fond — parce qu'il vit dans le même formulaire : deux cadres différents
+   pour deux champs voisins se lisent comme deux natures de saisie. */
+.composeSelect {
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: var(--s2);
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  color: var(--ink);
+  /* 16 px au moins : en dessous, iOS zoome à la sélection et décale la page. */
+  font-family: var(--mono);
+  font-size: 16px;
+}
+
+.composeBasis {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  padding-left: var(--s5);
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  line-height: 1.6;
+  list-style: disc;
+}
+
+.composeNote {
+  margin-top: var(--s3);
+  color: var(--ink-mid);
+  font-size: var(--t-sub);
+  line-height: 1.6;
+}

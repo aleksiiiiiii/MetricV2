@@ -27,6 +27,9 @@ Ne pas tout lire. Ouvrir ce qui correspond à la tâche.
 | Le pont vers Cadence Tabata — les liens de séance | [`docs/cadence.md`](docs/cadence.md) |
 | Le `413` à l'ajout de captures — diagnostic et correctif | [`docs/bug-413-captures.md`](docs/bug-413-captures.md) |
 | Les rappels push, de l'heure fixe à l'écart | [`docs/notifications-v2.md`](docs/notifications-v2.md) |
+| Les charges d'une séance Cadence, et la spec v2 du lien | [`docs/charges.md`](docs/charges.md) |
+| Les 1324 noms d'exercices de Cadence, par groupe — à donner à un modèle | [`docs/catalogue-cadence.md`](docs/catalogue-cadence.md) |
+| La refonte de l'activité — tout par Cadence, la course à part | [`docs/refonte-activite.md`](docs/refonte-activite.md) |
 
 [`docs/GuidelinesUI.html`](docs/GuidelinesUI.html) reste la **référence exclusive** de la
 charte visuelle.

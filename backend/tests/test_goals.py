@@ -35,7 +35,7 @@ GOALS_HEADER = "id,created,title,metric,target,unit,deadline,rationale,source,st
 WEEKLY_FILE = "Metric/insights/weekly.csv"
 WEIGHT_FILE = "Metric/body/weight.csv"
 RUNS_FILE = "Metric/activity/runs.csv"
-WORKOUTS_FILE = "Metric/activity/workouts.csv"
+SESSIONS_FILE = "Metric/activity/circuit_sessions.csv"
 
 TODAY = today_local()
 #: Échéance par défaut : six semaines, au milieu de la fenêtre de `GOAL-01`.
@@ -75,11 +75,18 @@ def view(client: TestClient, auth: dict[str, str]) -> Any:
 
 
 def seed_workouts(dav: FakeWebDav, days: list[date]) -> None:
-    """Séances effectuées, une par jour donné."""
+    """Séances effectuées, une par jour donné.
+
+    Des séances **tabata** : `weekly_sessions` les lit dans `circuit_sessions.csv` depuis
+    le rebranchement (`docs/refonte-activite.md` §4).
+    """
     lines = "".join(
-        f"{day.isoformat()},musculation,60,,,,manual,w{index}\n" for index, day in enumerate(days)
+        f"s{index},c1,{day.isoformat()},Haut du corps,4,60,,cadence\n"
+        for index, day in enumerate(days)
     )
-    dav.seed(WORKOUTS_FILE, "date,type,duration_min,calories,rpe,note,source,id\n" + lines)
+    dav.seed(
+        SESSIONS_FILE, "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n" + lines
+    )
 
 
 # ── 1. Écriture réelle dans le CSV ────────────────────

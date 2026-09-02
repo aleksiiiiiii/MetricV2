@@ -63,55 +63,6 @@ DEFAULT_REPS = 20
 SECONDS_PER_REP = 2
 MIN_REP_EXERCISE_S = 10
 
-#: Les 35 noms exacts du catalogue de Cadence (§8). Ils ne décident **rien** au déroulé —
-#: n'importe quel nom fonctionne — mais eux seuls affichent une illustration pendant le
-#: repos qui précède l'exercice.
-#:
-#: La correspondance approximative de Cadence est un piège documenté : « Push-Ups » y
-#: donne l'illustration de *Pike Push-ups*, c'est-à-dire un autre exercice. C'est pour ça
-#: que cette liste est ici et non laissée à la mémoire de qui écrit une séance.
-#:
-#: `Dumbell Curl` et `Push Ups Wide Grip` sont les variantes orthographiques que Cadence
-#: accepte ; elles sont dans la liste parce qu'un lien existant peut les porter, et la
-#: forme correcte est juste à côté.
-ILLUSTRATED: tuple[str, ...] = (
-    "Bicycle Crunches",
-    "Burpees",
-    "Concentration Curl",
-    "Crunchs",
-    "Donkey Kicks",
-    "Dumbbell Bent-Over Row",
-    "Dumbbell Curl",
-    "Dumbbell Goblet Squat",
-    "Dumbbell Lateral Raise",
-    "Dumbbell Romanian Deadlift",
-    "Dumbbell Shoulder Press",
-    "Dumbell Curl",
-    "Flutter Kicks",
-    "Glute Bridge",
-    "Hammer Curl",
-    "High Knees",
-    "Hip Thrust",
-    "Inchworm Walk",
-    "Lunges",
-    "Overhead Tricep Extension",
-    "Pike Push-ups",
-    "Plank",
-    "Pull-ups",
-    "Push Ups Wide Grip",
-    "Push-Ups Classic",
-    "Push-Ups Wide Grip",
-    "Reverse Crunches",
-    "Reverse Snow Angels",
-    "Russian Twist",
-    "Shoulder taps",
-    "Side Plank",
-    "Skater Jumps",
-    "Superman",
-    "Tricep Kickback",
-    "V-ups",
-)
-
 
 @dataclass(frozen=True)
 class LinkExercise:
@@ -126,6 +77,15 @@ class LinkExercise:
     duration_s: int = DEFAULT_DURATION_S
     reps: int = TIMED
     rest_s: int = 0
+    #: Le 4ᵉ champ de la spécification v2 : un texte libre affiché **sous le nom**, pendant
+    #: l'exercice et sur la carte « PROCHAIN ». Vide = champ omis, et un exercice à trois
+    #: champs reste exactement ce qu'il était — c'est ce qui rend l'ajout rétrocompatible.
+    #:
+    #: Aucune borne haute ici. Ce module reproduit Cadence, et Cadence ne tronque pas ; la
+    #: note qui arrive est fabriquée par le service à partir d'une charge bornée, donc
+    #: courte par construction. Un plafond arbitraire ne protégerait de rien et casserait
+    #: l'aller-retour sur les liens qu'on relit.
+    note: str = ""
 
     @property
     def timed(self) -> bool:
@@ -173,6 +133,7 @@ def normalise(circuit: LinkCircuit) -> LinkCircuit:
             duration_s=_clamp(exercise.duration_s, DURATION_S),
             reps=TIMED if exercise.timed else _clamp(exercise.reps, REPS),
             rest_s=_clamp(exercise.rest_s, REST_S),
+            note=exercise.note.strip(),
         )
         for exercise in circuit.exercises
         if exercise.name.strip()
@@ -216,7 +177,14 @@ def build_url(base: str, circuit: LinkCircuit) -> str | None:
     segments = [_encode(ready.name), str(ready.rounds), str(ready.round_rest_s)]
     for exercise in ready.exercises:
         length = f"{exercise.duration_s}s" if exercise.timed else f"{exercise.reps}x"
-        segments.append(f"{_encode(exercise.name)}:{length}:{exercise.rest_s}")
+        field = f"{_encode(exercise.name)}:{length}:{exercise.rest_s}"
+        # Le 4ᵉ champ n'est ajouté **que** s'il porte quelque chose. Sans cette garde, un
+        # circuit sans charge gagnerait un `:` final sur chaque exercice — un lien plus
+        # long, moins lisible dans une note de planning, et surtout différent de celui
+        # d'hier alors que rien n'a changé.
+        if exercise.note:
+            field += f":{_encode(exercise.note)}"
+        segments.append(field)
 
     return f"{base.strip()}?w=" + "~".join(segments)
 
@@ -294,6 +262,12 @@ def parse_url(url: str) -> LinkCircuit | None:
                 duration_s=duration_s,
                 reps=reps,
                 rest_s=_whole(fields[2], 0) if len(fields) > 2 else 0,
+                # `fields[3]` seul, jamais `":".join(fields[3:])`. Un deux-points non
+                # échappé dans une note est un lien mal fabriqué, et la spécification dit
+                # de l'échapper ; recoller les morceaux ici afficherait dans Metric une
+                # note que Cadence, lui, coupera au premier deux-points. On reproduit ce
+                # que l'autre application lit, pas ce qu'on aurait aimé qu'elle lise.
+                note=unquote_plus(fields[3]).strip() if len(fields) > 3 else "",
             )
         )
 
@@ -355,7 +329,6 @@ def estimate(circuit: LinkCircuit) -> Estimate:
 
 __all__ = [
     "DEFAULT_NAME",
-    "ILLUSTRATED",
     "TIMED",
     "Estimate",
     "LinkCircuit",

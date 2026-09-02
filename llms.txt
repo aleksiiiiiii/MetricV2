@@ -16,14 +16,19 @@ Un seul paramètre de query string, `w`.
 
     <base>?w=<nom>~<rounds>~<repos_round>~<exercice>[~<exercice>...]
 
-    <exercice> = <nom_exercice>:<durée>:<repos>
+    <exercice> = <nom_exercice>:<durée>:<repos>[:<note>]
 
     <durée>    = <entier>"s"   → secondes  (l'exercice se termine tout seul)
                | <entier>"x"   → répétitions (l'exercice attend un appui manuel)
 
+    <note>     = texte libre, OPTIONNEL — affiché sous le nom de l'exercice
+
 Séparateurs : `~` entre les segments, `:` entre les champs d'un exercice.
 Minimum 4 segments : nom, rounds, repos_round, et au moins un exercice.
 Aucune limite haute sur le nombre d'exercices.
+
+Le 4ᵉ champ est une addition rétrocompatible : un exercice à trois champs reste
+valide et se comporte exactement comme avant.
 
 Déroulé résultant : pour chaque round, les exercices sont enchaînés dans l'ordre,
 chacun suivi de son repos ; `repos_round` s'intercale entre deux rounds.
@@ -40,7 +45,9 @@ Le suffixe `x` est ce qui distingue répétitions et secondes. Il n'est PAS opti
 C'est l'erreur la plus fréquente. Vérifiez chaque exercice en répétitions.
 
 Différence de comportement :
-- `30s` : décompte automatique, bips sur les 3 dernières secondes, passage auto au repos.
+- `30s` : décompte automatique, bips de repère à 30/20/10 s restantes (trois
+  bips, puis deux, puis un), bips sur les 3 dernières secondes, passage auto
+  au repos.
 - `15x` : PAS de décompte. Le chrono compte vers le haut et attend indéfiniment
   que l'utilisateur appuie sur « SUIVANT ». Aucune durée n'est imposée.
 
@@ -78,6 +85,7 @@ Les valeurs hors bornes sont ramenées dans l'intervalle, jamais rejetées.
 | durée (`30s`)   | exercice, champ 2 | 1 – 999 s   | 20s                    |
 | reps (`15x`)    | exercice, champ 2 | 1 – 999     | 20x (reste en reps)    |
 | repos           | exercice, champ 3 | 0 – 999 s   | 0                      |
+| note            | exercice, champ 4 | texte libre | aucune note affichée   |
 
 Tolérances acceptées :
 
@@ -87,6 +95,9 @@ Tolérances acceptées :
     Ex         → 20 secondes, 0 s de repos    (tout omis)
     Ex:0x:5    → 20 RÉPÉTITIONS               (piège : 0 est invalide, la valeur
                                               retombe sur 20 ; le suffixe x reste)
+    Ex:30s:10:            → note vide, équivaut à Ex:30s:10
+    Ex:30s:10:20+kg       → note « 20 kg »
+    Ex:30s:10:tempo+3%3A1 → note « tempo 3:1 » (deux-points échappé)
 
 ---
 
@@ -162,6 +173,13 @@ EX5 — Un seul exercice, un seul round
     → « Gainage », 1 round, 0 s entre rounds
       Plank 60 s (+0 s)
 
+EX6 — Notes sur certains exercices seulement
+    ?w=Haut+du+corps~3~60~Pompes:30s:15:halt%C3%A8res+12+kg~Gainage:45s:15~Rowing:12x:30:barre+40+kg
+    → « Haut du corps », 3 rounds, 60 s entre rounds
+      Pompes 30 s (+15 s)   note « haltères 12 kg »
+      Gainage 45 s (+15 s)  aucune note
+      Rowing 12 reps (+30 s) note « barre 40 kg »
+
 ---
 
 ## 7. DURÉES ET ESTIMATIONS
@@ -178,70 +196,80 @@ N'annoncez jamais une durée exacte pour une séance contenant des répétitions
 
 ---
 
-## 8. NOMS D'EXERCICES ET ILLUSTRATIONS
+## 8. NOMS D'EXERCICES ET DÉMONSTRATIONS
 
 N'importe quel nom fonctionne : la séance se déroule normalement quel que soit
-l'intitulé. Le nom détermine uniquement si une ILLUSTRATION est affichée pendant
-le repos qui précède l'exercice.
+l'intitulé. Le nom détermine uniquement si une DÉMONSTRATION ANIMÉE est affichée
+pendant le repos qui précède l'exercice.
 
-La correspondance est approximative (coefficient de Dice ≥ 0.6, casse, accents et
-ponctuation ignorés). Comportement observé :
+L'app embarque une bibliothèque de 1324 exercices, chacun avec un GIF animé, une
+vignette et des instructions pas à pas en français et en anglais. Le nom écrit
+dans le lien y est rapproché automatiquement.
 
-    « push ups classic »  → Push-Ups Classic       ✅ casse ignorée
-    « Pushups Classic »   → Push-Ups Classic       ✅ ponctuation ignorée
-    « Crunches »          → Crunchs                ✅ pluriel toléré
-    « burpee »            → Burpees                ✅ singulier toléré
-    « Goblet Squat »      → Dumbbell Goblet Squat  ✅ correspondance partielle
-    « Push-Ups »          → Pike Push-ups          ⚠️ MAUVAIS exercice
-    « Pompes »            → aucune                 ❌ le français n'est pas reconnu
-    « Squats »            → aucune                 ❌ absent du catalogue
-    « Mountain Climbers » → aucune                 ❌ absent du catalogue
+### Ce que la correspondance sait faire
 
-RECOMMANDATION : utilisez les noms EXACTS du catalogue ci-dessous. C'est le seul
-moyen d'être certain de l'illustration. Les noms hors catalogue restent valides,
-simplement sans image.
+    « push ups classic »   → push-up                 casse et pluriel ignorés
+    « Pushups Classic »    → push-up                 graphie collée acceptée
+    « Push-Ups »           → push-up                 ponctuation ignorée
+    « Crunches »           → crunch floor            pluriel en -es toléré
+    « Goblet Squat »       → dumbbell goblet squat   correspondance partielle
+    « Mountain Climbers »  → mountain climber
+    « barbell full squat » → barbell full squat      nom exact du catalogue
 
-### Catalogue (35 noms exacts)
+Le français est reconnu, mot à mot :
 
-Bicycle Crunches
-Burpees
-Concentration Curl
-Crunchs
-Donkey Kicks
-Dumbbell Bent-Over Row
-Dumbbell Curl
-Dumbbell Goblet Squat
-Dumbbell Lateral Raise
-Dumbbell Romanian Deadlift
-Dumbbell Shoulder Press
-Dumbell Curl
-Flutter Kicks
-Glute Bridge
-Hammer Curl
-High Knees
-Hip Thrust
-Inchworm Walk
-Lunges
-Overhead Tricep Extension
-Pike Push-ups
-Plank
-Pull-ups
-Push Ups Wide Grip
-Push-Ups Classic
-Push-Ups Wide Grip
-Reverse Crunches
-Reverse Snow Angels
-Russian Twist
-Shoulder taps
-Side Plank
-Skater Jumps
-Superman
-Tricep Kickback
-V-ups
+    « Pompes »             → push-up
+    « Tractions »          → pull-up
+    « Abdos »              → crunch floor
+    « Corde à sauter »     → jump rope
+    « Gainage »            → power point plank
+    « Fentes »             → lunge with jump
+    « Développé couché »   → band bench press
 
-Note : `Dumbell Curl` et `Push Ups Wide Grip` sont des variantes orthographiques
-de `Dumbbell Curl` et `Push-Ups Wide Grip`. Les deux graphies fonctionnent ;
-préférez la forme correcte.
+### Ses limites
+
+    « Reverse Snow Angels » → aucune    absent de la bibliothèque
+    « Squats »              → squat jerk   ⚠️ pas forcément la variante voulue
+
+Quand la moitié au moins des mots du nom ne retrouve rien, l'app n'affiche RIEN
+plutôt qu'une démonstration fausse. Un nom sans correspondance reste parfaitement
+valide : la séance se déroule, sans image.
+
+### Être certain de la démonstration
+
+Un nom approché suffit dans l'immense majorité des cas. Pour lever tout doute,
+reprenez le nom EXACT du catalogue. Il est servi par l'app elle-même :
+
+    GET  <racine du site>/exercise-db/catalog.json      (128 ko)
+
+Une entrée par exercice, dans le tableau « exercises » :
+
+    { "i": "0043",                 identifiant interne
+      "n": "barbell full squat",   NOM EXACT — c'est ce champ qu'il faut reprendre
+      "f": "0043-qXTaZnJ",         nom de fichier du média
+      "b": 8, "e": 2, "t": 8,        indices dans bodyParts / equipment / targets
+      "s": [6, 8, 15, 24] }       indices dans muscles (muscles secondaires)
+
+soit : upper legs · barbell · cible glutes
+
+Les quatre listes « bodyParts », « equipment », « targets » et « muscles » sont
+à la racine du même fichier : b/e/t/s y renvoient par indice. De quoi filtrer un
+choix d'exercices par zone du corps ou par matériel disponible avant de composer
+la séance.
+
+Dans le dépôt, le fichier est en `www/exercise-db/catalog.json`, régénéré par
+`npm run fetch:exercises`.
+
+Depuis l'app, le bouton loupe de chaque ligne d'exercice ouvre la bibliothèque :
+l'exercice choisi là est lié par identifiant, donc le renommer ne lui fait pas
+perdre sa démonstration. Un lien `?w=` ne transporte en revanche que des noms —
+c'est le rapprochement ci-dessus qui s'applique.
+
+### Médias
+
+Les vignettes et les GIFs sont © Gym visual (https://gymvisual.com/), affichés
+en 180×180 avec la mention de copyright. Ne pas les redistribuer sans vérifier
+les conditions de Gym visual.
 
 ---
 
@@ -269,7 +297,11 @@ passent sans gêner. L'ordre des paramètres n'a pas d'importance.
 2. Le lien N'AUTO-DÉMARRE JAMAIS. Un appui est requis, notamment parce que les
    navigateurs bloquent l'audio tant qu'aucun geste utilisateur n'a eu lieu.
 3. Compte à rebours de 3 secondes, puis la séance s'enchaîne.
-4. L'application est une PWA : après une première visite, les liens fonctionnent
+4. La NOTE d'un exercice (4ᵉ champ) apparaît à deux endroits, et seulement
+   là : sous le nom de l'exercice pendant qu'il tourne, et sous son nom sur la
+   carte « PROCHAIN » affichée pendant le repos qui le précède. Elle n'est pas
+   reprise sur l'écran d'ouverture du lien. Prévoyez une ligne, pas plus.
+5. L'application est une PWA : après une première visite, les liens fonctionnent
    hors ligne, tout étant décodé côté client.
 
 ---
@@ -281,5 +313,6 @@ passent sans gêner. L'ordre des paramètres n'a pas d'importance.
 - [ ] rounds entre 1 et 99 ; repos_round entre 0 et 900.
 - [ ] Durées et répétitions entre 1 et 999 ; aucune valeur à 0 (0 devient 20).
 - [ ] Au moins un exercice, et chaque exercice a un nom non vide.
-- [ ] Les noms viennent du catalogue si l'illustration est souhaitée.
+- [ ] Les noms sont assez précis pour retrouver la bonne démonstration.
+- [ ] Les notes sont courtes : elles s'affichent sur une ligne, sous le nom.
 - [ ] Aucune durée totale exacte annoncée si la séance contient des répétitions.

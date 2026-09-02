@@ -25,7 +25,7 @@ from datetime import date, timedelta
 
 from app.core.dates import days_between
 from app.core.text import fr
-from app.domains.activity.service import ExerciseService, RunService, WorkoutService
+from app.domains.activity.service import CircuitSessionService, ExerciseService, RunService
 from app.domains.activity.stats import ActivityStats
 from app.domains.aggregates.metrics import (
     DEFAULT_METRIC,
@@ -350,6 +350,13 @@ class DashboardService:
         hydratation, prises. Chaque domaine dit lui-même à quel jour appartient sa ligne
         — l'hydratation et les repas portent un horodatage, dont le rattachement au jour
         local n'a qu'une implémentation (`HEAT-32`).
+
+        **`workouts` désigne la séance, pas le fichier.** Depuis le rebranchement
+        (`docs/refonte-activite.md` §4), les jours viennent de `circuit_sessions.csv` et
+        non de `workouts.csv`. La clé ne change pas : c'est celle que l'écran traduit en
+        « séance », et sept sources nommées par `AGG-03` ne se renomment pas parce que
+        leur source de données a bougé. La renommer casserait `SOURCE_LABELS` côté écran
+        et l'entrée `entry_count` de l'assiduité, pour ne rien dire de plus.
         """
         hydration = await HydrationService(self._store).daily_volumes()
 
@@ -357,7 +364,7 @@ class DashboardService:
             "weight": {day for day, _ in await WeightService(self._store).points()},
             "measurements": await MeasurementService(self._store).days(),
             "runs": {row.model.date for row in await RunService(self._store).all()},
-            "workouts": {row.model.date for row in await WorkoutService(self._store).all()},
+            "workouts": {row.model.date for row in await CircuitSessionService(self._store).all()},
             "meals": await NutritionService(self._store).meal_days(),
             "hydration": {day for day, volume in hydration.items() if volume > 0},
             "supplements": await SupplementService(self._store).intake_days(),

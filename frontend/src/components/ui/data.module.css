@@ -406,3 +406,25 @@
 .growRight {
   transform-origin: left center;
 }
+
+/* ── Ligne de points ────────────────────────────────── */
+
+.dotRow {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+/* `flex: 1` et non une largeur fixe : trente points doivent tenir de 360 à 960 px sans
+   déborder, et c'est la seule façon de ne pas avoir à choisir une largeur par écran. */
+.dot {
+  flex: 1;
+  min-width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.dot[data-on] {
+  background: var(--signal);
+}

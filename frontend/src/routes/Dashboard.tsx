@@ -288,9 +288,7 @@ function Training({ training }: { training: DashboardView['training'] }) {
 
       <Card>
         <h3>Répartition</h3>
-        <p className={styles.note}>
-          Ce qui n’est ni course ni musculation est nommé pour ce qu’il est.
-        </p>
+        <p className={styles.note}>Course et tabata, en séances et en minutes.</p>
 
         {training.split.length === 0 ? (
           <p className={styles.empty}>Rien à répartir pour l’instant.</p>

@@ -182,7 +182,11 @@ _PERIODS = """Par défaut une tranche porte sur aujourd'hui. Pour un autre jour,
 « @ » et la date : "repas_du_jour@2026-08-15". Pour une semaine entière, ajoute
 « @semaine- » et n'importe quelle date de cette semaine : "repas_du_jour@semaine-2026-08-12"
 — tu recevras les sept jours, un par un. Les dates s'écrivent AAAA-MM-JJ ; une date que je
-ne sais pas lire ne rend aucune tranche, elle ne retombe pas sur aujourd'hui."""
+ne sais pas lire ne rend aucune tranche, elle ne retombe pas sur aujourd'hui.
+
+Certaines tranches se cherchent : ajoute « : » et un mot-clé —
+"exercices_cadence:push up". Leur description ci-dessus dit lesquelles, et dans quelle
+langue. Sans mot-clé elles te disent quoi demander plutôt que de tout lister."""
 
 #: Description de `need`. En tête parce que c'est la première décision à prendre.
 #: Description de `need`, et **le mécanisme avec**.
@@ -206,6 +210,26 @@ _NEED_FIELD = f"""- "need" : ce qui te manque pour répondre ou pour agir, à ch
   tu remplis "need", mets donc une seule phrase dans "reply" et garde ton analyse pour la
   suite."""
 
+#: Ce que le modèle lit **à la seconde passe**, à la place de `_NEED_FIELD`.
+#:
+#: **Le trou que ce correctif comble.** Les deux passes recevaient la consigne au mot près,
+#: donc `_NEED_FIELD` à la seconde aussi — et il y promet « je vais chercher ces tranches et
+#: je te repose la question ». Le modèle redemandait donc une tranche, écrivait une réponse
+#: d'attente en conséquence (« je vérifie le nom exact, puis je crée »), et cette réponse-là
+#: était montrée : `read_need` n'est plus consulté après la seconde passe (`IA-16`), la
+#: demande tombait en silence, et l'utilisateur voyait une promesse au lieu d'un résultat.
+#:
+#: Deux fois de suite dans le même fil, sur une séance Cadence qui n'a jamais été créée.
+#:
+#: Le champ `need` **disparaît de la forme attendue** plutôt que d'être décrit comme
+#: inutile : il n'y a rien de plus clair qu'une case absente, et le modèle ne peut pas
+#: remplir ce qu'on ne lui montre pas.
+_NEED_DONE = """- **C'est ton dernier tour.** Tu as reçu les tranches que tu as demandées, et il n'y en
+  aura pas d'autres : réponds et agis **maintenant**, avec ce que tu as sous les yeux.
+  N'annonce pas ce que tu vas vérifier — soit tu le sais et tu le fais, soit tu ne le sais
+  pas et tu le dis. Si un nom exact te manque encore, emploie celui que tu as : une séance
+  utilisable vaut mieux qu'une promesse."""
+
 #: Description de `actions`.
 #:
 #: Rédigée en « je te demande / tu fais » et non en « tu peux » : un modèle à qui on offre
@@ -228,16 +252,34 @@ _REMEMBER_FIELD = """- "remember" : ce que **je viens de t'apprendre sur moi** e
 
 _TITLE_FIELD = '- "title" : cinq mots qui nomment cette discussion, pour la retrouver plus tard.'
 
+#: Les règles qui valent aux **deux** passes.
 _ACTION_RULES = """- Une action est {"name": "…", "args": {…}}. N'emploie **que** les noms listés, avec
   exactement les arguments décrits. Un nom inventé est ignoré, et je ne le saurai pas.
-- **S'il te manque une donnée, regarde d'abord si une tranche ci-dessus la porte :
-  demande-la dans "need" au lieu de t'en excuser.** Tu ne dis « je ne sais pas » que
-  lorsqu'aucune tranche ne peut l'apporter — c'est ce qui précise la règle ci-dessus.
-- Ne devine jamais un identifiant, une date ni une valeur. S'il te manque de quoi agir,
-  laisse "actions" vide et **remplis "need"** plutôt que de me le demander dans "reply".
 - Ne parle dans "reply" que des actions que tu as réellement mises dans "actions".
 - **Aucune action à la suite d'une douleur, d'une blessure ou d'un symptôme.** Tu notes,
   tu renvoies vers un professionnel, tu n'écris rien d'autre."""
+
+#: Ce qui s'ajoute **à la première passe** : demander plutôt que de s'excuser.
+_ASK_RULES = """- **S'il te manque une donnée, regarde d'abord si une tranche ci-dessus la porte :
+  demande-la dans "need" au lieu de t'en excuser.** Tu ne dis « je ne sais pas » que
+  lorsqu'aucune tranche ne peut l'apporter — c'est ce qui précise la règle ci-dessus.
+  Demande **tout** ce dont tu auras besoin dès maintenant, mots-clés compris : c'est la
+  seule occasion.
+- Ne devine jamais un identifiant, une date ni une valeur. S'il te manque de quoi agir,
+  laisse "actions" vide et **remplis "need"** plutôt que de me le demander dans "reply"."""
+
+#: Ce qui s'ajoute **à la seconde**, et qui dit l'inverse — parce que la situation l'est.
+#:
+#: Les deux passes recevaient ces règles à l'identique. « Remplis "need" plutôt que de me
+#: le demander dans "reply" » y était donc encore vrai au dernier tour, où plus rien ne lit
+#: `need` : le modèle obéissait, sa demande tombait en silence, et sa réponse d'attente
+#: s'affichait. Deux consignes qui se contredisent valent moins qu'une seule ; deux
+#: consignes identiques dans deux situations opposées aussi.
+_FINAL_RULES = """- Ne devine jamais un identifiant, une date ni une valeur. S'il t'en manque un, laisse
+  "actions" vide et dis-le franchement dans "reply" — c'est ton dernier tour, personne ne
+  te reposera la question.
+- **N'annonce rien que tu ne fasses dans ce même message.** « Je vérifie puis je crée » ne
+  crée rien : si tu peux agir, l'action est dans "actions" maintenant."""
 
 
 def build_prompt(
@@ -250,6 +292,7 @@ def build_prompt(
     actions: list[str] | None = None,
     slices: list[str] | None = None,
     naming: bool = False,
+    final: bool = False,
 ) -> str:
     """Assemble la consigne. **Aucun fichier n'est envoyé au modèle** (`IA-09`).
 
@@ -308,9 +351,15 @@ def build_prompt(
             f"## Ce que tu peux me demander de te montrer\n\n{available}\n\n"
             f"{_PERIODS}\n\n"
         )
-        shape += ['"need": []', '"actions": []']
-        fields += [_NEED_FIELD, _ACTIONS_FIELD]
-        rules = f"\n{_ACTION_RULES}"
+        if final:
+            # Pas de `"need"` du tout dans la forme : une case absente est la façon la plus
+            # courte de dire qu'il n'y a plus rien à demander.
+            shape += ['"actions": []']
+            fields += [_NEED_DONE, _ACTIONS_FIELD]
+        else:
+            shape += ['"need": []', '"actions": []']
+            fields += [_NEED_FIELD, _ACTIONS_FIELD]
+        rules = f"\n{_ACTION_RULES}\n{_FINAL_RULES if final else _ASK_RULES}"
 
     shape += ['"reply": "…"', '"remember": [{"topic": "…", "note": "…"}]']
     fields += [_REPLY_FIELD, _REMEMBER_FIELD]
@@ -574,10 +623,19 @@ class Need(NamedTuple):
     name: str
     day: date | None = None
     week: bool = False
+    #: La recherche, pour les tranches qui en prennent une — `exercices_cadence:push up`.
+    #:
+    #: **Elle ne désigne aucun fichier et ne relâche aucune garantie.** `IA-09` tient au
+    #: nom, qui reste choisi dans une liste fermée ; ce qui varie ici est un mot-clé passé
+    #: à une recherche en mémoire, exactement comme la date fait varier une période sans
+    #: choisir ce qu'on lit.
+    query: str = ""
 
     @property
     def label(self) -> str:
         """Ce que l'étape annonce à l'écran — lisible, pas la syntaxe brute."""
+        if self.query:
+            return f"{self.name} « {self.query} »"
         if self.day is None:
             return self.name
         quand = f"semaine du {self.day:%d/%m}" if self.week else f"{self.day:%d/%m}"
@@ -607,9 +665,16 @@ def read_need(payload: dict[str, Any], *, available: list[str]) -> list[Need]:
     ne choisit pas ce qu'on lui envoie, il choisit dans ce qu'on lui a dit pouvoir
     demander. Un nom inventé ne devient pas une lecture de fichier.
 
-    **La date, elle, est libre — et c'est sans conséquence sur cette garantie.** Le nom
-    reste choisi dans la liste fermée ; seule la période varie, et elle ne désigne aucun
-    fichier. `repas_du_jour@2026-08-15` lit ce que `repas_du_jour` lit déjà, un autre jour.
+    **La date et la recherche, elles, sont libres — et c'est sans conséquence sur cette
+    garantie.** Le nom reste choisi dans la liste fermée ; seules la période et le mot-clé
+    varient, et ni l'une ni l'autre ne désigne un fichier. `repas_du_jour@2026-08-15` lit
+    ce que `repas_du_jour` lit déjà, un autre jour ; `exercices_cadence:push up` cherche
+    dans un catalogue figé du dépôt, jamais dans les données de l'utilisateur.
+
+    **L'ordre des deux suffixes est `nom@jour:recherche`**, et le découpage suit le même :
+    la recherche d'abord — elle est le dernier morceau et peut contenir n'importe quoi —
+    puis la période sur ce qui reste. L'inverse couperait « push up » à un `@` qu'un nom
+    d'exercice n'a aucune raison de ne jamais porter.
     """
     raw = payload.get("need")
     if isinstance(raw, str):
@@ -622,18 +687,20 @@ def read_need(payload: dict[str, Any], *, available: list[str]) -> list[Need]:
     seen: set[str] = set()
     for entry in raw:
         text = _text(entry)[:MAX_NEED_NAME]
-        name, _, suffix = text.partition("@")
+        head, _, query = text.partition(":")
+        name, _, suffix = head.partition("@")
         if name not in allowed or text in seen:
             continue
 
+        query = query.strip()
         if not suffix:
-            kept.append(Need(name))
+            kept.append(Need(name, query=query))
         else:
             period = _read_period(suffix)
             if period is None:
                 continue
             day, week = period
-            kept.append(Need(name, day, week))
+            kept.append(Need(name, day, week, query))
 
         seen.add(text)
         if len(kept) >= MAX_NEED:

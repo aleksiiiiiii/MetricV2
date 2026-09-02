@@ -16,7 +16,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.text import fold
 from app.core.validation import today_local
+from app.domains.activity import exercise_catalog
 from app.storage.files import FileStore
 from app.storage.provider import StorageProvider
 from tests.fake_webdav import FakeWebDav
@@ -573,20 +575,12 @@ def test_orphan_exercise_lines_are_not_attached_to_an_unnamed_circuit(
 # ── Les noms proposés à la saisie ─────────────────────
 
 
-def test_the_cadence_names_come_first_and_are_marked(
+def test_the_users_own_exercises_come_first_with_their_group(
     app_client: TestClient, auth: dict[str, str]
 ) -> None:
-    """Les 35 noms d'abord, dans leur ordre : ce sont les seuls qui affichent une
-    illustration, et c'est le service qu'on rend en premier."""
-    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises", headers=auth).json()
-
-    assert proposed[0] == {"name": "Bicycle Crunches", "illustrated": True, "muscle_group": None}
-    assert sum(1 for item in proposed if item["illustrated"]) == 35
-
-
-def test_the_users_own_exercises_follow_with_their_group(
-    app_client: TestClient, auth: dict[str, str]
-) -> None:
+    """Le catalogue de Metric passe devant celui de Cadence, et la raison est un chiffre :
+    ce sont les seuls noms qui portent un **groupe musculaire**, donc les seuls qui font
+    qu'un tabata déclaré fait compte dans « groupes négligés » (**D2**)."""
     app_client.post(
         f"{ACTIVITY}/exercises",
         json={"name": "Développé couché", "muscle_group": "pectoraux"},
@@ -595,29 +589,69 @@ def test_the_users_own_exercises_follow_with_their_group(
 
     proposed = app_client.get(f"{ACTIVITY}/circuits/exercises", headers=auth).json()
 
-    assert proposed[-1] == {
+    assert proposed[0] == {
         "name": "Développé couché",
-        "illustrated": False,
         "muscle_group": "pectoraux",
+        "body_part": None,
+        "equipment": None,
+    }
+
+
+def test_the_cadence_catalogue_follows_with_its_body_part_and_equipment(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Les 1324 noms de Cadence suivent. Ils ne portent aucun groupe musculaire — en
+    deviner un serait inventer une valeur que les statistiques prendraient au sérieux."""
+    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises?q=push-up", headers=auth).json()
+
+    assert proposed[0] == {
+        "name": "push-up",
+        "muscle_group": None,
+        "body_part": "chest",
+        "equipment": "body weight",
     }
 
 
 def test_a_name_shared_by_both_catalogues_appears_once(
     app_client: TestClient, auth: dict[str, str]
 ) -> None:
-    """Proposer les deux graphies laisserait choisir celle qui n'a pas d'illustration.
+    """Proposer les deux graphies laisserait choisir celle qui perd le groupe musculaire.
     La reconnaissance passe par `fold`, celle du reste du domaine."""
     app_client.post(
-        f"{ACTIVITY}/exercises", json={"name": "plank", "muscle_group": "abdos"}, headers=auth
+        f"{ACTIVITY}/exercises", json={"name": "Burpee", "muscle_group": "abdos"}, headers=auth
     )
 
-    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises", headers=auth).json()
-    planks = [item for item in proposed if item["name"].lower() == "plank"]
+    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises?q=burpee", headers=auth).json()
+    burpees = [item for item in proposed if fold(item["name"]) == "burpee"]
 
-    assert len(planks) == 1
-    # C'est la graphie de Cadence qui gagne — elle seule affiche une illustration —, et
-    # elle repart avec le groupe musculaire que l'utilisateur avait déjà choisi.
-    assert planks[0] == {"name": "Plank", "illustrated": True, "muscle_group": "abdos"}
+    assert len(burpees) == 1
+    # C'est la graphie de l'utilisateur qui gagne : elle seule porte un groupe musculaire,
+    # et c'est lui qui décide de ce qu'un tabata fait ajoute aux statistiques.
+    assert burpees[0]["muscle_group"] == "abdos"
+
+
+def test_the_search_never_serves_the_whole_catalogue(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """1324 exercices d'un bloc, ce sont 70 ko sur le réseau pour qu'un téléphone les
+    filtre — le calcul métier du mauvais côté, et le plafond est là pour ça."""
+    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises", headers=auth).json()
+
+    assert len(proposed) == exercise_catalog.LIMIT
+
+
+def test_the_equipment_filter_answers_a_question_without_a_keyword(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """« je n'ai que des haltères » n'a pas de mot-clé. Une recherche vide filtrée rend le
+    début du catalogue, et non rien."""
+    proposed = app_client.get(
+        f"{ACTIVITY}/circuits/exercises?equipment=dumbbell&body_part=upper%20legs", headers=auth
+    ).json()
+
+    assert proposed
+    assert all(item["equipment"] == "dumbbell" for item in proposed)
+    assert all(item["body_part"] == "upper legs" for item in proposed)
 
 
 def test_the_route_is_not_swallowed_by_the_row_id_one(

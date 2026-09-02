@@ -23,12 +23,18 @@ from app.domains.activity.schemas import (
     CircuitImportPayload,
     CircuitList,
     CircuitPayload,
+    CircuitProposal,
     CircuitSuggestion,
+    ComposeRequest,
     Exercise,
     ExerciseEntry,
     ExerciseEntryPayload,
     ExercisePayload,
     ExerciseProgress,
+    Load,
+    LoadDetail,
+    LoadList,
+    LoadPayload,
     NoteDraft,
     Run,
     RunDetail,
@@ -38,6 +44,7 @@ from app.domains.activity.schemas import (
     WorkoutPayload,
 )
 from app.domains.activity.service import (
+    CircuitLoadService,
     CircuitService,
     ExerciseService,
     RunService,
@@ -390,14 +397,22 @@ async def import_circuit(payload: CircuitImportPayload, store: StoreDep) -> Circ
     response_model=list[CircuitSuggestion],
     summary="Noms d'exercices proposés",
 )
-async def list_circuit_exercises(store: StoreDep) -> Sequence[CircuitSuggestion]:
-    """Les noms à proposer à la saisie : ceux de Cadence, puis ceux du catalogue.
+async def list_circuit_exercises(
+    store: StoreDep,
+    q: Annotated[str, Query(max_length=80, description="Recherche par nom")] = "",
+    body_part: Annotated[str | None, Query(description="Zone du corps du catalogue")] = None,
+    equipment: Annotated[str | None, Query(description="Matériel du catalogue")] = None,
+) -> Sequence[CircuitSuggestion]:
+    """Les noms à proposer à la saisie : ceux du catalogue de Metric, puis ceux de Cadence.
 
     **Déclarée avant `/circuits/{row_id}`**, et ce n'est pas cosmétique : `row_id` est un
     entier, mais une route déclarée plus tôt gagne, et l'ordre inverse ferait répondre
     `422` à « exercises » plutôt que cette liste.
+
+    Une recherche vide est légitime et rend le début du catalogue : c'est ce qui permet à
+    « je n'ai que des haltères » d'être une question sans mot-clé.
     """
-    return await CircuitService(store).suggestions()
+    return await CircuitService(store).suggestions(q, body_part=body_part, equipment=equipment)
 
 
 @router.get("/circuits/{row_id}", response_model=Circuit, summary="Détail d'un circuit")
@@ -424,6 +439,29 @@ async def delete_circuit(row_id: RowId, store: StoreDep, if_match: IfMatch = Non
 
 
 @router.post(
+    "/circuits/propose",
+    response_model=CircuitProposal,
+    summary="Composer une séance assistée",
+)
+async def compose_circuit(
+    payload: ComposeRequest, store: StoreDep, ai: AiServiceDep
+) -> CircuitProposal:
+    """Une phrase, un circuit **proposé**. Rien n'est écrit (**R5**).
+
+    Le matériel possédé, les contraintes et les groupes négligés partent avec la demande
+    sans qu'on ait à les taper : c'est ce qui rend « fais-moi 30 minutes » répondable.
+
+    Sans clé OpenRouter, `AiServiceDep` fait échouer l'endpoint avec un code du catalogue
+    avant même d'entrer ici (`IA-07`) — le formulaire manuel de `/activite/seances`, lui,
+    reste entier.
+
+    **Aucun lien n'est fabriqué ici** (**D7**). Le modèle nomme des exercices ; l'URL naît
+    à la lecture du circuit, une fois enregistré.
+    """
+    return await CircuitService(store).compose(ai, payload)
+
+
+@router.post(
     "/circuits/{row_id}/done",
     response_model=Workout,
     status_code=status.HTTP_201_CREATED,
@@ -440,3 +478,64 @@ async def complete_circuit(row_id: RowId, payload: CircuitDonePayload, store: St
     donc de la déclarer deux fois, et rien ne rappellera de la déclarer. C'est assumé.
     """
     return await CircuitService(store).mark_done(row_id, payload)
+
+
+# ── Charges des exercices de tabata (**C1**) ──────────
+
+
+@router.get("/loads", response_model=LoadList, summary="Charges des exercices de tabata")
+async def list_loads(store: StoreDep) -> LoadList:
+    """Les exercices constitutifs d'une séance tabata, et leur charge quand elle existe.
+
+    La liste vient de `circuit_exercises.csv` et d'elle seule : un exercice de musculation
+    n'y entre pas, sa charge est déjà journalisée série par série.
+
+    `id` et `token` sont à `null` tant qu'aucune charge n'a été déclarée — il n'y a alors
+    aucune ligne. C'est ce couple qui dit à l'écran de poster plutôt que de corriger.
+    """
+    return await CircuitLoadService(store).list()
+
+
+@router.get("/loads/detail", response_model=LoadDetail, summary="Détail d'une charge")
+async def read_load(
+    store: StoreDep,
+    name: Annotated[str, Query(min_length=1, max_length=80, description="Nom de l'exercice")],
+) -> LoadDetail:
+    """La courbe des décisions de charge, et les trente derniers jours de séances.
+
+    **Par nom et non par position**, et ce n'est pas un écart au patron : une position se
+    décale à la première suppression, et un exercice jamais renseigné n'a aucune ligne dont
+    on pourrait donner la position. Le rapprochement passe par `fold`.
+
+    **Déclarée avant `/loads/{row_id}`** pour la même raison que `/circuits/exercises` :
+    une route déclarée plus tôt gagne, et l'ordre inverse ferait répondre `422`.
+    """
+    return await CircuitLoadService(store).detail(name)
+
+
+@router.post(
+    "/loads",
+    response_model=Load,
+    status_code=status.HTTP_201_CREATED,
+    summary="Déclarer une charge",
+)
+async def create_load(payload: LoadPayload, store: StoreDep) -> Load:
+    """Déclare la première charge d'un exercice, ou son poids du corps.
+
+    Aucun `If-Match` : il n'y a pas encore de ligne, donc pas de jeton à garder. C'est une
+    **addition**, et la correction suivante passe sous la garde (`STO-05`).
+    """
+    return await CircuitLoadService(store).create(payload)
+
+
+@router.patch("/loads/{row_id}", response_model=Load, summary="Corriger une charge")
+async def update_load(
+    row_id: RowId, payload: LoadPayload, store: StoreDep, if_match: IfMatch = None
+) -> Load:
+    """Corrige une charge, sous garde anti-conflit (`STO-05`).
+
+    Le journal des changements n'accueille une ligne que si la valeur a **réellement**
+    bougé : réenregistrer une carte sans y toucher ne pose pas un point de plus sur la
+    courbe (**C2**).
+    """
+    return await CircuitLoadService(store).update(row_id, _token(if_match), payload)

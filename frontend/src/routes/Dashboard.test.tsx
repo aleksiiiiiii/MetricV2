@@ -534,13 +534,14 @@ describe('tableau de bord', () => {
     expect(screen.getByText(/−3,8/)).toBeInTheDocument();
   });
 
-  it('nomme la part qui n’est ni course ni musculation', async () => {
+  it('nomme les deux parts de la répartition', async () => {
+    // Deux et non trois depuis le rebranchement : le champ `type` libre d'une séance
+    // n'existe plus dans la source, donc plus de part « autre » à nommer.
     stub();
     renderDashboard();
 
     expect(await screen.findByText('Course')).toBeInTheDocument();
-    expect(screen.getByText('Musculation')).toBeInTheDocument();
-    expect(screen.getByText('Autre')).toBeInTheDocument();
+    expect(screen.getByText('Tabata')).toBeInTheDocument();
   });
 
   it('montre les sept derniers jours, trous compris', async () => {

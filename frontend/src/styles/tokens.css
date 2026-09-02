@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════
    METRIC — Design tokens
    Direction : planche de bord instrumentée.
-   Fond sombre mat, accents désaturés, données en mono.
+   Fond sombre mat, accents saturés, données en mono.
 
    Source de vérité : GuidelinesUI.html (`:root`). Les valeurs du bloc « Charte »
    ci-dessous en sont la reprise exacte — ne pas les modifier sans modifier la charte.
@@ -32,10 +32,10 @@
   --line-soft: #182231;
 
   /* ── Charte — 4 couleurs de signal ─────────────── */
-  --signal: #7fa8b4; /* primaire — cyan ardoise, mesure / neutre */
-  --effort: #8aa37b; /* sauge — activité, série tenue */
-  --load: #e2a659; /* ambre — charge, seuil approché */
-  --recover: #a9748a; /* mauve — repos, alerte, dette */
+  --signal: #38bdf8; /* primaire — bleu ciel, mesure / neutre */
+  --effort: #4ade80; /* vert franc — activité, série tenue */
+  --load: #fbbf24; /* ambre vif — charge, seuil approché */
+  --recover: #fb7185; /* rose — repos, alerte, dette */
 
   /* ── Confettis ────────────────────────────────────
      Décoratif, et **c'est la seule liste de couleurs du dépôt qui ne porte aucun sens**.
@@ -45,7 +45,7 @@
      Les quatre couleurs de signal ouvrent la liste — la fête reste dans la charte — et
      trois teintes de plus l'élargissent, parce qu'un feu d'artifice en quatre couleurs se
      lit comme un graphique. */
-  --confetti: #7fa8b4, #8aa37b, #e2a659, #a9748a, #d9c05e, #6f8fd0, #d3856b;
+  --confetti: #38bdf8, #4ade80, #fbbf24, #fb7185, #a78bfa, #38bdf8, #fb923c;
 
   /* ── Charte — texte ───────────────────────────── */
   --ink: #e3e8ee;
@@ -66,10 +66,10 @@
      main ; les nommer permet de dériver n'importe quelle opacité, et surtout de
      paramétrer une couleur d'accent par piste (`HEAT-20`, `L11-12`) sans dupliquer
      quatre variantes par couleur. */
-  --signal-rgb: 127 168 180;
-  --effort-rgb: 138 163 123;
-  --load-rgb: 226 166 89;
-  --recover-rgb: 169 116 138;
+  --signal-rgb: 56 189 248;
+  --effort-rgb: 74 222 128;
+  --load-rgb: 251 191 36;
+  --recover-rgb: 251 113 133;
   --ink-rgb: 227 232 238;
 
   /* Accent courant : ce que lisent les composants génériques. Une piste le
@@ -134,7 +134,7 @@
      `TabBar.module.css` — trois occurrences de `#93b8c3`, une de `#1b2530`. Elles
      tenaient parce qu'un survol *éclaircit* sur fond sombre ; sur fond clair il doit
      assombrir, et un littéral ne sait pas faire les deux. */
-  --signal-hover: #93b8c3;
+  --signal-hover: #7dd3fc;
   --log-hover: #1b2530;
 
   /* Élévation des surfaces flottantes (infobulles, tiroirs). */
@@ -249,14 +249,18 @@
   --line-soft: #e2e8ef;
 
   /* ── Les 4 couleurs de signal ────────────────────
-     Même sémantique, même ordre, teintes conservées : 192° / 99° / 33° / 338°. */
-  --signal: #2b6b7b; /* cyan ardoise — mesure / neutre */
-  --effort: #4a6b38; /* sauge — activité, série tenue */
-  --load: #a45a00; /* ambre — charge, seuil approché */
-  --recover: #8c3f5b; /* mauve — repos, alerte, dette */
+     Même sémantique, même ordre. **Les teintes ne sont plus celles du sombre** : un
+     accent de thème clair doit être sombre pour porter du texte, un accent de thème
+     sombre doit être clair pour qu'on écrive dessus. Le primaire est donc bleu ciel
+     d'un côté (#38BDF8) et bleu marine de l'autre (#1E3A8A) — deux bouts de la même
+     famille, chacun là où il tient ses 4,5:1. */
+  --signal: #1e3a8a; /* bleu marine — mesure / neutre */
+  --effort: #166534; /* vert — activité, série tenue */
+  --load: #92400e; /* ambre — charge, seuil approché */
+  --recover: #be123c; /* rose — repos, alerte, dette */
 
   /* Mêmes teintes, assombries pour tenir sur un fond clair. */
-  --confetti: #2b6b7b, #4a6b38, #a45a00, #8c3f5b, #9a8420, #3f5da8, #a4553c;
+  --confetti: #1e3a8a, #166534, #92400e, #be123c, #6d28d9, #0369a1, #c2410c;
 
   /* ── Texte ───────────────────────────────────── */
   --ink: #131b24;
@@ -266,10 +270,10 @@
   /* Les composantes RVB **doivent** suivre leur hex : tout ce qui dérive une opacité
      lit celles-ci, et une paire désaccordée donne un badge d'une couleur et son texte
      d'une autre. `tokens.test.ts` le vérifie sur les deux thèmes. */
-  --signal-rgb: 43 107 123;
-  --effort-rgb: 74 107 56;
-  --load-rgb: 164 90 0;
-  --recover-rgb: 140 63 91;
+  --signal-rgb: 30 58 138;
+  --effort-rgb: 22 101 52;
+  --load-rgb: 146 64 14;
+  --recover-rgb: 190 18 60;
   --ink-rgb: 19 27 36;
 
   /* ── Heatmap : le vrai travail du thème clair ────
@@ -297,7 +301,7 @@
   --badge-border-a: 0.42;
 
   /* Un survol assombrit, au lieu d'éclaircir. */
-  --signal-hover: #1e5666;
+  --signal-hover: #172554;
   --log-hover: #eef2f7;
 
   /* Une ombre portée sur fond clair se lit à 12 % là où il en fallait 45 sur fond

@@ -75,6 +75,12 @@ const PRIVATE_ROUTES = [
   ['/activite/catalogue', 'activite-catalogue'],
   ['/activite/statistiques', 'activite-statistiques'],
   ['/activite/seances', 'activite-seances'],
+  ['/activite/charges', 'activite-charges'],
+  // La composition assistée. Elle est mesurée **vide** : sa proposition demande un
+  // appel à un modèle, et un audit qui en déclenche un à chaque passage taperait un
+  // service externe pour une mesure de gabarit. L'état vide est aussi le premier que
+  // l'écran montre, donc celui qui se regarde le plus.
+  ['/activite/creer', 'activite-creer'],
   ['/planning', 'planning'],
   ['/objectif', 'objectif'],
   ['/assistant', 'assistant'],

@@ -473,3 +473,51 @@ export function Check({
     </button>
   );
 }
+
+// ── Ligne de points ───────────────────────────────────
+
+export interface Dot {
+  /** Ce que la synthèse vocale lit — « 12 août, 1 séance ». Fabriqué par l'appelant. */
+  label: string;
+  /** Intensité entre 0 et 1. **0 est une mesure** : ce jour-là, il n'y a rien eu. */
+  level: number;
+}
+
+/**
+ * Une trentaine de jours sur une seule ligne — la forme la plus dense qui reste lisible.
+ *
+ * ── Pourquoi pas `Heatmap` ────────────────────────────────────────────────
+ *
+ * `Heatmap` dessine des **semaines**, en grille : c'est ce qu'il faut pour l'assiduité,
+ * où l'on cherche le trou du mardi. Ici on cherche une cadence sur un mois, et la grille
+ * la casserait en lignes de sept — on lit « quatre fois ce mois-ci », pas « le mardi ».
+ *
+ * ── Ce n'est pas une cible ────────────────────────────────────────────────
+ *
+ * Rien ne s'appuie sur un point, donc le plancher de 44 px ne s'y applique pas — il ne
+ * s'applique qu'à ce qui reçoit un geste. Les points restent néanmoins nommés un à un
+ * pour la synthèse vocale : c'est la seule porte qui reste quand on ne voit pas.
+ */
+export function DotRow({ dots, label }: { dots: readonly Dot[]; label: string }) {
+  return (
+    <div className={styles.dotRow} role="img" aria-label={label}>
+      {dots.map((dot) => (
+        <span
+          key={dot.label}
+          className={styles.dot}
+          title={dot.label}
+          // L'opacité et non une couleur par palier : une échelle continue n'a pas de
+          // seuil à justifier, et elle garde le même sens dans les deux thèmes.
+          //
+          // **Le plancher est à 0,7 et non à 0,35**, mesuré en capture : un jour à une
+          // séance tombait à 0,675 en thème sombre et devenait indiscernable d'un jour
+          // vide. Ce qu'on vient lire ici est « quels jours », pas « combien de fois » —
+          // la nuance entre une et deux séances peut être discrète, la différence entre
+          // zéro et une ne le peut pas.
+          style={{ opacity: dot.level === 0 ? undefined : 0.7 + dot.level * 0.3 }}
+          data-on={dot.level > 0 ? '' : undefined}
+        />
+      ))}
+    </div>
+  );
+}

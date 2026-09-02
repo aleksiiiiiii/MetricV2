@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   AiBlock,
@@ -34,17 +34,66 @@ import { useToast } from '@/lib/toast';
 import styles from './KitchenSink.module.css';
 
 const SIGNALS = [
-  { token: 'signal', name: 'Signal', hex: '#7FA8B4', sense: 'mesure, neutre' },
-  { token: 'effort', name: 'Effort', hex: '#8AA37B', sense: 'série tenue' },
-  { token: 'load', name: 'Charge', hex: '#C39B6E', sense: 'seuil approché' },
-  { token: 'recover', name: 'Récup', hex: '#A9748A', sense: 'dette, alerte' },
+  { token: 'signal', name: 'Signal', sense: 'mesure, neutre' },
+  { token: 'effort', name: 'Effort', sense: 'série tenue' },
+  { token: 'load', name: 'Charge', sense: 'seuil approché' },
+  { token: 'recover', name: 'Récup', sense: 'dette, alerte' },
 ] as const;
 
 const SURFACES = [
-  { token: 'bg', name: 'Fond', hex: '#0B0F16' },
-  { token: 'surface', name: 'Surface', hex: '#131A24' },
-  { token: 'surface-2', name: 'Surface haute', hex: '#18212D' },
+  { token: 'bg', name: 'Fond' },
+  { token: 'surface', name: 'Surface' },
+  { token: 'surface-2', name: 'Surface haute' },
 ] as const;
+
+/**
+ * La valeur **réellement peinte** d'un token, lue sur la page.
+ *
+ * ── Pourquoi ce n'est pas une constante ───────────────────────────────────
+ *
+ * Elle en était une, et elle mentait : la liste annonçait `#C39B6E` pour une charte qui
+ * portait `#E2A659`, et personne ne l'a vu — l'aplat à côté, lui, était juste. Une page
+ * dont le rôle est d'être **le test visuel du projet** ne peut pas décrire une couleur
+ * autrement que le reste de l'application la peint.
+ *
+ * C'est la règle du catalogue d'actions, appliquée à la charte : ce qui est décrit doit
+ * venir de la même source que ce qui est rendu.
+ *
+ * ── Pourquoi elle suit le thème ───────────────────────────────────────────
+ *
+ * `--signal` ne vaut pas la même chose en clair et en sombre. La page montre donc la
+ * palette du thème **affiché**, ce qui est la seule lecture utile ; l'observateur relit
+ * quand `data-theme` change, sans quoi basculer de thème laisserait les hex du précédent.
+ */
+function usePaintedColours(tokens: readonly string[]): Record<string, string> {
+  const [painted, setPainted] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const read = () => {
+      const style = getComputedStyle(document.documentElement);
+      setPainted(
+        Object.fromEntries(
+          tokens.map((token) => [token, style.getPropertyValue(`--${token}`).trim().toUpperCase()]),
+        ),
+      );
+    };
+    read();
+
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => {
+      observer.disconnect();
+    };
+    // Les jetons sont des constantes de module : la liste ne change jamais d'un rendu à
+    // l'autre, et la relire en dépendance relancerait l'observateur à chaque passage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return painted;
+}
 
 const SPACES = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const;
 
@@ -235,7 +284,10 @@ const ROUTINE: { group: string; items: RoutineItem[] }[] = [
  * Chaque composant de la bibliothèque y est rendu. C'est le test visuel : une régression
  * de style saute aux yeux sur une seule page, avant d'atteindre un écran applicatif.
  */
+const PAINTED = [...SIGNALS, ...SURFACES].map((entry) => entry.token);
+
 export function KitchenSink() {
+  const painted = usePaintedColours(PAINTED);
   const [period, setPeriod] = useState<Period>('30j');
   const [charge, setCharge] = useState('82,5');
   const [proposedProtein, setProposedProtein] = useState('38');
@@ -267,7 +319,7 @@ export function KitchenSink() {
             <div className={styles.meta}>
               <div className={styles.name}>{color.name}</div>
               <div className={styles.hex}>
-                {color.hex} · {color.sense}
+                {painted[color.token] ?? '…'} · {color.sense}
               </div>
             </div>
           </div>
@@ -285,7 +337,7 @@ export function KitchenSink() {
             />
             <div className={styles.meta}>
               <div className={styles.name}>{color.name}</div>
-              <div className={styles.hex}>{color.hex}</div>
+              <div className={styles.hex}>{painted[color.token] ?? '…'}</div>
             </div>
           </div>
         ))}

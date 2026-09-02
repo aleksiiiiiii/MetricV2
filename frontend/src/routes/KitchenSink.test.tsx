@@ -25,12 +25,26 @@ describe('galerie de composants', () => {
     }
   });
 
-  it('expose les trois surfaces et leurs valeurs', () => {
+  it('affiche la couleur réellement peinte, pas une valeur recopiée', () => {
+    /**
+     * **La liste recopiée mentait.** Elle annonçait `#C39B6E` pour une charte qui portait
+     * `#E2A659`, et personne ne l'a vu : l'aplat à côté, lui, était juste. Une page dont
+     * le rôle est d'être le test visuel du projet ne peut pas décrire une couleur
+     * autrement que le reste de l'application la peint.
+     *
+     * Le test le vérifie en posant des valeurs que rien n'a codées en dur : si la page se
+     * remet à recopier une constante, elles n'apparaîtront pas.
+     */
+    document.documentElement.style.setProperty('--bg', '#010203');
+    document.documentElement.style.setProperty('--signal', '#0A0B0C');
+
     renderGallery();
 
-    expect(screen.getByText('#0B0F16')).toBeInTheDocument();
-    expect(screen.getByText('#131A24')).toBeInTheDocument();
-    expect(screen.getByText('#18212D')).toBeInTheDocument();
+    expect(screen.getByText('#010203')).toBeInTheDocument();
+    expect(screen.getByText(/#0A0B0C/)).toBeInTheDocument();
+
+    document.documentElement.style.removeProperty('--bg');
+    document.documentElement.style.removeProperty('--signal');
   });
 
   it('rend chaque composant de la bibliothèque', () => {

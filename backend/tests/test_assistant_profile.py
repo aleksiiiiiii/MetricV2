@@ -28,8 +28,9 @@ def test_a_filled_profile_becomes_one_line_each() -> None:
         profile.HEIGHT: "178",
         profile.BIRTH_YEAR: "1995",
         profile.TRAINING_DAYS: "lundi, mercredi, samedi",
-        profile.EQUIPMENT: "barre, disques, pas de rack",
+        profile.EQUIPMENT: "barbell,dumbbell",
         profile.PREFERENCES: "je déteste le cardio en salle",
+        profile.CONSTRAINTS: "épaule droite sensible",
     }
 
     rendu = profile.lines(stored, today=TODAY)
@@ -37,7 +38,41 @@ def test_a_filled_profile_becomes_one_line_each() -> None:
     assert "Taille : 178 cm" in rendu
     assert "Âge : 31 ans" in rendu
     assert "Jours où je peux m'entraîner : lundi, mercredi, samedi" in rendu
-    assert "Matériel dont je dispose : barre, disques, pas de rack" in rendu
+    # Les noms **du catalogue**, non traduits : c'est avec eux que le modèle cherche.
+    assert "Matériel dont je dispose : barbell, dumbbell" in rendu
+    assert "Préférences d'entraînement : je déteste le cardio en salle" in rendu
+    # Nommée « à respecter » : c'est ce qui dit au modèle qu'il n'a pas le droit de
+    # l'arbitrer contre une préférence.
+    assert "Contraintes à respecter : épaule droite sensible" in rendu
+
+
+def test_the_equipment_cell_keeps_what_the_catalogue_does_not_know() -> None:
+    """Le champ était libre avant la phase 3 : une cellule existante porte une phrase.
+
+    La fermer sur les 28 valeurs sans rien dire ferait disparaître cette phrase au premier
+    affichage, sans que personne ne l'ait effacée — l'invariant « aucune valeur inventée »
+    dans l'autre sens. L'écran les montre ; le modèle, lui, ne les reçoit pas.
+    """
+    connus, inconnus = profile.equipment("dumbbels 10kg et tapis, dumbbell")
+
+    assert connus == ["dumbbell"]
+    assert inconnus == ["dumbbels 10kg et tapis"]
+    assert profile.lines({profile.EQUIPMENT: "dumbbels 10kg et tapis"}) == []
+
+
+def test_the_equipment_is_matched_exactly_and_ordered_by_the_catalogue() -> None:
+    """`fold` ramène la casse et les accents, rien de plus.
+
+    Un rapprochement flou choisirait à la place de l'utilisateur, et sa faute ne se verrait
+    pas : elle ferait simplement disparaître des exercices de ce qu'on lui propose.
+
+    L'ordre est celui du catalogue et non celui de la cellule — deux enregistrements
+    successifs doivent rendre la même ligne de consigne.
+    """
+    connus, inconnus = profile.equipment("DUMBBELL, band, dumbbell")
+
+    assert connus == ["band", "dumbbell"]
+    assert inconnus == []
 
 
 def test_the_age_is_derived_from_the_year_and_not_stored() -> None:
@@ -118,15 +153,56 @@ def test_a_profile_is_read_back_as_it_was_written(
 
     written = store_client.put(
         PROFILE,
-        json={"height_cm": 178, "birth_year": 1995, "equipment": "barre et disques"},
+        json={
+            "height_cm": 178,
+            "birth_year": 1995,
+            "equipment": ["barbell", "dumbbell"],
+            "constraints": "pas de banc",
+        },
         headers={**auth, "If-Match": token},
     )
 
     assert written.status_code == 200
     body = written.json()
     assert body["height_cm"] == 178
-    assert body["equipment"] == "barre et disques"
+    assert body["equipment"] == ["barbell", "dumbbell"]
+    assert body["constraints"] == "pas de banc"
     assert any("178 cm" in line for line in body["lines"])
+    assert any("Contraintes à respecter : pas de banc" in line for line in body["lines"])
+
+
+def test_the_equipment_catalogue_is_served_with_the_profile(
+    store_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Publié plutôt que recopié dans l'écran : une liste tenue dans deux langages finit
+    par ne plus décrire la même chose, et la divergence serait muette — un matériel absent
+    de l'écran ne se coche simplement jamais."""
+    body = store_client.get(PROFILE, headers=auth).json()
+    options = body["equipment_catalogue"]
+
+    assert len(options) == 28
+    assert [item["value"] for item in options][:2] == ["body weight", "dumbbell"]
+    assert sum(1 for item in options if item["common"]) == 12
+    # Les seize autres sont rangées derrière un dépliant, pas retirées : se tromper de
+    # côté coûte un appui, jamais un exercice inaccessible.
+    assert "leverage machine" in {item["value"] for item in options if not item["common"]}
+
+
+def test_an_equipment_outside_the_catalogue_is_refused(
+    store_client: TestClient, auth: dict[str, str]
+) -> None:
+    """Un `422` et non un tri silencieux : l'écran ne propose que des valeurs du catalogue,
+    donc une valeur inconnue est un défaut de client — l'accepter en la jetant ferait
+    croire à un enregistrement complet."""
+    token = store_client.get(PROFILE, headers=auth).json()["token"]
+
+    response = store_client.put(
+        PROFILE,
+        json={"equipment": ["haltères"]},
+        headers={**auth, "If-Match": token},
+    )
+
+    assert response.status_code == 422
 
 
 def test_writing_the_profile_can_clear_a_field(
@@ -137,7 +213,7 @@ def test_writing_the_profile_can_clear_a_field(
     token = store_client.get(PROFILE, headers=auth).json()["token"]
     store_client.put(
         PROFILE,
-        json={"height_cm": 178, "equipment": "un rack"},
+        json={"height_cm": 178, "equipment": ["barbell"]},
         headers={**auth, "If-Match": token},
     )
 
@@ -146,7 +222,7 @@ def test_writing_the_profile_can_clear_a_field(
         PROFILE, json={"height_cm": 178}, headers={**auth, "If-Match": token}
     ).json()
 
-    assert body["equipment"] == ""
+    assert body["equipment"] == []
     assert not any("Matériel" in line for line in body["lines"])
 
 

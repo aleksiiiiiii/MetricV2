@@ -23,6 +23,9 @@ RUNS_FILE = "Metric/activity/runs.csv"
 WORKOUTS_FILE = "Metric/activity/workouts.csv"
 EXERCISES_FILE = "Metric/activity/exercises.csv"
 LOG_FILE = "Metric/activity/exercise_log.csv"
+#: Les séries des séances tabata. Les groupes négligés y sont lus depuis le
+#: rebranchement du coach — même règle (`ACT-16`), autre source.
+SESSION_SETS_FILE = "Metric/activity/circuit_session_sets.csv"
 
 
 @pytest.fixture
@@ -648,9 +651,9 @@ def test_a_group_never_worked_is_none_not_a_huge_number(
     inventée fausserait la génération IA de planning."""
     today = today_local()
     dav.seed(
-        LOG_FILE,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{today - timedelta(days=5)},e1,Développé,pectoraux,80,3,8,\n",
+        SESSION_SETS_FILE,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n"
+        f"s1,{today - timedelta(days=5)},Développé,pectoraux,3,8\n",
     )
 
     neglected = {
@@ -668,10 +671,10 @@ def test_the_most_neglected_comes_first(
 ) -> None:
     today = today_local()
     dav.seed(
-        LOG_FILE,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{today - timedelta(days=2)},e1,Développé,pectoraux,80,3,8,\n"
-        f"w1,{today - timedelta(days=20)},e2,Squat,jambes,100,5,5,\n",
+        SESSION_SETS_FILE,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n"
+        f"s1,{today - timedelta(days=2)},Développé,pectoraux,3,8\n"
+        f"s2,{today - timedelta(days=20)},Squat,jambes,5,5\n",
     )
 
     neglected = app_client.get(ACTIVITY, headers=auth).json()["neglected"]

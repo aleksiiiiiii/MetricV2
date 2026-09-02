@@ -7,17 +7,29 @@ s'occupe que du cycle de vie des lignes.
 from __future__ import annotations
 
 import secrets
+from collections import defaultdict
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 
 from app.core.exceptions import AiUnreadableError, ValidationFailedError
 from app.core.parsing import estimate_one_rep_max, pace_min_per_km
-from app.core.text import fold
+from app.core.text import fold, fr
 from app.core.validation import today_local
-from app.domains.activity import circuit_link, notes, progress, splits
+from app.domains.activity import (
+    circuit_link,
+    composer,
+    exercise_catalog,
+    notes,
+    progress,
+    splits,
+)
 from app.domains.activity.models import (
     CircuitExerciseRow,
+    CircuitLoadLogRow,
+    CircuitLoadRow,
     CircuitRow,
+    CircuitSessionRow,
+    CircuitSessionSetRow,
     ExerciseLogRow,
     ExerciseRow,
     MuscleGroup,
@@ -32,14 +44,25 @@ from app.domains.activity.schemas import (
     CircuitExercisePayload,
     CircuitList,
     CircuitPayload,
+    CircuitProposal,
     CircuitSuggestion,
+    ComposeRequest,
     DistanceBand,
     Exercise,
     ExerciseEntry,
     ExerciseEntryPayload,
     ExercisePayload,
+    Load,
+    LoadDay,
+    LoadDetail,
+    LoadList,
+    LoadPayload,
+    LoadPoint,
+    LoadState,
     MonthTotals,
+    NeglectedGroup,
     NoteDraft,
+    ProposedCircuitExercise,
     Run,
     RunContext,
     RunDetail,
@@ -60,6 +83,10 @@ from app.storage.errors import StorageConflictError, StorageNotFoundError
 from app.storage.files import FileStore
 from app.storage.paths import (
     CIRCUIT_EXERCISES,
+    CIRCUIT_LOAD_LOG,
+    CIRCUIT_LOADS,
+    CIRCUIT_SESSION_SETS,
+    CIRCUIT_SESSIONS,
     CIRCUITS,
     EXERCISE_LOG,
     EXERCISES,
@@ -1143,23 +1170,57 @@ class CircuitService:
     WORKOUT_TYPE = "HIIT"
 
     def __init__(self, store: FileStore) -> None:
+        # Gardé en plus des dépôts : la composition assistée lit les réglages et les
+        # indicateurs du coach, qui vivent dans d'autres services construits sur demande.
+        self._store = store
         self._repo: CsvRepository[CircuitRow] = CsvRepository(store, CIRCUITS, CircuitRow)
         self._items: CsvRepository[CircuitExerciseRow] = CsvRepository(
             store, CIRCUIT_EXERCISES, CircuitExerciseRow
         )
         self._workouts = WorkoutService(store)
         self._exercises = ExerciseService(store)
+        self._sessions = CircuitSessionService(store)
         self._settings = SettingsService(store)
+        self._loads: CsvRepository[CircuitLoadRow] = CsvRepository(
+            store, CIRCUIT_LOADS, CircuitLoadRow
+        )
 
     # ── Conversions ───────────────────────────────────
 
     @staticmethod
-    def _to_link(row: CircuitRow, items: list[CircuitExerciseRow]) -> circuit_link.LinkCircuit:
+    def note_of(load: CircuitLoadRow | None) -> str:
+        """La note que le lien porte pour un exercice, d'après sa charge (**C7**).
+
+        **Un seul endroit au monde où « 12 » devient « 12 kg »** : la note du lien et le
+        champ que l'écran affiche sortent d'ici tous les deux. Deux compositions
+        divergeraient, et le symptôme serait un lien qui n'annonce pas ce que la carte dit.
+
+        Le poids du corps ne produit **aucune** note : un tabata sans charge n'a rien de
+        plus à dire sous le nom de l'exercice, et une ligne « poids du corps » sur chaque
+        écran de repos serait du bruit qui pousse le reste hors de vue.
+        """
+        if load is None or load.bodyweight or load.weight_kg is None:
+            return ""
+        return f"{fr(load.weight_kg)} kg"
+
+    @classmethod
+    def _to_link(
+        cls,
+        row: CircuitRow,
+        items: list[CircuitExerciseRow],
+        loads: dict[str, CircuitLoadRow] | None = None,
+    ) -> circuit_link.LinkCircuit:
         """Les lignes du fichier → la forme que le module pur manipule.
 
         C'est **ici** qu'on lit la sentinelle `-1`, et nulle part ailleurs : le module pur
         la connaît, l'API ne la voit jamais.
+
+        `loads` est facultatif, et son absence veut dire « pas de note » plutôt que « à
+        aller chercher ». Les appelants qui n'ont besoin que de la **durée** — `mark_done`
+        pour ses rounds bornés — évitent ainsi une lecture Nextcloud qui ne changerait rien
+        à leur résultat : une note ne pèse pas une seconde dans l'estimation.
         """
+        found = loads or {}
         return circuit_link.LinkCircuit(
             name=row.name,
             rounds=row.rounds,
@@ -1170,15 +1231,20 @@ class CircuitService:
                     duration_s=item.duration_s,
                     reps=item.reps,
                     rest_s=item.rest_s,
+                    note=cls.note_of(found.get(fold(item.name))),
                 )
                 for item in items
             ),
         )
 
     def _to_schema(
-        self, row: Row[CircuitRow], items: list[CircuitExerciseRow], base: str
+        self,
+        row: Row[CircuitRow],
+        items: list[CircuitExerciseRow],
+        base: str,
+        loads: dict[str, CircuitLoadRow] | None = None,
     ) -> Circuit:
-        link = self._to_link(row.model, items)
+        link = self._to_link(row.model, items, loads)
         prediction = circuit_link.estimate(link)
 
         return Circuit(
@@ -1198,6 +1264,7 @@ class CircuitService:
                     reps=None if item.reps == circuit_link.TIMED else item.reps,
                     name=item.name,
                     rest_s=item.rest_s,
+                    note=self.note_of((loads or {}).get(fold(item.name))) or None,
                 )
                 for item in items
             ],
@@ -1244,6 +1311,20 @@ class CircuitService:
         """L'adresse de Cadence, ou la chaîne vide (**D1**)."""
         return (await self._settings.values()).cadence_base_url
 
+    async def _loads_by_name(self) -> dict[str, CircuitLoadRow]:
+        """Les charges déclarées, indexées par nom **replié** (**C7**).
+
+        Lue une fois par affichage de liste et posée sur chaque lien : c'est ce qui fait
+        qu'un changement de charge se voit **immédiatement** dans les trois circuits qui
+        emploient l'exercice, sans qu'aucun lien soit réécrit dans un fichier. Le lien est
+        fabriqué à la lecture, il n'est stocké nulle part.
+        """
+        return {
+            fold(row.model.name): row.model
+            for row in await self._loads.read_all()
+            if row.model.name
+        }
+
     async def _items_of(self, circuit_id: str) -> list[CircuitExerciseRow]:
         """Les exercices d'un circuit, dans l'ordre **écrit** sur les lignes.
 
@@ -1264,6 +1345,7 @@ class CircuitService:
         d'allers-retours vers Nextcloud qu'il y a de séances enregistrées.
         """
         base = await self._base()
+        loads = await self._loads_by_name()
         rows = await self._repo.read_all()
         items = [row.model for row in await self._items.read_all()]
 
@@ -1274,7 +1356,7 @@ class CircuitService:
             bucket.sort(key=lambda entry: entry.position)
 
         circuits = [
-            self._to_schema(row, grouped.get(row.model.id, []) if row.model.id else [], base)
+            self._to_schema(row, grouped.get(row.model.id, []) if row.model.id else [], base, loads)
             for row in rows
         ]
         # Tri décroissant sur la date puis sur la position : deux circuits créés le même
@@ -1289,7 +1371,9 @@ class CircuitService:
             raise StorageNotFoundError("Ce circuit n'existe pas.")
 
         row = rows[index]
-        return self._to_schema(row, await self._items_of(row.model.id), await self._base())
+        return self._to_schema(
+            row, await self._items_of(row.model.id), await self._base(), await self._loads_by_name()
+        )
 
     async def find(self, circuit_id: str) -> Circuit | None:
         """Un circuit par son identifiant **stable**, ou `None`.
@@ -1303,44 +1387,75 @@ class CircuitService:
         rows = await self._repo.read_all()
         for row in rows:
             if row.model.id == circuit_id:
-                return self._to_schema(row, await self._items_of(row.model.id), await self._base())
+                return self._to_schema(
+                    row,
+                    await self._items_of(row.model.id),
+                    await self._base(),
+                    await self._loads_by_name(),
+                )
         return None
 
     # `Sequence` et non `list`, et ce n'est pas un choix de style : cette classe porte une
     # méthode `list`, qui masque le type interne dans toute annotation de son corps. Le
     # symptôme est un message de mypy qui parle de « callback protocol » sans jamais nommer
     # la collision.
-    async def suggestions(self) -> Sequence[CircuitSuggestion]:
-        """Les noms proposés à la saisie : ceux de Cadence, puis ceux de l'utilisateur.
+    async def suggestions(
+        self,
+        query: str = "",
+        *,
+        body_part: str | None = None,
+        equipment: str | None = None,
+    ) -> Sequence[CircuitSuggestion]:
+        """Les noms proposés à la saisie : les tiens d'abord, ceux de Cadence ensuite.
 
-        Les 35 d'abord, et dans leur ordre : ce sont les seuls qui affichent une
-        illustration, et c'est le service qu'on rend en premier. Les exercices du catalogue
-        de Metric suivent, sans doublon — un exercice déjà nommé comme Cadence le nomme
-        n'apparaît qu'une fois, avec son groupe musculaire.
+        ## Pourquoi une recherche et plus une liste
 
-        La reconnaissance passe par `fold`, celle du reste du domaine : « push-ups
-        classic » et « Push-Ups Classic » sont le même exercice, et proposer les deux
-        laisserait choisir la graphie qui n'a pas d'illustration.
+        Elle rendait 35 noms, tous ceux qui affichaient alors une illustration. Cadence en
+        embarque **1324** : les servir d'un bloc mettrait 70 ko sur le réseau pour qu'un
+        téléphone les filtre, c'est-à-dire le calcul métier du mauvais côté. Le filtrage
+        est donc ici, et le plafond est celui du catalogue — `exercise_catalog.LIMIT`.
+
+        ## Pourquoi le catalogue de Metric passe devant
+
+        Ce sont les seuls noms qui portent un **groupe musculaire**, et c'est lui qui fait
+        qu'un tabata déclaré fait compte dans « groupes négligés » (**D2**). Un nom de
+        Cadence n'en porte aucun, et en deviner un serait inventer une valeur que les
+        statistiques prendraient au sérieux.
+
+        Un exercice nommé des deux côtés n'apparaît **qu'une fois**, sous la graphie de
+        l'utilisateur : le rapprochement passe par `fold`, celui du reste du domaine.
+
+        ## Le filtre par zone ou par matériel ne s'applique qu'au catalogue de Cadence
+
+        Lui seul porte ces champs. Filtrer « je n'ai que des haltères » écarte donc les
+        exercices de Metric plutôt que d'en laisser passer dont on ne sait rien — c'est le
+        seul choix qui ne ment pas sur ce qui a été filtré.
         """
-        catalogue = await self._exercises.catalogue()
-        by_name = {fold(item.name): item for item in catalogue}
+        filtered = body_part is not None or equipment is not None
+        catalogue = [] if filtered else await self._exercises.catalogue()
+        needle = fold(query)
 
-        proposed = [
+        mine = [
+            CircuitSuggestion(name=item.name, muscle_group=item.muscle_group)
+            for item in catalogue
+            if not needle or needle in fold(item.name)
+        ]
+        known_names = {fold(item.name) for item in catalogue}
+
+        theirs = [
             CircuitSuggestion(
-                name=name,
-                illustrated=True,
-                muscle_group=known.muscle_group if (known := by_name.get(fold(name))) else None,
+                name=found.name,
+                muscle_group=None,
+                body_part=found.body_part,
+                equipment=found.equipment,
             )
-            for name in circuit_link.ILLUSTRATED
+            for found in exercise_catalog.search(
+                query, body_part=body_part, equipment=equipment, limit=exercise_catalog.LIMIT
+            )
+            if fold(found.name) not in known_names
         ]
 
-        known_names = {fold(name) for name in circuit_link.ILLUSTRATED}
-        proposed.extend(
-            CircuitSuggestion(name=item.name, illustrated=False, muscle_group=item.muscle_group)
-            for item in catalogue
-            if fold(item.name) not in known_names
-        )
-        return proposed
+        return [*mine, *theirs][: exercise_catalog.LIMIT]
 
     # ── Écriture ──────────────────────────────────────
 
@@ -1358,7 +1473,7 @@ class CircuitService:
         row = await self._repo.append(row_model)
         await self._items.extend(items)
 
-        return self._to_schema(row, items, await self._base())
+        return self._to_schema(row, items, await self._base(), await self._loads_by_name())
 
     async def update(self, index: int, token: str, payload: CircuitPayload) -> Circuit:
         """Corrige un circuit, sous garde anti-conflit (`STO-05`).
@@ -1381,7 +1496,7 @@ class CircuitService:
         await self._items.remove_where(lambda item: item.circuit_id == circuit_id)
         await self._items.extend(items)
 
-        return self._to_schema(row, items, await self._base())
+        return self._to_schema(row, items, await self._base(), await self._loads_by_name())
 
     async def delete(self, index: int, token: str) -> None:
         """Supprime un circuit et ses exercices (`ACT-04`, même motif que les séances).
@@ -1436,8 +1551,105 @@ class CircuitService:
             )
         )
 
+    # ── Composition assistée (**R5**) ─────────────────
+
+    async def compose(self, ai: AiService, request: ComposeRequest) -> CircuitProposal:
+        """Demande un circuit à un modèle. **N'écrit rien.**
+
+        La symétrie avec `PlanningService.propose` est voulue : cette méthode ne connaît
+        pas l'écriture, `create` ne connaît pas l'IA, et entre les deux il y a un écran et
+        un appui. C'est là que vit « rien n'est écrit sans validation ».
+
+        ## Ce que l'utilisateur n'a pas à taper
+
+        Le **matériel possédé** et les **groupes négligés** partent avec la demande (§5
+        bis). Sans eux, « fais-moi 30 minutes » obtient un développé couché de qui n'a ni
+        banc ni barre — et le refuser après coup ne rend pas la proposition utilisable.
+
+        Les **contraintes** du profil partent aussi, dans leur rubrique à elles : une
+        épaule sensible n'est pas une préférence qu'on arbitre contre le reste.
+        """
+        # Import tardif, et ce n'est pas un goût : `app.domains.assistant` exécute le
+        # `__init__` du paquet, donc son routeur, donc son service, qui lit `stats.py`,
+        # qui lit **ce** module. En clair, l'import échouerait sur un module à moitié
+        # construit. C'est l'arrangement du reste du dépôt pour la même raison.
+        from app.domains.assistant import profile
+
+        settings = await SettingsService(self._store).all()
+        materiel, _inconnus = profile.equipment(settings.get(profile.EQUIPMENT, ""))
+        negliges = [
+            f"{groupe.muscle_group} : jamais travaillé"
+            if groupe.days_since is None
+            else f"{groupe.muscle_group} : il y a {groupe.days_since} jour(s)"
+            for groupe in await self._neglected()
+        ]
+
+        payload = await ai.ask_json(
+            instruction=composer.INSTRUCTION,
+            prompt=composer.build_prompt(
+                demande=request.wish,
+                materiel=materiel,
+                groupes=[group.value for group in MuscleGroup],
+                negliges=negliges,
+                contraintes=settings.get(profile.CONSTRAINTS, ""),
+            ),
+            max_tokens=1200,
+        )
+
+        proposal, dropped = composer.read_proposal(
+            payload,
+            groups={group.value for group in MuscleGroup},
+            fallback_group=MuscleGroup.AUTRE.value,
+        )
+        if proposal is None:
+            # La chaîne a fonctionné, la réponse ne contient rien qu'on puisse afficher.
+            # Un `503` dirait « réessaie plus tard » ; ici, réessayer ou composer à la main
+            # sont deux conduites également valables, et c'est ce que dit `422`.
+            raise AiUnreadableError(
+                "Le modèle n'a proposé aucun exercice exploitable. Réessaie, ou compose "
+                "à la main — le formulaire est juste à côté."
+            )
+
+        return CircuitProposal(
+            name=proposal.name,
+            rounds=proposal.rounds,
+            round_rest_s=proposal.round_rest_s,
+            exercises=[
+                ProposedCircuitExercise(
+                    name=item.name,
+                    muscle_group=item.muscle_group,
+                    duration_s=item.duration_s,
+                    reps=item.reps,
+                    rest_s=item.rest_s,
+                    illustrated=item.illustrated,
+                )
+                for item in proposal.exercises
+            ],
+            # L'argument de la proposition, montré à l'écran. Une suggestion dont on voit
+            # sur quoi elle s'appuie se discute ; une suggestion nue se croit ou se rejette.
+            basis=[
+                f"Matériel pris en compte : {', '.join(materiel)}"
+                if materiel
+                else "Aucun matériel déclaré — poids du corps seulement.",
+                *negliges[:3],
+            ],
+            dropped=dropped,
+        )
+
+    async def _neglected(self) -> Sequence[NeglectedGroup]:
+        """Les groupes par ancienneté, lus chez `ActivityStats`.
+
+        Importé tardivement : `stats.py` importe ce module pour ses services, et le citer
+        en tête ferait un cycle. La règle `ACT-16` y vit déjà — la recopier ici en donnerait
+        une seconde version, qui répondrait autrement au premier cas limite.
+        """
+        from app.domains.activity.stats import ActivityStats
+
+        return (await ActivityStats(self._store).overview(today_local(), limit=1)).neglected
+
     async def mark_done(self, index: int, payload: CircuitDonePayload) -> Workout:
-        """Déclare un circuit fait : une séance **et ses séries** (**D3**).
+        """Déclare un circuit fait : une séance **et ses séries** (**D3**), dans les deux
+        mondes.
 
         ## Ce qui est écrit
 
@@ -1461,6 +1673,18 @@ class CircuitService:
         **Proposée par l'estimation, corrigée avant l'appui** (**D4**). Sur une séance en
         répétitions personne ne connaît la durée réelle, et l'écrire en silence mettrait
         une valeur inventée dans le volume hebdomadaire.
+
+        ## Et le même geste dans le monde tabata
+
+        La même séance rejoint `circuit_sessions.csv` et ses séries
+        `circuit_session_sets.csv` (`docs/refonte-activite.md` §3). C'est le monde qui
+        restera quand la musculation historique sera supprimée ; d'ici là les deux sont
+        remplis ensemble, ce qui est la seule façon de vérifier le second contre le
+        premier avant de rebrancher quoi que ce soit.
+
+        Les deux reçoivent le **même** nombre de séries — les rounds bornés — et le même
+        jour. Ce n'est pas une coïncidence à espérer : le chiffre est calculé une fois,
+        ici, et passé aux deux.
         """
         rows = await self._repo.read_all()
         if not 0 <= index < len(rows):
@@ -1469,13 +1693,16 @@ class CircuitService:
         circuit = rows[index].model
         items = await self._items_of(circuit.id)
 
+        # **Les exercices sans nom sont écartés d'abord, une seule fois.** Le catalogue
+        # les filtrait déjà, mais le journal les appariait ensuite par `zip(strict=True)` :
+        # une ligne de `circuit_exercises.csv` corrigée à la main sans nom faisait donc un
+        # `500` — après que la séance ait été écrite. Filtrer ici plutôt qu'à deux endroits
+        # est ce qui garantit que les deux listes ont la même longueur.
+        named = [item for item in items if item.name.strip()]
+
         # Le catalogue d'abord, et en entier : `ensure` peut écrire, et il vaut mieux
         # qu'il ait fini avant que la séance existe.
-        catalogue = [
-            await self._exercises.ensure(item.name, _group_of(item))
-            for item in items
-            if item.name.strip()
-        ]
+        catalogue = [await self._exercises.ensure(item.name, _group_of(item)) for item in named]
 
         day = today_local()
         workout = await self._workouts.create(
@@ -1494,7 +1721,471 @@ class CircuitService:
             await self._exercises.log_timed(
                 workout.workout_id, day, exercise, sets=rounds, reps=item.reps
             )
-            for item, exercise in zip(items, catalogue, strict=True)
+            for item, exercise in zip(named, catalogue, strict=True)
         ]
 
+        # Le monde tabata en dernier, et l'ancien inchangé devant lui. Il est encore la
+        # seule source des sept consommateurs : une coupure ici doit laisser la séance
+        # complète là où on la lit, pas l'inverse. Et si l'utilisateur redéclare après une
+        # coupure, le doublon tombe dans le fichier que la phase 6 supprime — pas dans
+        # celui qui reste.
+        await self._sessions.record(
+            circuit,
+            items,
+            day=day,
+            rounds=rounds,
+            duration_min=payload.duration_min,
+            rpe=payload.rpe,
+        )
+
         return workout.model_copy(update={"exercises": entries})
+
+
+# ── Séances tabata — ce qui a eu lieu ─────────────────
+
+
+class CircuitSessionService:
+    """Les circuits **déclarés faits**, et les séries qu'ils ont produites.
+
+    Le pendant mesuré de `CircuitService` : celui-là tient des patrons qui se rejouent,
+    celui-ci tient ce qui a eu lieu, une fois, un jour donné. Deux fichiers, `paths.py`
+    dit pourquoi ils ne fusionnent pas.
+
+    ## Pourquoi ce service existe alors que `workouts.csv` fait déjà le travail
+
+    Il ne le fera plus. Le plan de `docs/refonte-activite.md` supprime la musculation
+    historique, et « j'ai fait ce circuit » n'a aujourd'hui **aucun autre endroit où
+    s'écrire** : c'est par `workouts.csv` et `exercise_log.csv` qu'un tabata compte dans le
+    tableau de bord, l'assiduité, le planning et les rappels. Supprimer ces fichiers sans
+    ces deux-là couperait sept consommateurs d'un coup (§3 du plan).
+
+    Pendant cette phase les deux mondes sont donc remplis ensemble, et c'est délibéré :
+    tant que les consommateurs lisent l'ancien, le nouveau se vérifie ligne à ligne contre
+    lui. Le rebranchement est la phase suivante, et il n'a rien à découvrir.
+
+    ## Ce que ce service n'écrit pas
+
+    **Aucune charge, aucun tonnage** (**C4**). `circuit_loads.csv` reste la seule autorité
+    sur ce qu'on charge, et un exercice au temps porte `reps = -1` : le multiplier par une
+    charge produirait un tonnage négatif. Ce qu'un tabata apporte aux statistiques, ce sont
+    ses **séries par groupe**, et c'est exactement ce que ces deux fichiers portent.
+    """
+
+    #: La provenance écrite sur la session, sur le modèle de `WorkoutRow.source`. `IMP-05`
+    #: s'applique : corriger une session venue d'ici ne la transformera pas en saisie
+    #: manuelle le jour où l'écran laissera la corriger.
+    SOURCE = "cadence"
+
+    def __init__(self, store: FileStore) -> None:
+        self._repo: CsvRepository[CircuitSessionRow] = CsvRepository(
+            store, CIRCUIT_SESSIONS, CircuitSessionRow
+        )
+        self._sets: CsvRepository[CircuitSessionSetRow] = CsvRepository(
+            store, CIRCUIT_SESSION_SETS, CircuitSessionSetRow
+        )
+
+    async def all(self) -> list[Row[CircuitSessionRow]]:
+        """Les séances tabata, dans l'ordre du fichier.
+
+        Rendu brut et non trié : les consommateurs à rebrancher — agrégats, assiduité,
+        planning, rappels — groupent tous par jour et n'ont que faire de l'ordre des
+        lignes. Trier ici coûterait un tri à chacun d'eux sans rien leur apporter.
+        """
+        return await self._repo.read_all()
+
+    async def sets(self) -> list[Row[CircuitSessionSetRow]]:
+        """Les séries de toutes les séances, dans l'ordre du fichier.
+
+        Une seule lecture pour toute une fenêtre : l'assiduité compte des séries par groupe
+        et par jour sur trois mois, et une lecture par séance ferait autant d'allers-retours
+        vers Nextcloud qu'il y a de cases dans la grille.
+        """
+        return await self._sets.read_all()
+
+    async def record(
+        self,
+        circuit: CircuitRow,
+        items: Sequence[CircuitExerciseRow],
+        *,
+        day: date,
+        rounds: int,
+        duration_min: float,
+        rpe: int | None = None,
+    ) -> CircuitSessionRow:
+        """Écrit une séance et ses séries.
+
+        ## Ce que l'appelant fournit, et ce qu'il ne décide pas
+
+        `day` et `rounds` **arrivent déjà décidés** : le jour vient du serveur, et les
+        rounds sont ceux que `circuit_link.normalise` a bornés — les mêmes que Cadence
+        jouera. Les recalculer ici ferait deux vérités pour un seul chiffre, et le
+        symptôme serait quatre séries d'un côté et cent de l'autre pour la même séance.
+
+        ## L'ordre, et ce qu'une panne laisse derrière
+
+        La session d'abord, ses séries ensuite. Le stockage n'a pas de transaction : dans
+        cet ordre, une coupure laisse une séance sans ses groupes — visible à l'écran,
+        donc corrigeable. L'ordre inverse laisserait des séries rattachées à une séance qui
+        n'existe pas, que l'assiduité compterait quand même et que personne ne verrait.
+
+        ## L'identifiant est frappé ici
+
+        `session_id` ne reprend pas le `workout_id` de la séance jumelle, alors que ce
+        serait commode le temps de la transition. Il disparaîtrait avec le fichier qui le
+        porte : ce monde-ci doit tenir debout seul le jour où l'autre est supprimé.
+        """
+        session = CircuitSessionRow(
+            session_id=new_id(),
+            circuit_id=circuit.id,
+            date=day,
+            name=circuit.name,
+            rounds=rounds,
+            duration_min=duration_min,
+            rpe=rpe,
+            source=self.SOURCE,
+        )
+        row = await self._repo.append(session)
+
+        # Un exercice sans nom ne produit pas de ligne : `ACT-06` duplique le nom pour que
+        # l'historique reste lisible sans son patron, et une ligne muette n'y répond pas.
+        await self._sets.extend(
+            [
+                CircuitSessionSetRow(
+                    session_id=session.session_id,
+                    date=day,
+                    exercise_name=item.name.strip(),
+                    muscle_group=_group_of(item),
+                    sets=rounds,
+                    reps=item.reps,
+                )
+                for item in items
+                if item.name.strip()
+            ]
+        )
+        return row.model
+
+
+# ── Charges des exercices de tabata (**C1**) ──────────
+
+
+class CircuitLoadService:
+    """Ce qu'on charge sur chaque exercice de tabata, et comment ça a bougé.
+
+    ## Ce que ce service ne fait pas
+
+    **Il n'écrit rien dans `exercise_log.csv`** (**C4**). Déclarer un circuit fait continue
+    d'y poser `weight_kg = 0`, et la raison tient en un exemple : `stats.py` calcule
+    `weight_kg × sets × reps` à quatre endroits, un exercice au temps porte `reps = -1`, et
+    un gainage à 20 kg y produirait un tonnage de **-320 kg** — faux, négatif, et muet.
+
+    La conséquence est assumée et écrite dans `docs/charges.md` §1 : le journal de
+    `/activite` dira « poids du corps » pour un Rowing effectué à 12 kg. Rouvrir cette
+    décision demande de garder `reps == -1` aux quatre endroits d'abord.
+
+    ## Les deux fichiers, et pourquoi ils ne fusionnent pas
+
+    `circuit_loads.csv` dit ce qu'on charge **aujourd'hui** et se corrige ;
+    `circuit_load_log.csv` dit ce qu'on a décidé et ne se corrige jamais. Une seule table
+    ferait porter à `weight_kg` deux sens selon la ligne — la valeur courante ou une valeur
+    passée — ce qui est la façon la plus sûre de casser un CSV qu'on ouvre dans un tableur
+    trois ans plus tard (`STO-02`).
+    """
+
+    #: La fenêtre de la ligne de points, en jours. Trente, comme le demande l'écran, et
+    #: calculée **ici** : le client ne connaît ni sa longueur, ni le jour du serveur.
+    WINDOW_DAYS = 30
+
+    def __init__(self, store: FileStore) -> None:
+        self._repo: CsvRepository[CircuitLoadRow] = CsvRepository(
+            store, CIRCUIT_LOADS, CircuitLoadRow
+        )
+        self._history: CsvRepository[CircuitLoadLogRow] = CsvRepository(
+            store, CIRCUIT_LOAD_LOG, CircuitLoadLogRow
+        )
+        self._items: CsvRepository[CircuitExerciseRow] = CsvRepository(
+            store, CIRCUIT_EXERCISES, CircuitExerciseRow
+        )
+        self._circuits: CsvRepository[CircuitRow] = CsvRepository(store, CIRCUITS, CircuitRow)
+        self._sessions_of = CircuitSessionService(store)
+
+    @staticmethod
+    def _state(row: CircuitLoadRow | None) -> LoadState:
+        """L'état d'une charge — les trois cas de `CircuitLoadRow`, décidés au même endroit.
+
+        L'écran groupe sur cette étiquette. La lui faire déduire d'un `null` reviendrait à
+        lui confier la règle, et il y a exactement trois états à ne pas confondre : « pas
+        encore renseigné » n'est pas « poids du corps ».
+        """
+        if row is None:
+            return "unset"
+        if row.bodyweight:
+            return "bodyweight"
+        return "weighted" if row.weight_kg is not None else "unset"
+
+    async def _declared(self) -> dict[str, Row[CircuitLoadRow]]:
+        """Les charges déclarées, indexées par nom **replié**.
+
+        Sur doublon — deux lignes pour le même exercice, ce qu'une correction à la main
+        peut produire — c'est la **dernière** qui l'emporte : c'est la plus récemment
+        écrite, et le fichier se lit de haut en bas.
+        """
+        return {fold(row.model.name): row for row in await self._repo.read_all() if row.model.name}
+
+    async def _in_circuits(self) -> dict[str, tuple[str, list[str]]]:
+        """Les exercices employés par au moins un circuit → `(nom affiché, circuits)`.
+
+        La page ne montre **que** ce qui est constitutif d'une séance tabata : la source
+        est `circuit_exercises.csv` et rien d'autre. Un exercice de musculation n'y entre
+        pas, sa charge est déjà journalisée série par série dans `exercise_log.csv`.
+        """
+        names = {row.model.id: row.model.name for row in await self._circuits.read_all()}
+
+        found: dict[str, tuple[str, list[str]]] = {}
+        for row in await self._items.read_all():
+            item = row.model
+            if not item.name.strip():
+                continue
+            key = fold(item.name)
+            display, circuits = found.get(key, (item.name.strip(), []))
+            circuit_name = names.get(item.circuit_id, "")
+            if circuit_name and circuit_name not in circuits:
+                circuits.append(circuit_name)
+            found[key] = (display, circuits)
+        return found
+
+    async def _since_last_change(self) -> dict[str, tuple[int, int]]:
+        """Par exercice replié : `(jours depuis le dernier changement, séances tenues depuis)`.
+
+        Les deux chiffres de « quand monter » (`docs/refonte-activite.md` §5 bis). Le coach
+        les **constate**, il n'en conclut rien : « trois séances tenues à 10 kg, dernier
+        changement il y a 24 jours » est une mesure, la décision appartient à
+        l'utilisateur (**R10**).
+
+        ## Le journal et non `updated`
+
+        `circuit_loads.updated` bouge à chaque enregistrement, y compris celui qui ne
+        change rien ; `circuit_load_log.csv` ne retient que les changements **confirmés**
+        (**C2**). Compter les jours depuis `updated` dirait « changée aujourd'hui » à qui
+        vient de rouvrir une carte sans y toucher — exactement le contraire de ce que le
+        chiffre annonce.
+
+        ## Une séance du jour même compte
+
+        La borne est `>=` et non `>`. La page Charges existe pour **remplir le 4ᵉ champ du
+        lien avant la séance** (**C7**) : noter 12 kg puis jouer le tabata dans la foulée
+        est le geste normal, et ces deux-là tombent le même jour. Les exclure ferait un
+        compteur qui n'avance jamais pour qui note sa charge au bon moment. Le prix est
+        l'inverse — une charge notée le soir d'une séance déjà faite compte cette séance —
+        et il est plus petit.
+        """
+        last_change: dict[str, date] = {}
+        for row in await self._history.read_all():
+            item = row.model
+            if not item.name.strip():
+                continue
+            key = fold(item.name)
+            # La **dernière** date, jamais la dernière ligne : le fichier se trie dans un
+            # tableur, et un journal réordonné ne doit pas rajeunir une charge.
+            known = last_change.get(key)
+            if known is None or item.date > known:
+                last_change[key] = item.date
+
+        if not last_change:
+            return {}
+
+        held: defaultdict[str, set[str]] = defaultdict(set)
+        for serie in await self._sessions_of.sets():
+            entry = serie.model
+            key = fold(entry.exercise_name)
+            since = last_change.get(key)
+            if since is not None and entry.date >= since:
+                held[key].add(entry.session_id)
+
+        today = today_local()
+        return {key: ((today - day).days, len(held[key])) for key, day in last_change.items()}
+
+    async def list(self) -> LoadList:
+        """Tous les exercices de tabata, et leur charge quand elle est déclarée.
+
+        Une seule lecture de chaque fichier pour toute la liste : une par exercice ferait
+        autant d'allers-retours Nextcloud qu'il y a de cartes à l'écran.
+
+        L'ordre est celui de l'écran : ce qui reste à renseigner d'abord — c'est le seul
+        endroit où il y a encore un geste à faire — puis les chargés, puis le poids du
+        corps. À état égal, l'ordre alphabétique, qui ne bouge pas d'un affichage à l'autre.
+        """
+        declared = await self._declared()
+        in_circuits = await self._in_circuits()
+        progression = await self._since_last_change()
+
+        order = {"unset": 0, "weighted": 1, "bodyweight": 2}
+        loads = []
+        for key, (display, circuits) in in_circuits.items():
+            row = declared.get(key)
+            state = self._state(row.model if row else None)
+            loads.append(
+                Load(
+                    id=row.index if row else None,
+                    token=row.token if row else None,
+                    name=display,
+                    state=state,
+                    weight_kg=row.model.weight_kg if row and state == "weighted" else None,
+                    updated=row.model.updated if row else None,
+                    circuits=len(circuits),
+                    days_since_change=progression.get(key, (None, None))[0],
+                    sessions_since=progression.get(key, (None, None))[1],
+                )
+            )
+
+        loads.sort(key=lambda load: (order[load.state], fold(load.name)))
+        return LoadList(loads=loads)
+
+    async def detail(self, name: str) -> LoadDetail:
+        """La courbe des décisions et les trente derniers jours de séances.
+
+        **Par nom et non par position** : une position se décale à la première suppression,
+        et un exercice jamais renseigné n'a aucune ligne dont on pourrait donner la
+        position. Le rapprochement passe par `fold`.
+        """
+        key = fold(name)
+        in_circuits = await self._in_circuits()
+        if key not in in_circuits:
+            raise StorageNotFoundError("Cet exercice n'est dans aucune séance.")
+
+        display, circuits = in_circuits[key]
+        row = (await self._declared()).get(key)
+        state = self._state(row.model if row else None)
+
+        history = [
+            LoadPoint(
+                date=item.model.date,
+                weight_kg=None if item.model.bodyweight else item.model.weight_kg,
+            )
+            for item in await self._history.read_all()
+            if fold(item.model.name) == key
+        ]
+        # Trié ici et non supposé trié : le fichier peut être réordonné dans un tableur, et
+        # une courbe qui repart en arrière ne se voit pas comme un défaut de lecture.
+        history.sort(key=lambda point: point.date)
+
+        return LoadDetail(
+            name=display,
+            state=state,
+            weight_kg=row.model.weight_kg if row and state == "weighted" else None,
+            history=history,
+            sessions=await self._sessions(key),
+            circuits=circuits,
+        )
+
+    # `Sequence` et non `list`, pour la raison écrite plus haut sur `CircuitService` :
+    # cette classe porte une méthode `list`, qui masque le type dans toute annotation de
+    # son corps, et mypy le signale sans jamais nommer la collision.
+    async def _sessions(self, key: str) -> Sequence[LoadDay]:
+        """Les trente derniers jours, un par entrée, séances comptées.
+
+        **Exactement trente entrées**, y compris les jours à zéro. Ici zéro est une mesure
+        et non une valeur inventée : on a compté, et il n'y en a pas eu — c'est même toute
+        l'information que porte une ligne de points.
+
+        Le compte est celui des **séances**, pas des lignes de journal : un circuit qui
+        emploie deux fois le même exercice ne vaut pas deux séances.
+
+        La source est `circuit_session_sets.csv` depuis le rebranchement du coach : c'est
+        le seul historique de séances qui survivra à la suppression de `exercise_log.csv`,
+        et il porte exactement ce qu'il faut — un `session_id`, un jour, un nom d'exercice.
+        """
+        last = today_local()
+        first = last - timedelta(days=self.WINDOW_DAYS - 1)
+
+        per_day: defaultdict[date, set[str]] = defaultdict(set)
+        for row in await self._sessions_of.sets():
+            entry = row.model
+            if first <= entry.date <= last and fold(entry.exercise_name) == key:
+                per_day[entry.date].add(entry.session_id)
+
+        return [
+            LoadDay(date=day, count=len(per_day.get(day, set())))
+            for day in (first + timedelta(days=offset) for offset in range(self.WINDOW_DAYS))
+        ]
+
+    # ── Écriture ──────────────────────────────────────
+
+    @staticmethod
+    def _to_row(payload: LoadPayload, day: date) -> CircuitLoadRow:
+        """La ligne à écrire. **Les deux champs s'excluent**, et c'est ici que ça se tient :
+        déclarer le poids du corps efface la charge, poser une charge lève le drapeau."""
+        return CircuitLoadRow(
+            name=payload.name.strip(),
+            weight_kg=None if payload.bodyweight else payload.weight_kg,
+            bodyweight=payload.bodyweight,
+            updated=day,
+        )
+
+    async def _remember(self, payload: LoadPayload, day: date) -> None:
+        """Ajoute une ligne au journal des changements (**C2**).
+
+        Appelée après l'écriture de la valeur courante, et non avant : le stockage n'a pas
+        de transaction, et dans cet ordre une panne laisse au pire un journal en retard
+        d'une ligne. L'ordre inverse laisserait un historique qui affirme une charge que le
+        fichier courant ne porte pas.
+        """
+        await self._history.append(
+            CircuitLoadLogRow(
+                name=payload.name.strip(),
+                date=day,
+                weight_kg=None if payload.bodyweight else payload.weight_kg,
+                bodyweight=payload.bodyweight,
+            )
+        )
+
+    async def create(self, payload: LoadPayload) -> Load:
+        """Déclare la première charge d'un exercice — une **addition**.
+
+        Rien à garder : il n'y a pas encore de ligne, donc pas de jeton. C'est la correction
+        suivante qui passe sous `If-Match` (`STO-05`).
+
+        Un exercice déjà déclaré est un **conflit** et non une seconde ligne : deux lignes
+        pour un même nom feraient deux charges, et la lecture n'en garderait qu'une sans
+        rien dire de l'autre.
+        """
+        key = fold(payload.name)
+        if key in await self._declared():
+            raise StorageConflictError(detail=f"charge déjà déclarée pour {payload.name}")
+
+        day = today_local()
+        await self._repo.append(self._to_row(payload, day))
+        await self._remember(payload, day)
+        return await self._one(key)
+
+    async def update(self, index: int, token: str, payload: LoadPayload) -> Load:
+        """Corrige une charge, sous garde anti-conflit (`STO-05`).
+
+        **Le journal ne s'écrit que si la valeur a changé.** Sans cette garde, réenregistrer
+        une carte sans y toucher poserait un point de plus sur la courbe, au même niveau —
+        une évolution qui n'a pas eu lieu.
+        """
+        rows = await self._repo.read_all(fresh=True)
+        if not 0 <= index < len(rows):
+            raise StorageConflictError(detail=f"charge {index} absente")
+
+        before = rows[index].model
+        day = today_local()
+        await self._repo.replace_by_token(index, token, self._to_row(payload, day))
+
+        changed = before.bodyweight != payload.bodyweight or before.weight_kg != payload.weight_kg
+        if changed:
+            await self._remember(payload, day)
+
+        return await self._one(fold(payload.name))
+
+    async def _one(self, key: str) -> Load:
+        """La carte d'un exercice après écriture, relue depuis la liste.
+
+        Relue et non reconstruite : c'est la même méthode qui décide de l'état, du nom
+        affiché et du nombre de circuits, donc il n'y a qu'un endroit où ces trois règles
+        vivent.
+        """
+        for load in (await self.list()).loads:
+            if fold(load.name) == key:
+                return load
+        raise StorageNotFoundError("Cet exercice n'est dans aucune séance.")

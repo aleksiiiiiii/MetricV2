@@ -26,7 +26,7 @@ METRICS = "/api/aggregates/metrics"
 WEIGHT = "Metric/body/weight.csv"
 MEASUREMENTS = "Metric/body/measurements.csv"
 RUNS = "Metric/activity/runs.csv"
-WORKOUTS = "Metric/activity/workouts.csv"
+CIRCUIT_SESSIONS = "Metric/activity/circuit_sessions.csv"
 EXERCISES = "Metric/activity/exercises.csv"
 EXERCISE_LOG = "Metric/activity/exercise_log.csv"
 MEALS = "Metric/nutrition/meals.csv"
@@ -74,11 +74,11 @@ def seeded(dav: FakeWebDav) -> Any:
         f"{today - timedelta(days=8)},10.0,55.0,5.5,,,,manual\n",
     )
     dav.seed(
-        WORKOUTS,
-        "date,type,duration_min,calories,rpe,note,source,id\n"
-        f"{today},musculation,62,,7,,manual,w1\n"
-        f"{today - timedelta(days=2)},musculation,58,,6,,manual,w2\n"
-        f"{today - timedelta(days=4)},yoga,45,,3,,manual,w3\n",
+        CIRCUIT_SESSIONS,
+        "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n"
+        f"s1,c1,{today},Haut du corps,4,62,7,cadence\n"
+        f"s2,c1,{today - timedelta(days=2)},Haut du corps,4,58,6,cadence\n"
+        f"s3,c2,{today - timedelta(days=4)},Jambes,3,45,3,cadence\n",
     )
     dav.seed(
         MEALS,
@@ -341,21 +341,26 @@ def test_training_totals_cover_everything_and_the_current_week(
     assert len(training["weeks"]) == 8
 
 
-def test_the_split_names_what_is_neither_a_run_nor_strength(
+def test_the_split_separates_running_from_tabata(
     app_client: TestClient, auth: dict[str, str], seeded: Any
 ) -> None:
-    """Ranger une heure de yoga sous « musculation » pour n'afficher que deux parts
-    donnerait un chiffre faux."""
+    """**Deux parts et non trois** depuis le rebranchement.
+
+    Les trois d'avant découpaient le champ `type` de `workouts.csv`, libre (`ACT-03`) : il
+    fallait une part « autre » pour ne pas ranger une heure de yoga sous « musculation ».
+    La source n'a plus ce champ — une part toujours vide serait une catégorie que rien ne
+    peut remplir.
+    """
     del seeded
     split = {
         part["kind"]: part
         for part in app_client.get(DASHBOARD, headers=auth).json()["training"]["split"]
     }
 
+    assert set(split) == {"run", "tabata"}
     assert split["run"]["sessions"] == 2
-    assert split["strength"]["sessions"] == 2
-    assert split["other"]["sessions"] == 1
-    assert split["other"]["label"] == "Autre"
+    assert split["tabata"]["sessions"] == 3
+    assert split["tabata"]["label"] == "Tabata"
     assert sum(part["ratio"] for part in split.values()) == pytest.approx(1.0)
 
 

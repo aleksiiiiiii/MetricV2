@@ -232,6 +232,44 @@ def test_a_slice_can_name_a_whole_week() -> None:
     assert need[0].week is True
 
 
+# ── 7 bis. Les tranches cherchées (lot Charges) ───────
+
+
+def test_a_slice_can_carry_a_search_term() -> None:
+    """Ce qui permet au modèle de demander l'orthographe exacte d'un exercice avant de
+    fabriquer une séance Cadence — la seule chose qui décide de la démonstration."""
+    need = read_need({"need": ["exercises:push up"]}, available=SLICE_NAMES)
+
+    assert need[0].name == "exercises"
+    assert need[0].query == "push up"
+    assert need[0].day is None
+
+
+def test_a_search_term_never_widens_what_can_be_read() -> None:
+    """**La garantie de `IA-09` ne bouge pas d'un pouce**, pas plus qu'avec une date : le
+    mot-clé varie, le nom reste choisi dans la liste fermée."""
+    need = read_need({"need": ["inventé:push up", "/etc/passwd:x"]}, available=SLICE_NAMES)
+
+    assert need == []
+
+
+def test_a_day_and_a_search_term_can_be_asked_together() -> None:
+    """L'ordre est `nom@jour:recherche`, et le découpage suit : la recherche est le dernier
+    morceau et peut contenir n'importe quoi, y compris ce qui ressemble à une date."""
+    need = read_need({"need": ["meals.today@2026-08-15:push up"]}, available=SLICE_NAMES)
+
+    assert need[0].name == "meals.today"
+    assert need[0].day == dt.date(2026, 8, 15)
+    assert need[0].query == "push up"
+
+
+def test_a_slice_without_a_search_term_carries_an_empty_one() -> None:
+    """Le cas d'avant ce lot : rien ne change pour les douze tranches qui ne cherchent pas."""
+    need = read_need({"need": ["exercises"]}, available=SLICE_NAMES)
+
+    assert need[0].query == ""
+
+
 def test_the_name_is_still_checked_against_the_closed_list() -> None:
     """**La garantie de `IA-09` ne bouge pas d'un pouce.** Seule la période est libre, et
     elle ne désigne aucun fichier : une date n'ouvre rien que le nom n'ouvrait déjà."""
@@ -451,6 +489,52 @@ def test_the_prompt_names_the_ceiling_instead_of_dropping_silently() -> None:
     text = prompt(actions=CATALOGUE, slices=SLICES)
 
     assert f"en demander {MAX_NEED} au plus" in text
+
+
+# ── 7 ter. Le dernier tour se déclare (log du 01/09) ──
+
+
+def test_the_final_pass_never_offers_need_at_all() -> None:
+    """**Le défaut, tel qu'il s'est produit.** Les deux passes recevaient la consigne au
+    mot près. Le modèle relisait donc « je vais chercher ces tranches et je te repose la
+    question », redemandait une tranche au dernier tour — où plus rien ne lit `need`
+    (`IA-16`) — et écrivait une réponse d'attente en conséquence : « je vérifie le nom
+    exact du reverse crunch, puis je crée ta séance ». C'est cette phrase-là qui
+    s'affichait, deux fois de suite, sur une séance jamais créée.
+
+    Une case absente est la façon la plus courte de dire qu'il n'y a plus rien à demander.
+    """
+    text = prompt(actions=CATALOGUE, slices=SLICES, final=True)
+
+    assert '"need"' not in text
+    assert "je te repose la question avec" not in text
+
+
+def test_the_final_pass_says_it_is_the_last_and_forbids_announcing() -> None:
+    """« Je vérifie puis je crée » ne crée rien. Le dire là où le modèle le lit vaut mieux
+    que de l'espérer."""
+    text = prompt(actions=CATALOGUE, slices=SLICES, final=True)
+
+    assert "dernier tour" in text
+    assert "N'annonce rien que tu ne fasses dans ce même message" in text
+
+
+def test_the_first_pass_still_invites_the_model_to_ask() -> None:
+    """Le correctif ne doit pas retirer à la première passe ce qui la fait marcher : c'est
+    là, et là seulement, que demander a un sens."""
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert 'remplis "need"' in text
+    assert "dernier tour" not in text
+
+
+def test_the_first_pass_says_to_ask_for_everything_at_once() -> None:
+    """Le modèle ne peut pas savoir de quels mots-clés il aura besoin avant d'avoir choisi
+    la séance — et c'est précisément à ce moment-là qu'il est trop tard. La consigne le
+    dit donc avant."""
+    text = prompt(actions=CATALOGUE, slices=SLICES)
+
+    assert "seule occasion" in text
 
 
 # ── 8. Ce qu'un vrai dialogue a fait ressortir ────────

@@ -315,6 +315,8 @@ export function Stepper({
   placeholder,
   inputMode = 'decimal',
   proposed = false,
+  labelHidden = false,
+  unit,
 }: {
   label: string;
   value: string;
@@ -337,6 +339,28 @@ export function Stepper({
    * s'efface et s'envoie comme une autre.
    */
   proposed?: boolean | undefined;
+  /**
+   * Masque le libellé **à l'œil seulement** — il reste lu, et il nomme toujours les deux
+   * touches (« Charge : augmenter »).
+   *
+   * Pour une liste où le libellé est déjà porté par la colonne ou le titre de section :
+   * huit fois « CHARGE » l'un sous l'autre coûtent 160 px de défilement et n'apprennent
+   * rien à la huitième. **Ce n'est pas une permission de retirer le libellé** — le
+   * supprimer laisserait deux touches nommées « augmenter » sans dire quoi.
+   */
+  labelHidden?: boolean | undefined;
+  /**
+   * L'unité, posée **dans** le champ, à droite de la valeur — « 12 kg ».
+   *
+   * Dans le champ et non à côté : à côté, elle prend une colonne de plus sur une ligne
+   * qui en a déjà trois, et sur 360 px c'est le champ qui la paie. Elle est décorative
+   * (`aria-hidden`) parce que le libellé la dit déjà à qui écoute — « Charge en
+   * kilogrammes » lu deux fois n'apprend rien la seconde.
+   *
+   * Elle ne fait **pas** partie de la valeur : `onChange` rend toujours le nombre seul,
+   * et ce qui part au serveur ne porte aucune unité.
+   */
+  unit?: string | undefined;
 }) {
   const fieldId = useId();
   const current = readOwn(value);
@@ -355,7 +379,9 @@ export function Stepper({
 
   return (
     <div className={styles.stepper}>
-      <label htmlFor={fieldId}>{label}</label>
+      <label className={labelHidden ? 'sr-only' : undefined} htmlFor={fieldId}>
+        {label}
+      </label>
       <div className={styles.stepperRow}>
         <button
           type="button"
@@ -368,25 +394,35 @@ export function Stepper({
         >
           −
         </button>
-        <input
-          id={fieldId}
-          className={cx(
-            styles.stepperInput,
-            proposed && styles.stepperProposed,
-            error !== undefined && styles.inputInvalid,
+        <div className={styles.stepperField}>
+          <input
+            id={fieldId}
+            className={cx(
+              styles.stepperInput,
+              unit !== undefined && styles.stepperInputWithUnit,
+              proposed && styles.stepperProposed,
+              error !== undefined && styles.inputInvalid,
+            )}
+            inputMode={inputMode}
+            value={value}
+            placeholder={placeholder}
+            // Le trait discontinu ne se voit pas d'un lecteur d'écran : le statut de la
+            // valeur doit être dit, pas seulement dessiné.
+            aria-description={proposed ? 'valeur proposée, à valider' : undefined}
+            aria-invalid={error !== undefined ? true : undefined}
+            aria-describedby={error !== undefined ? `${fieldId}-error` : undefined}
+            onChange={(event) => {
+              onChange(event.target.value);
+            }}
+          />
+          {/* Masquée quand le champ est vide : « kg » posé à côté d'un tiret annoncerait
+              une unité pour une valeur qui n'existe pas. */}
+          {unit !== undefined && current !== null && (
+            <span className={styles.stepperUnit} aria-hidden="true">
+              {unit}
+            </span>
           )}
-          inputMode={inputMode}
-          value={value}
-          placeholder={placeholder}
-          // Le trait discontinu ne se voit pas d'un lecteur d'écran : le statut de la
-          // valeur doit être dit, pas seulement dessiné.
-          aria-description={proposed ? 'valeur proposée, à valider' : undefined}
-          aria-invalid={error !== undefined ? true : undefined}
-          aria-describedby={error !== undefined ? `${fieldId}-error` : undefined}
-          onChange={(event) => {
-            onChange(event.target.value);
-          }}
-        />
+        </div>
         <button
           type="button"
           className={styles.stepperKey}

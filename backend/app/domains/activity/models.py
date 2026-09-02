@@ -250,3 +250,148 @@ class CircuitExerciseRow(CsvModel):
     duration_s: int = 20
     reps: int = -1
     rest_s: int = 0
+
+
+class CircuitLoadRow(CsvModel):
+    """La charge d'un exercice de tabata. `activity/circuit_loads.csv` (**C1**).
+
+    ## Trois états, et l'absence de ligne en est un
+
+    | Ce qu'on voit | Ce que le fichier porte |
+    |---|---|
+    | Jamais renseigné | **aucune ligne** |
+    | Poids du corps | `bodyweight` vrai, `weight_kg` vide |
+    | Une charge | `weight_kg` renseigné, `bodyweight` faux |
+
+    Une ligne n'existe donc qu'une fois quelque chose déclaré, et `weight_kg` vide **n'est
+    pas zéro** : zéro serait une mesure — c'est d'ailleurs ce que zéro veut dire dans
+    `exercise_log.csv`, où il signifie « poids du corps » (`ACT-07`) — alors que vide est
+    une absence. L'écran affiche un tiret pour l'une et « poids du corps » pour l'autre,
+    et il ne pourrait pas les distinguer si les deux s'écrivaient `0`.
+
+    ## Pourquoi la clé est un nom et pas un rattachement
+
+    La charge vaut pour l'exercice, pas pour le circuit qui l'emploie (**C1**). Le même
+    Rowing apparaît dans trois séances ; le noter à 12 kg doit valoir pour les trois. Un
+    rattachement à `circuit_exercises.csv` autoriserait 12 kg ici et 16 kg là, et aucune
+    règle ne dirait alors laquelle la page doit montrer.
+
+    Le rapprochement passe par `fold` (`app/core/text.py`), celui du reste du domaine.
+    """
+
+    #: Le nom **tel qu'il est écrit dans le circuit**, gardé pour l'affichage. C'est son
+    #: repli qui sert de clé, jamais la casse ou les accents.
+    name: str = ""
+    #: Vide = jamais chiffré. Exclusif de `bodyweight` : le service efface l'un en posant
+    #: l'autre, sans quoi une ligne pourrait dire « poids du corps à 12 kg ».
+    weight_kg: float | None = None
+    bodyweight: bool = False
+    #: Le jour de la dernière décision, tel que le serveur le voit. Il ne date **aucune
+    #: séance** : noter une charge n'est pas la soulever.
+    updated: CsvDate = None
+
+
+class CircuitLoadLogRow(CsvModel):
+    """Un changement de charge. `activity/circuit_load_log.csv` (**C2**).
+
+    Une ligne par changement **confirmé**, jamais une par appui sur `+` : le pas-à-pas
+    ajuste une valeur locale, c'est l'enregistrement qui écrit. Sans cette règle, monter de
+    10 à 16 kg laisserait six lignes ici et six points sur la courbe.
+
+    **Le passage en poids du corps y entre aussi**, avec `bodyweight` vrai et `weight_kg`
+    vide. C'est un vrai événement de la courbe — la charge s'arrête — et l'omettre ferait
+    mentir le graphique par le silence.
+
+    Ce fichier est le seul historique des charges de tabata. `exercise_log.csv` n'en porte
+    aucun : déclarer un circuit fait y écrit toujours `weight_kg = 0` (**C4**), et la
+    raison est écrite dans `docs/charges.md` §1 — un exercice au temps porte `reps = -1`,
+    et le multiplier par une charge non nulle produirait un tonnage négatif.
+    """
+
+    name: str = ""
+    date: date
+    weight_kg: float | None = None
+    bodyweight: bool = False
+
+
+class CircuitSessionRow(CsvModel):
+    """Un circuit **déclaré fait**. `activity/circuit_sessions.csv`.
+
+    ## Le pendant mesuré de `CircuitRow`
+
+    `circuits.csv` porte un patron qui se rejoue et n'a pas de date ; ce fichier porte ce
+    qui a eu lieu, une fois, un jour donné. C'est exactement la raison qui séparait déjà
+    les circuits des séances — voir `paths.py` — et elle vaut dans les deux sens : une
+    session ne se rejoue pas, elle ne se corrige pas non plus par un changement de patron.
+
+    ## Le nom est dupliqué, comme dans `exercise_log.csv`
+
+    `circuit_id` dit d'où vient la séance, `name` dit ce qu'elle était. Supprimer un
+    circuit doit laisser son historique **lisible** (`ACT-06`) : sans la duplication, une
+    ligne deviendrait muette dès que son patron disparaît, dans l'application comme dans
+    un tableur trois ans plus tard (`STO-02`).
+
+    ## Ce que ce fichier ne porte pas
+
+    **Aucune charge.** `circuit_loads.csv` reste la seule autorité sur ce qu'on charge
+    (**C1**), et le tonnage reste hors du monde tabata (**C4**) : un exercice au temps
+    porte `reps = -1`, et le multiplier par une charge produirait un tonnage négatif.
+    """
+
+    #: Identifiant **stable** de la séance, sur le modèle de `WorkoutRow.id` : les séries
+    #: s'y rattachent, et `id` — la position dans le fichier — se décale à la première
+    #: suppression.
+    session_id: str = ""
+    #: Le patron joué, quand il existe encore. Vide sur une ligne dont le circuit a été
+    #: supprimé depuis, ce qui est légitime : c'est `name` qui garde le sens de la ligne.
+    circuit_id: str = ""
+    #: Le jour de la séance, **tel que le serveur le voit**. Une session est une mesure :
+    #: contrairement à `CircuitRow.created`, cette date date bien quelque chose.
+    date: date
+    name: str = ""
+    #: Le nombre de rounds joués, borné comme le fait Cadence. C'est aussi le nombre de
+    #: séries de chaque exercice — voir `CircuitSessionSetRow.sets`.
+    rounds: int = 1
+    #: La durée **confirmée** à l'écran, jamais l'estimation (**D4**). Sur une séance en
+    #: répétitions personne ne connaît la durée réelle, et l'écrire en silence mettrait une
+    #: valeur inventée dans le volume hebdomadaire.
+    duration_min: float
+    #: Effort perçu 1–10 (`ACT-18`), comme sur une séance. Absent est une réponse.
+    rpe: int | None = None
+    #: La provenance, sur le modèle de `WorkoutRow.source`. `cadence` pour un circuit
+    #: déclaré fait depuis l'application ; la colonne existe pour que `IMP-05` continue de
+    #: vouloir dire quelque chose le jour où une session vient d'ailleurs.
+    source: str = "cadence"
+
+
+class CircuitSessionSetRow(CsvModel):
+    """Les séries d'un exercice, dans une séance tabata. `activity/circuit_session_sets.csv`.
+
+    **C'est ce fichier qui rend l'assiduité possible.** Elle compte des séries par groupe
+    musculaire et par jour ; une liste de groupes sérialisée dans une cellule de
+    `circuit_sessions.csv` perdrait ce compte, et cesserait d'être lisible dans un tableur
+    (`STO-02`). Le partage est celui de `run_splits.csv` et d'`exercise_log.csv`, pour la
+    même raison.
+
+    `date` est **recopiée** depuis la session plutôt que jointe : c'est ce qui permet de
+    compter une semaine de séries en lisant ce seul fichier, et de le relire dans un
+    tableur sans avoir à ouvrir l'autre à côté.
+    """
+
+    #: Rattachement à `CircuitSessionRow.session_id`, jamais à sa position.
+    session_id: str = ""
+    date: date
+    #: Le nom **tel qu'il était dans le circuit ce jour-là**, et son groupe : dupliqués
+    #: pour la raison d'`exercise_log.csv` (`ACT-06`) — une ligne d'historique doit rester
+    #: lisible quand son patron a disparu.
+    exercise_name: str = ""
+    #: L'un des neuf groupes de `MuscleGroup`. Vide ou inconnu se lit comme `autre`, jamais
+    #: en faisant tomber le fichier — la règle de lecture est celle de `_group_of`.
+    muscle_group: str = ""
+    #: Le nombre de rounds de la séance : chaque round est bien une série de plus. Le même
+    #: chiffre que `CircuitSessionRow.rounds`, recopié pour que la ligne se lise seule.
+    sets: int
+    #: Les répétitions, ou `-1` si l'exercice est au temps — la sentinelle de
+    #: `CircuitExerciseRow`, avec la même règle : c'est `reps` qui dit la nature de la
+    #: ligne. Aucune charge ne l'accompagne, donc aucun tonnage n'en sort (**C4**).
+    reps: int = -1

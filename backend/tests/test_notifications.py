@@ -595,6 +595,53 @@ class TestOrdonnanceur:
         assert webpush.count == 0
         assert SENT.strip("/") not in dav.files
 
+    def test_un_tabata_declare_fait_eteint_le_rappel_de_seance(
+        self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
+    ) -> None:
+        """Le « réalisé » se compte dans `circuit_sessions.csv` depuis le rebranchement
+        (`docs/refonte-activite.md` §4).
+
+        Sans ce test, changer la source aurait pu rendre `workouts_logged` toujours nul :
+        le rappel serait alors parti **après** la séance, tous les soirs, et rien dans la
+        batterie ne s'en serait aperçu — les réglages de rappel se testent sur un
+        `DaySnapshot` construit à la main, pas sur ce que le stockage porte.
+        """
+        self._seed_reminders(dav, workout="18:00")
+        self._seed_subscription(dav)
+        dav.seed(
+            "Metric/planning/plan.csv",
+            "id,date,time,kind,title,duration_min,note,source\n"
+            f"p1,{JOUR},07:00,muscu,Haut du corps,45,,manual\n",
+        )
+        dav.seed(
+            "Metric/activity/circuit_sessions.csv",
+            "session_id,circuit_id,date,name,rounds,duration_min,rpe,source\n"
+            f"s1,c1,{JOUR},Haut du corps,4,45,,cadence\n",
+        )
+
+        envoyes = asyncio.run(self._scheduler(store, push_sender, at(18)).tick())
+
+        assert envoyes == []
+        assert webpush.count == 0
+
+    def test_une_seance_prevue_et_non_notee_rappelle(
+        self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
+    ) -> None:
+        """Le pendant du précédent : sans lui, un `workouts_logged` toujours **plein**
+        éteindrait le rappel pour de bon, ce qui est le défaut symétrique et tout aussi
+        silencieux."""
+        self._seed_reminders(dav, workout="18:00")
+        self._seed_subscription(dav)
+        dav.seed(
+            "Metric/planning/plan.csv",
+            "id,date,time,kind,title,duration_min,note,source\n"
+            f"p1,{JOUR},07:00,muscu,Haut du corps,45,,manual\n",
+        )
+
+        envoyes = asyncio.run(self._scheduler(store, push_sender, at(18)).tick())
+
+        assert envoyes == [ReminderKind.WORKOUT]
+
     def test_une_cellule_time_vide_de_schedule_ne_casse_rien(
         self, store: FileStore, push_sender: PushSender, dav: FakeWebDav, webpush: FakeWebPush
     ) -> None:

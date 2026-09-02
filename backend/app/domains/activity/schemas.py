@@ -918,6 +918,13 @@ class CircuitExercise(BaseModel):
     duration_s: int | None = None
     reps: int | None = None
     rest_s: int
+    #: Ce que le **lien** porte en 4ᵉ champ pour cet exercice — sa charge, mise en forme
+    #: (**C7**). `null` au poids du corps et tant que rien n'est déclaré.
+    #:
+    #: Servi plutôt que recomposé par l'écran : il n'y a qu'un endroit au monde où « 12 »
+    #: devient « 12 kg », et c'est celui qui fabrique le lien. Deux compositions
+    #: divergeraient, et le symptôme serait une carte qui annonce autre chose que le lien.
+    note: str | None = None
 
 
 class Circuit(BaseModel):
@@ -948,23 +955,29 @@ class Circuit(BaseModel):
 class CircuitSuggestion(BaseModel):
     """Un nom d'exercice proposé à la saisie d'un circuit.
 
-    **Les deux mondes se retrouvent ici, et seulement ici** : les 35 noms du catalogue de
-    Cadence — les seuls qui affichent une illustration — et ceux que l'utilisateur a
-    déclarés dans le sien. Rien n'est fusionné dans les fichiers ; c'est une liste de
-    suggestions, calculée à la demande.
+    **Les deux mondes se retrouvent ici, et seulement ici** : les 1324 noms du catalogue de
+    Cadence et ceux que l'utilisateur a déclarés dans le sien. Rien n'est fusionné dans les
+    fichiers ; c'est un résultat de recherche, calculé à la demande.
 
-    Elle est servie par le serveur et non écrite dans l'écran, pour la raison habituelle :
-    35 noms recopiés côté client divergeraient du jour où Cadence en ajoute un, et le
-    symptôme serait une illustration qui n'apparaît pas, sans message.
+    ## `illustrated` a disparu, et ce n'est pas un oubli
+
+    Le champ disait « ce nom exact affiche une illustration », et il avait un sens tant que
+    35 noms sur tous les noms possibles en affichaient une. Avec 1324 démonstrations et un
+    rapprochement qui tolère la casse, les pluriels et le français, le booléen ne distingue
+    plus rien d'utile — et le calculer honnêtement demanderait de réimplémenter
+    l'algorithme de Cadence, c'est-à-dire d'en tenir une seconde version qui divergerait.
     """
 
     name: str
-    #: Vrai si ce nom **exact** affiche une illustration dans Cadence.
-    illustrated: bool
     #: Le groupe musculaire, quand cet exercice est au catalogue de Metric. `null` sinon —
     #: un nom du catalogue de Cadence n'en porte aucun, et en deviner un serait inventer
     #: une valeur que les statistiques prendraient au sérieux.
     muscle_group: str | None = None
+    #: Zone du corps et matériel, quand la suggestion vient du catalogue de Cadence. `null`
+    #: pour un exercice de Metric, qui ne porte ni l'un ni l'autre — et les déduire de son
+    #: groupe musculaire serait une correspondance de plus à tenir.
+    body_part: str | None = None
+    equipment: str | None = None
 
 
 class CircuitList(BaseModel):
@@ -991,3 +1004,178 @@ class CircuitDonePayload(BaseModel):
 
     duration_min: DurationMin
     rpe: Rpe | None = None
+
+
+class ComposeRequest(BaseModel):
+    """Ce qu'on demande à l'écran de composition — une phrase (**R5**).
+
+    Une seule zone de texte et aucun formulaire : ce qui manque au modèle, il l'a déjà.
+    Le matériel possédé et les groupes négligés partent avec la demande sans qu'on ait à
+    les taper (§5 bis), et c'est ce qui rend « fais-moi 30 minutes » répondable.
+    """
+
+    #: « bras 30 min, un haltère de 10 kg ». Vide est légitime : le profil suffit à
+    #: composer quelque chose, et exiger une phrase pour rien serait un formulaire de plus.
+    wish: str = Field(default="", max_length=500)
+
+
+class ProposedCircuitExercise(BaseModel):
+    """Un exercice **proposé**, tel que l'écran le reçoit — ajustable, jamais écrit."""
+
+    name: str
+    muscle_group: str
+    duration_s: int | None = None
+    reps: int | None = None
+    rest_s: int = 0
+    #: Vrai quand le nom est exactement celui d'un exercice du catalogue Cadence, donc
+    #: quand une démonstration s'affichera pendant l'effort.
+    #:
+    #: Faux **n'est pas une erreur** : la spécification dit qu'un nom hors catalogue reste
+    #: valide et que la séance tourne. C'est l'écran qui le dit, pour qu'on choisisse de
+    #: corriger ou non — le taire promettrait une image qui n'arrivera pas.
+    illustrated: bool = True
+
+
+class CircuitProposal(BaseModel):
+    """Ce que la composition rend. **Aucune ligne n'a été écrite** (**R5**).
+
+    La symétrie avec `Proposal` du planning est voulue : cette forme ne connaît pas
+    l'écriture, `POST /circuits` ne connaît pas l'IA, et entre les deux il y a un écran et
+    un appui.
+    """
+
+    name: str
+    rounds: int
+    round_rest_s: int
+    exercises: list[ProposedCircuitExercise]
+    #: Ce sur quoi la proposition s'appuie, dit à l'écran : le matériel pris en compte, les
+    #: groupes les plus anciens. Une suggestion dont on voit l'argument se discute ; une
+    #: suggestion nue se croit ou se rejette.
+    basis: list[str] = Field(default_factory=list)
+    #: Exercices écartés à la relecture, et pourquoi. Les taire laisserait croire que le
+    #: modèle n'a proposé que cela.
+    dropped: list[str] = Field(default_factory=list)
+
+
+# ── Charges des exercices de tabata (**C1**) ──────────
+
+#: Le pas des boutons plus et moins de la page Charges (**C6**). Un kilo : le réglage réel
+#: d'un tabata se fait au kilo, pas au disque. Il vit ici et non dans l'écran parce que la
+#: page **et** l'assistant doivent parler du même pas le jour où il change.
+LOAD_STEP_KG = 1.0
+
+#: État d'une charge, décidé par le **serveur**. L'écran groupe sur cette étiquette ; lui
+#: faire déduire « non renseigné » d'un `null` reviendrait à lui confier la règle, et il y
+#: a exactement trois états à ne pas confondre — voir `CircuitLoadRow`.
+LoadState = Literal["unset", "bodyweight", "weighted"]
+
+#: La charge saisie, en kilogrammes. **`gt=0` et non `ge=0`**, contrairement à `LoadKg` du
+#: journal de musculation où zéro *signifie* le poids du corps (`ACT-07`). Ici le poids du
+#: corps a son propre drapeau : accepter zéro donnerait deux façons de dire la même chose,
+#: et l'écran ne saurait plus laquelle afficher.
+CircuitLoadKg = Annotated[float, Field(gt=0, le=1000, description="Charge en kilogrammes")]
+
+
+class LoadPayload(BaseModel):
+    """Ce qu'on déclare sur un exercice : une charge, ou le poids du corps.
+
+    **Exactement un des deux**, comme `CircuitExercisePayload` pour temps et répétitions.
+    Les deux à la fois seraient « poids du corps à 12 kg » ; aucun des deux laisserait le
+    service décider à la place de l'utilisateur, ce que **C3** lui interdit.
+    """
+
+    name: Label
+    weight_kg: CircuitLoadKg | None = None
+    bodyweight: bool = False
+
+    @model_validator(mode="after")
+    def exactly_one_declaration(self) -> LoadPayload:
+        if (self.weight_kg is None) == (not self.bodyweight):
+            raise ValueError("Un exercice est soit au poids du corps, soit à une charge.")
+        return self
+
+
+class Load(BaseModel):
+    """La charge d'un exercice, telle que la page la reçoit."""
+
+    #: `null` tant qu'aucune charge n'a été déclarée : il n'y a alors **aucune ligne**, donc
+    #: aucune position ni jeton. C'est ce couple à `null` qui dit à l'écran de créer plutôt
+    #: que de corriger — la première charge est une addition, la suivante une modification.
+    id: int | None = None
+    token: str | None = None
+    name: str
+    state: LoadState
+    weight_kg: float | None = None
+    #: Jour de la dernière décision. Il ne date aucune séance (**C4**).
+    updated: date | None = None
+    #: Nombre de circuits qui emploient cet exercice. C'est la réponse à la seule question
+    #: que pose une carte — « pourquoi celui-là est ici ? » — et elle coûte une lecture
+    #: déjà faite.
+    circuits: int
+    #: Jours depuis le **dernier changement de charge**, lu dans `circuit_load_log.csv`.
+    #:
+    #: `null` quand le journal ne porte rien pour cet exercice — jamais `0`, qui voudrait
+    #: dire « changée aujourd'hui ». Le journal est la seule autorité ici : `updated`
+    #: bouge à chaque enregistrement, y compris celui qui ne change rien, alors que le
+    #: journal ne retient que les changements confirmés (**C2**).
+    days_since_change: int | None = None
+    #: Séances **tenues à cette charge** depuis ce changement.
+    #:
+    #: `0` est une mesure et non une absence : « montée il y a trois jours, aucune séance
+    #: depuis » est précisément ce qu'un coach doit lire. C'est `null` qui dit « aucun
+    #: changement au journal », donc rien à compter depuis.
+    sessions_since: int | None = None
+
+
+class LoadList(BaseModel):
+    """Les exercices de tabata et leur charge (`GET /activity/loads`).
+
+    La liste vient de `circuit_exercises.csv` et **d'elle seule**, dédoublonnée par `fold` :
+    la page ne montre que ce qui est constitutif d'une séance tabata. Un exercice de
+    musculation n'y entre pas — sa charge est déjà journalisée série par série.
+    """
+
+    loads: list[Load]
+    #: Le pas des boutons plus et moins. Servi plutôt que codé dans l'écran, pour la raison
+    #: habituelle : deux valeurs pour un même réglage divergeraient sans que rien ne le dise.
+    step_kg: float = LOAD_STEP_KG
+
+
+class LoadPoint(BaseModel):
+    """Un changement de charge, tel que la courbe le reçoit (**C2**)."""
+
+    date: date
+    #: `null` quand ce point est un passage au poids du corps. La courbe s'y **interrompt**
+    #: plutôt que de retomber à zéro : zéro serait une charge nulle, l'absence est autre
+    #: chose.
+    weight_kg: float | None = None
+
+
+class LoadDay(BaseModel):
+    """Un jour de la ligne de 30 points."""
+
+    date: date
+    #: Nombre de séances de ce jour qui portaient cet exercice. **Zéro est une mesure ici**
+    #: et non une valeur inventée : on a compté, il n'y en a pas eu.
+    count: int
+
+
+class LoadDetail(BaseModel):
+    """Ce que la feuille de détail affiche (`GET /activity/loads/detail`).
+
+    Les deux séries viennent de **deux fichiers différents**, et c'est la conséquence
+    directe de **C2** et **C4** : la courbe est le journal des décisions
+    (`circuit_load_log.csv`), les points sont les séances déclarées faites
+    (`exercise_log.csv`). Elles peuvent diverger — une charge notée et jamais soulevée
+    monte la courbe sans allumer un point — et c'est exactement ce qu'on veut voir.
+    """
+
+    name: str
+    state: LoadState
+    weight_kg: float | None = None
+    history: list[LoadPoint]
+    #: **Exactement 30 entrées**, du plus ancien au jour du serveur. La fenêtre est calculée
+    #: ici : l'écran ne connaît ni sa longueur ni la date d'aujourd'hui (`CLAUDE.md` §2).
+    sessions: list[LoadDay]
+    #: Les circuits qui emploient cet exercice, par leur nom.
+    circuits: list[str]

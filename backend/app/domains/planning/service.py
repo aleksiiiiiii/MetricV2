@@ -22,7 +22,7 @@ from datetime import date, timedelta
 from app.core.dates import today_local, week_start
 from app.core.exceptions import AiUnreadableError
 from app.domains.activity import circuit_link
-from app.domains.activity.models import RunRow, WorkoutRow
+from app.domains.activity.models import CircuitSessionRow, RunRow
 from app.domains.activity.stats import ActivityStats
 from app.domains.ai.service import AiService
 from app.domains.goals.service import GoalService
@@ -43,7 +43,7 @@ from app.domains.planning.schemas import (
 from app.storage.csv_repo import CsvRepository, Row
 from app.storage.errors import StorageNotFoundError
 from app.storage.files import FileStore
-from app.storage.paths import PLAN, RUNS, WORKOUTS
+from app.storage.paths import CIRCUIT_SESSIONS, PLAN, RUNS
 
 #: Profondeur d'historique servie au flux iCal.
 #:
@@ -74,7 +74,9 @@ class PlanningService:
         self._store = store
         self._plan: CsvRepository[PlanRow] = CsvRepository(store, PLAN, PlanRow)
         self._runs: CsvRepository[RunRow] = CsvRepository(store, RUNS, RunRow)
-        self._workouts: CsvRepository[WorkoutRow] = CsvRepository(store, WORKOUTS, WorkoutRow)
+        self._sessions: CsvRepository[CircuitSessionRow] = CsvRepository(
+            store, CIRCUIT_SESSIONS, CircuitSessionRow
+        )
 
     # ── Lecture du planning ───────────────────────────
 
@@ -130,7 +132,7 @@ class PlanningService:
         start = week_start(month_start)
         end = week_start(month_end) + timedelta(days=6)
 
-        await self._store.prefetch([PLAN, RUNS, WORKOUTS])
+        await self._store.prefetch([PLAN, RUNS, CIRCUIT_SESSIONS])
         planned = await self.between(start, end)
         done = await self._done_between(start, end)
 
@@ -154,7 +156,14 @@ class PlanningService:
         return MonthView(month=month_start, start=start, end=end, days=days, today=current)
 
     async def _done_between(self, start: date, end: date) -> dict[date, list[DoneActivity]]:
-        """Activités **réellement effectuées**, lues chez le domaine Activité."""
+        """Activités **réellement effectuées**, lues chez le domaine Activité.
+
+        Les séances viennent de `circuit_sessions.csv` depuis le rebranchement
+        (`docs/refonte-activite.md` §4), les courses de `runs.csv` comme avant. Le
+        remplacement est exclusif : déclarer un circuit fait écrit encore dans
+        `workouts.csv`, et lire les deux ferait honorer deux séances prévues avec une
+        seule faite.
+        """
         done: dict[date, list[DoneActivity]] = defaultdict(list)
 
         for run in await self._runs.read_all():
@@ -168,14 +177,16 @@ class PlanningService:
                     )
                 )
 
-        for workout in await self._workouts.read_all():
-            if start <= workout.model.date <= end:
-                done[workout.model.date].append(
+        for session in await self._sessions.read_all():
+            if start <= session.model.date <= end:
+                done[session.model.date].append(
                     DoneActivity(
                         kind="workout",
-                        id=workout.index,
-                        label=workout.model.type,
-                        duration_min=workout.model.duration_min,
+                        id=session.index,
+                        # Le **nom du circuit**, recopié sur la session (`ACT-06`) : la
+                        # case du calendrier reste lisible quand le patron a disparu.
+                        label=session.model.name,
+                        duration_min=session.model.duration_min,
                     )
                 )
 
@@ -294,7 +305,7 @@ class PlanningService:
         start = this_week - timedelta(weeks=weeks - 1)
         end = this_week + timedelta(days=6)
 
-        await self._store.prefetch([PLAN, RUNS, WORKOUTS])
+        await self._store.prefetch([PLAN, RUNS, CIRCUIT_SESSIONS])
         planned = await self.between(start, end)
         done = await self._done_between(start, end)
 
@@ -367,7 +378,7 @@ class PlanningService:
         start = request.start or (week_start(current) + timedelta(days=7))
         end = start + timedelta(days=7 * request.weeks - 1)
 
-        await self._store.prefetch([PLAN, RUNS, WORKOUTS])
+        await self._store.prefetch([PLAN, RUNS, CIRCUIT_SESSIONS])
         existing = await self.between(start, end)
         history, basis = await self._history(current)
         muscles = await self._muscles(current)

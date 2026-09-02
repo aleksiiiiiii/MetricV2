@@ -76,6 +76,11 @@ const SURFACES = [
   // La feuille d'ajout d'un repas et ses quatre modes (C05). Elle s'ajoute ici le jour
   // où elle est écrite, pas le jour où un défaut s'y découvre.
   ['/nutrition', 'Ajouter un repas', 'modes de saisie d’un repas'],
+  // Le détail d'une charge — courbe et ligne de trente points. Le nom du bouton est celui
+  // de l'exercice, donc il dépend des données : `Butterfly` est celui de la base réelle.
+  // Sur une base où il n'existe pas, la ligne rend « bouton introuvable », ce qui est un
+  // constat exact — on remplace alors le nom par un exercice réellement présent.
+  ['/activite/charges', 'Butterfly', 'détail d’une charge'],
 ];
 
 /** Le panneau d'une feuille. C'est lui qu'on mesure, pas l'écran resté derrière. */

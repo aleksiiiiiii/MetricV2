@@ -52,8 +52,17 @@ const HAUT = {
       duration_s: null,
       reps: 15,
       rest_s: 20,
+      note: null,
     },
-    { position: 2, name: 'Plank', muscle_group: 'abdos', duration_s: 45, reps: null, rest_s: 15 },
+    {
+      position: 2,
+      name: 'Plank',
+      muscle_group: 'abdos',
+      duration_s: 45,
+      reps: null,
+      rest_s: 15,
+      note: null,
+    },
   ],
   url: `${BASE}?w=Haut+du+corps~4~60~Push-Ups+Classic:15x:20~Plank:45s:15`,
   estimated_duration_min: 11.3,
@@ -68,20 +77,27 @@ const GAINAGE = {
   name: 'Gainage',
   rounds: 2,
   exercises: [
-    { position: 1, name: 'Plank', muscle_group: 'abdos', duration_s: 60, reps: null, rest_s: 30 },
+    {
+      position: 1,
+      name: 'Plank',
+      muscle_group: 'abdos',
+      duration_s: 60,
+      reps: null,
+      rest_s: 30,
+      note: null,
+    },
   ],
   url: `${BASE}?w=Gainage~2~60~Plank:60s:30`,
   estimated_duration_min: 4,
   exact: true,
 };
 
-/** Ce que le serveur propose à la saisie : Cadence d'abord, le catalogue ensuite. */
+/** Ce que le serveur propose à la saisie : le catalogue de Metric d'abord, Cadence ensuite. */
 const SUGGESTIONS = [
-  { name: 'Push-Ups Classic', illustrated: true, muscle_group: null },
-  { name: 'Push-Ups Wide Grip', illustrated: true, muscle_group: null },
-  { name: 'Pike Push-ups', illustrated: true, muscle_group: null },
-  { name: 'Plank', illustrated: true, muscle_group: 'abdos' },
-  { name: 'Développé couché', illustrated: false, muscle_group: 'pectoraux' },
+  { name: 'Plank', muscle_group: 'abdos', body_part: null, equipment: null },
+  { name: 'Développé couché', muscle_group: 'pectoraux', body_part: null, equipment: null },
+  { name: 'push-up', muscle_group: null, body_part: 'chest', equipment: 'body weight' },
+  { name: 'pull-up', muscle_group: null, body_part: 'back', equipment: 'body weight' },
 ];
 
 function stub(body: unknown = { circuits: [HAUT, GAINAGE], linkable: true }) {
@@ -302,13 +318,17 @@ describe('séances Cadence', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une séance' }));
     const field = screen.getByLabelText('Exercice 1');
-    await userEvent.type(field, 'push');
+    await userEvent.type(field, 'pu');
 
-    const options = screen.getAllByRole('option');
-    expect(options.map((node) => node.textContent)).toEqual([
-      expect.stringContaining('Push-Ups Classic'),
-      expect.stringContaining('Push-Ups Wide Grip'),
-      expect.stringContaining('Pike Push-ups'),
+    expect(screen.getAllByRole('option').map((node) => node.textContent)).toEqual([
+      expect.stringContaining('push-up'),
+      expect.stringContaining('pull-up'),
+    ]);
+
+    await userEvent.type(field, 'sh');
+
+    expect(screen.getAllByRole('option').map((node) => node.textContent)).toEqual([
+      expect.stringContaining('push-up'),
     ]);
   });
 
@@ -331,22 +351,23 @@ describe('séances Cadence', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une séance' }));
     const field = screen.getByLabelText('Exercice 1');
-    await userEvent.type(field, 'pik');
+    await userEvent.type(field, 'pus');
     await userEvent.tab();
 
-    expect(field).toHaveValue('Pike Push-ups');
+    expect(field).toHaveValue('push-up');
   });
 
-  it('dit lesquels affichent une illustration', async () => {
-    // Le seul service que le nom exact rend. Le dire à l'endroit où on choisit vaut mieux
-    // que de le découvrir en plein round.
+  it('dit ce que le catalogue sait de chaque nom', async () => {
+    // Cadence embarque 1324 démonstrations : le drapeau « illustration » ne distinguait
+    // plus rien. Ce qui reste utile à l'endroit où on choisit, c'est la zone du corps
+    // pour un nom de Cadence, et le groupe musculaire pour un des siens.
     stub({ circuits: [], linkable: true });
     renderCircuits();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Créer une séance' }));
-    await userEvent.type(screen.getByLabelText('Exercice 1'), 'develop');
+    await userEvent.type(screen.getByLabelText('Exercice 1'), 'pus');
 
-    expect(screen.getByRole('option')).not.toHaveTextContent('illustration');
+    expect(screen.getByRole('option')).toHaveTextContent('chest');
   });
 
   it('pré-remplit le groupe musculaire quand l’exercice est au catalogue', async () => {

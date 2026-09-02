@@ -34,7 +34,7 @@ TRACKS_FILE = "Metric/settings/heatmap_tracks.csv"
 CADENCES_FILE = "Metric/settings/heatmap_cadences.csv"
 OFF_FILE = "Metric/settings/heatmap_off_days.csv"
 
-EXERCISE_LOG = "Metric/activity/exercise_log.csv"
+SESSION_SETS = "Metric/activity/circuit_session_sets.csv"
 RUNS = "Metric/activity/runs.csv"
 SCHEDULE = "Metric/supplements/schedule.csv"
 SUPPLEMENT_LOG = "Metric/supplements/intake_log.csv"
@@ -150,14 +150,11 @@ def test_the_weekly_cadence_comes_from_the_real_frequency(
     today = today_local()
     # Douze séances de dos en quatre semaines : trois fois par semaine.
     lines = [
-        f"w{offset},{today - timedelta(days=offset * 2)},e1,Tractions,dos,0,4,8,"
-        for offset in range(12)
+        f"s{offset},{today - timedelta(days=offset * 2)},Tractions,dos,4,8" for offset in range(12)
     ]
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        + "\n".join(lines)
-        + "\n",
+        SESSION_SETS,
+        "session_id,date,exercise_name,muscle_group,sets,reps\n" + "\n".join(lines) + "\n",
     )
 
     tracks = by_id(app_client, auth)
@@ -271,9 +268,8 @@ async def test_each_source_reduces_a_day_to_one_number(
 
     today = today_local()
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{today},e1,Tractions,dos,0,4,8,\n",
+        SESSION_SETS,
+        f"session_id,date,exercise_name,muscle_group,sets,reps\ns1,{today},Tractions,dos,4,8\n",
     )
     dav.seed(
         RUNS,

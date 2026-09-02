@@ -246,3 +246,77 @@ def test_the_estimate_uses_the_clamped_values() -> None:
     circuit = LinkCircuit("A", 500, 0, (timed("Ex", 60),))
 
     assert estimate(circuit).minutes == pytest.approx(99.0, abs=0.05)
+
+
+# ── Le 4ᵉ champ : la note (§1, spécification v2) ───────
+
+
+def test_the_note_is_omitted_when_there_is_nothing_to_say() -> None:
+    """Un circuit sans charge produit **exactement** les octets d'hier.
+
+    C'est la garantie de rétrocompatibilité, et elle se vérifie ici plutôt que par une
+    relecture : un `:` final ajouté sans raison allongerait chaque lien déjà collé dans une
+    note de planning, pour rien.
+    """
+    url = build_url(BASE, LinkCircuit("Gainage", 1, 0, (timed("Plank", 60),)))
+
+    assert url == f"{BASE}?w=Gainage~1~0~Plank:60s:0"
+
+
+def test_the_documented_example_with_notes_is_produced_exactly() -> None:
+    """L'exemple EX6 de la spécification, octet pour octet — notes sur deux exercices,
+    aucune sur le troisième."""
+    url = build_url(
+        BASE,
+        LinkCircuit(
+            name="Haut du corps",
+            rounds=3,
+            round_rest_s=60,
+            exercises=(
+                LinkExercise(name="Pompes", duration_s=30, reps=TIMED, rest_s=15, note="12 kg"),
+                timed("Gainage", 45, 15),
+                LinkExercise(name="Rowing", reps=12, rest_s=30, note="40 kg"),
+            ),
+        ),
+    )
+
+    assert (
+        url == f"{BASE}?w=Haut+du+corps~3~60~Pompes:30s:15:12+kg~Gainage:45s:15~Rowing:12x:30:40+kg"
+    )
+
+
+def test_a_note_survives_a_round_trip_with_both_separators() -> None:
+    """Les deux séparateurs dans une note, comme le test qui les vérifie dans un nom. Sans
+    l'échappement, `tempo 3:1` couperait le champ et `~` couperait la séance."""
+    circuit = LinkCircuit(
+        "A",
+        1,
+        0,
+        (LinkExercise(name="Rowing", duration_s=30, reps=TIMED, note="tempo 3:1 ~ lent"),),
+    )
+    url = build_url(BASE, circuit)
+
+    assert url == f"{BASE}?w=A~1~0~Rowing:30s:0:tempo+3%3A1+%7E+lent"
+    assert parse_url(url) == circuit
+
+
+def test_an_empty_fourth_field_reads_as_no_note() -> None:
+    """`Ex:30s:10:` est une écriture valide de la spécification, et elle vaut `Ex:30s:10`.
+    Les deux doivent donner le même circuit, sinon relire un lien fabriqué à la main en
+    produirait un autre."""
+    with_field = parse_url(f"{BASE}?w=A~1~0~Rowing:30s:10:")
+    without_field = parse_url(f"{BASE}?w=A~1~0~Rowing:30s:10")
+
+    assert with_field == without_field
+    assert with_field is not None
+    assert with_field.exercises[0].note == ""
+
+
+def test_an_unescaped_colon_in_a_note_is_cut_where_cadence_cuts_it() -> None:
+    """Un lien mal fabriqué ailleurs porte un `:` nu dans sa note. On garde le premier
+    champ et rien de plus — recoller les morceaux afficherait dans Metric une note que
+    Cadence, lui, coupe au même endroit."""
+    parsed = parse_url(f"{BASE}?w=A~1~0~Rowing:30s:10:tempo 3:1")
+
+    assert parsed is not None
+    assert parsed.exercises[0].note == "tempo 3"

@@ -18,7 +18,7 @@ from datetime import date
 
 from app.core.cadence import Cadence, CadenceType
 from app.core.dates import today_local
-from app.domains.activity.service import RunService, WorkoutService
+from app.domains.activity.service import CircuitSessionService, RunService
 from app.domains.heatmap.cache import GridCache, GridKey
 from app.domains.heatmap.engine import (
     Day,
@@ -55,21 +55,21 @@ from app.domains.heatmap.sources import (
 )
 from app.storage.files import FileStore
 from app.storage.paths import (
+    CIRCUIT_SESSIONS,
     HEATMAP_CADENCES,
     HEATMAP_OFF_DAYS,
     HEATMAP_TRACKS,
     RUNS,
-    WORKOUTS,
 )
 
 #: Déclencheur reconnu par la cadence `conditional` : « les jours où j'ai bougé ».
 TRIGGER_WORKOUT = "workout"
 
 #: Fichiers que toute grille ouvre, quelle que soit sa source : la piste elle-même, son
-#: journal de cadences, ses plages neutralisées. `RUNS` et `WORKOUTS` s'y ajoutent parce
-#: qu'une cadence `conditional` y cherche ses déclencheurs (`HEAT-12`) — et qu'on ne sait
-#: qu'après avoir lu le journal si l'une d'elles en est une.
-COMMON_PATHS = (HEATMAP_TRACKS, HEATMAP_CADENCES, HEATMAP_OFF_DAYS, RUNS, WORKOUTS)
+#: journal de cadences, ses plages neutralisées. `RUNS` et `CIRCUIT_SESSIONS` s'y ajoutent
+#: parce qu'une cadence `conditional` y cherche ses déclencheurs (`HEAT-12`) — et qu'on ne
+#: sait qu'après avoir lu le journal si l'une d'elles en est une.
+COMMON_PATHS = (HEATMAP_TRACKS, HEATMAP_CADENCES, HEATMAP_OFF_DAYS, RUNS, CIRCUIT_SESSIONS)
 
 
 def _dependencies(tracks: Iterable[TrackRow]) -> set[str]:
@@ -323,7 +323,11 @@ class GridService:
             return set()
 
         days = {row.model.date for row in await RunService(self._store).all()}
-        days |= {row.model.date for row in await WorkoutService(self._store).all()}
+        # « J'ai bougé ce jour-là » se lit désormais dans `circuit_sessions.csv`. La
+        # constante s'appelle toujours `workout` : c'est la valeur **écrite dans le
+        # fichier de cadences** de l'utilisateur, et la renommer invaliderait en silence
+        # chaque cadence conditionnelle déjà réglée — le sens sûr est de ne pas y toucher.
+        days |= {row.model.date for row in await CircuitSessionService(self._store).all()}
         return days
 
 

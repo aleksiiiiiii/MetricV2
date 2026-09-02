@@ -29,7 +29,7 @@ from datetime import date, timedelta
 
 from app.core.cadence import Cadence, CadenceError
 from app.core.dates import today_local
-from app.domains.activity.service import ExerciseService, RunService
+from app.domains.activity.service import CircuitSessionService, RunService
 from app.domains.app_settings.service import SettingsService
 from app.domains.heatmap.models import CadenceRow, OffDayRow, TrackRow
 from app.domains.heatmap.schemas import (
@@ -429,7 +429,7 @@ class TrackService:
         # tenable, sinon la grille est rouge dès le premier jour et on cesse de la lire.
         horizon = today - timedelta(days=SEED_WEEKS * 7 - 1)
         by_group: dict[str, set[date]] = {}
-        for entry in await ExerciseService(self._store).log_entries():
+        for entry in await CircuitSessionService(self._store).sets():
             if entry.model.date >= horizon:
                 by_group.setdefault(entry.model.muscle_group, set()).add(entry.model.date)
 

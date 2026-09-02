@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,18 +16,30 @@ import { Profile } from './Profile';
  * vide au lieu de recevoir un défaut, et que ce qui part au modèle est montré.
  */
 
+/** Les matériels, tels que le serveur les sert — l'écran n'en tient aucune copie. */
+const CATALOGUE = [
+  { value: 'body weight', common: true },
+  { value: 'dumbbell', common: true },
+  { value: 'barbell', common: true },
+  { value: 'leverage machine', common: false },
+  { value: 'smith machine', common: false },
+];
+
 const FILLED: ProfileView = {
   height_cm: 178,
   birth_year: 1995,
   training_days: 'lundi, mercredi, samedi',
-  equipment: 'barre, disques, pas de rack',
+  equipment: ['dumbbell'],
+  equipment_unknown: [],
+  equipment_catalogue: CATALOGUE,
   preferences: '',
+  constraints: '',
   age: 31,
   lines: [
     'Taille : 178 cm',
     'Âge : 31 ans',
     'Jours où je peux m’entraîner : lundi, mercredi, samedi',
-    'Matériel dont je dispose : barre, disques, pas de rack',
+    'Matériel dont je dispose : dumbbell',
   ],
   token: 'jeton-reglages',
 };
@@ -36,8 +48,11 @@ const EMPTY: ProfileView = {
   height_cm: null,
   birth_year: null,
   training_days: '',
-  equipment: '',
+  equipment: [],
+  equipment_unknown: [],
+  equipment_catalogue: CATALOGUE,
   preferences: '',
+  constraints: '',
   age: null,
   lines: [],
   token: 'jeton-reglages',
@@ -126,9 +141,8 @@ describe('profil', () => {
     stub();
     renderSection();
 
-    const field = await screen.findByLabelText('Matériel dont je dispose');
-    await user.clear(field);
-    await user.type(field, 'un rack complet');
+    const field = await screen.findByLabelText('Contraintes à respecter');
+    await user.type(field, 'épaule droite sensible');
     await user.click(screen.getByRole('button', { name: 'Enregistrer le profil' }));
 
     await waitFor(() => {
@@ -136,9 +150,81 @@ describe('profil', () => {
       expect(call?.init?.method).toBe('PUT');
       expect(call?.init?.headers).toMatchObject({ 'If-Match': 'jeton-reglages' });
       expect(JSON.parse(call?.init?.body as string)).toMatchObject({
-        equipment: 'un rack complet',
+        constraints: 'épaule droite sensible',
       });
     });
+  });
+
+  it('coche un matériel et l’envoie dans l’ordre du serveur', async () => {
+    // L'ordre est celui du catalogue et non celui des appuis : deux enregistrements
+    // successifs doivent produire la même ligne de consigne.
+    const user = userEvent.setup();
+    stub();
+    renderSection();
+
+    await user.click(await screen.findByRole('button', { name: 'barbell' }));
+    await user.click(screen.getByRole('button', { name: 'body weight' }));
+    await user.click(screen.getByRole('button', { name: 'Enregistrer le profil' }));
+
+    await waitFor(() => {
+      expect(JSON.parse(writes()[0]?.init?.body as string)).toMatchObject({
+        equipment: ['body weight', 'dumbbell', 'barbell'],
+      });
+    });
+  });
+
+  it('garde les deux pastilles cochées coup sur coup', async () => {
+    // Le défaut trouvé en pilotant l'écran : les deux appuis lisaient le même état figé et
+    // la seconde pastille écrasait la première. Les tests précédents ne le voyaient pas —
+    // `userEvent` sépare ses clics par un rendu, ce qui masque exactement le cas.
+    stub();
+    renderSection();
+
+    const first = await screen.findByRole('button', { name: 'barbell' });
+    const second = screen.getByRole('button', { name: 'body weight' });
+
+    // Deux clics dans le **même** tour, comme deux appuis rapides du pouce.
+    act(() => {
+      first.click();
+      second.click();
+    });
+
+    expect(first).toHaveAttribute('aria-pressed', 'true');
+    expect(second).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('range le matériel rare derrière un dépliant', async () => {
+    // Douze cases se parcourent, vingt-huit poussent hors de vue les trois qu'on possède.
+    const user = userEvent.setup();
+    stub();
+    renderSection();
+
+    expect(await screen.findByRole('button', { name: 'dumbbell' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'smith machine' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tout le matériel (2 de plus)' }));
+
+    expect(screen.getByRole('button', { name: 'smith machine' })).toBeInTheDocument();
+  });
+
+  it('montre un matériel coché même s’il est rangé derrière le dépliant', async () => {
+    // Le replier sous un dépliant fermé ferait croire qu'il a été décoché.
+    stub({ ...FILLED, equipment: ['smith machine'] });
+    renderSection();
+
+    expect(await screen.findByRole('button', { name: 'smith machine' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('montre ce que le catalogue ne reconnaît pas, au lieu de le jeter', async () => {
+    // Le champ était libre : une cellule existante porte une phrase. La faire disparaître
+    // au premier affichage serait l'invariant « aucune valeur inventée » dans l'autre sens.
+    stub({ ...FILLED, equipment_unknown: ['dumbbels 10kg et tapis'] });
+    renderSection();
+
+    expect(await screen.findByText(/dumbbels 10kg et tapis/)).toBeInTheDocument();
   });
 
   it('envoie null pour un champ vidé plutôt que de l’omettre', async () => {

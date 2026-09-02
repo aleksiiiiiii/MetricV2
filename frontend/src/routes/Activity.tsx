@@ -131,6 +131,7 @@ export function Activity() {
                 porte un, au pied de ses cartes, et deux portes vers la même page dans le
                 même écran font hésiter au lieu d'aider. */}
             <LinkButton to="/activite/catalogue">Catalogue</LinkButton>
+            <LinkButton to="/activite/charges">Charges</LinkButton>
             <LinkButton to="/activite/statistiques">Statistiques</LinkButton>
           </>
         }

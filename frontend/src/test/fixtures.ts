@@ -49,8 +49,7 @@ export const DASHBOARD: DashboardView = {
     ],
     split: [
       { kind: 'run', label: 'Course', sessions: 46, minutes: 2300, ratio: 0.39 },
-      { kind: 'strength', label: 'Musculation', sessions: 60, minutes: 3600, ratio: 0.51 },
-      { kind: 'other', label: 'Autre', sessions: 12, minutes: 520, ratio: 0.1 },
+      { kind: 'tabata', label: 'Tabata', sessions: 72, minutes: 4120, ratio: 0.61 },
     ],
   },
   nutrition: {
