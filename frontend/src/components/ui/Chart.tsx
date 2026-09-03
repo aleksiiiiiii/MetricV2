@@ -165,8 +165,13 @@ export interface ChartProps {
 const identity = (value: number) => String(value);
 
 function scale(value: number, [min, max]: readonly [number, number], top: number, bottom: number) {
-  const span = max - min || 1;
-  return bottom - ((value - min) / span) * (bottom - top);
+  // **Une série plate se dessine au milieu, pas sur l'axe du bas.** Le repli était un
+  // `span || 1`, qui ramenait toute valeur à `bottom` : une charge notée deux fois à 8 kg
+  // collait sa courbe au bord inférieur du cadre, là où elle se lisait comme une chute
+  // vers zéro. C'est le cas le plus courant de la page Charges — noter la même charge deux
+  // fois — et il n'était éprouvé nulle part.
+  if (max === min) return (top + bottom) / 2;
+  return bottom - ((value - min) / (max - min)) * (bottom - top);
 }
 
 function extent(values: readonly number[]): readonly [number, number] {
@@ -214,7 +219,11 @@ export function Chart({
   const primaryPoints = primary.values
     .map((value, index) => `${x(index)},${yPrimary(value)}`)
     .join(' ');
-  const ticks = primary.ticks ?? [primaryDomain[0], primaryDomain[1]];
+  // Dédoublonnées, et c'est ce qui manquait : sur une série plate, les deux bornes du
+  // domaine sont le même nombre. React voyait deux enfants de clé « 8 », et l'écran deux
+  // graduations « 8 kg » peintes l'une sur l'autre. Une seule graduation dit la même
+  // chose, et la dit une fois.
+  const ticks = [...new Set(primary.ticks ?? [primaryDomain[0], primaryDomain[1]])];
 
   function locate(clientX: number) {
     const svg = svgRef.current;

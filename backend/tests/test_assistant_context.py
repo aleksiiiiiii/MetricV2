@@ -23,16 +23,11 @@ from datetime import date, datetime, timedelta
 from app.core.dates import today_local, tz
 from app.domains.activity.models import CircuitExerciseRow, CircuitRow
 from app.domains.activity.schemas import (
-    ExerciseEntryPayload,
-    ExercisePayload,
     RunPayload,
-    WorkoutPayload,
 )
 from app.domains.activity.service import (
     CircuitSessionService,
-    ExerciseService,
     RunService,
-    WorkoutService,
 )
 from app.domains.assistant import context, profile
 from app.domains.assistant.actions import Level, catalogue
@@ -56,29 +51,6 @@ AVANT_HIER = TODAY - timedelta(days=2)
 DEMAIN = TODAY + timedelta(days=1)
 
 
-async def _exercice(store: FileStore, nom: str, groupe: str = "pectoraux") -> str:
-    created = await ExerciseService(store).create(ExercisePayload(name=nom, muscle_group=groupe))
-    return created.exercise_id
-
-
-async def _seance(
-    store: FileStore, jour: date, exercise_id: str, *, charge: float, series: int, reps: int
-) -> None:
-    await WorkoutService(store).create(
-        WorkoutPayload(
-            date=jour,
-            type="muscu",
-            duration_min=60,
-            rpe=7,
-            exercises=[
-                ExerciseEntryPayload(
-                    exercise_id=exercise_id, weight_kg=charge, sets=series, reps=reps
-                )
-            ],
-        )
-    )
-
-
 async def _tabata(
     store: FileStore,
     jour: date,
@@ -92,8 +64,8 @@ async def _tabata(
 ) -> None:
     """Un circuit **déclaré fait**, écrit par le vrai chemin.
 
-    `_seance` reste au-dessus et sert les deux tranches encore branchées sur l'ancien
-    monde — `progression_charges` et `detail_seances`, que la phase 5 supprimera. Tout ce
+    Depuis la phase 5, c'est le **seul** chemin d'écriture d'une séance : la musculation
+    historique a disparu, et un tabata déclaré fait est ce qu'une séance veut dire. Tout ce
     qui compte une séance lit celui-ci depuis le rebranchement
     (`docs/refonte-activite.md` §4).
     """
@@ -129,37 +101,6 @@ async def _rendu(
 
 
 # ── Ce qui est servi ──────────────────────────────────
-
-
-async def test_la_progression_des_charges_porte_charge_ecart_et_record(store: FileStore) -> None:
-    """Le trou du lot : sans ces chiffres, aucune réponse à « je charge combien lundi ? »."""
-    exercise_id = await _exercice(store, "Développé couché")
-    await _seance(store, AVANT_HIER, exercise_id, charge=60, series=3, reps=8)
-    await _seance(store, HIER, exercise_id, charge=62.5, series=3, reps=8)
-
-    rendu = await _rendu(store, "progression_charges")
-
-    assert "Développé couché" in rendu
-    assert "62,5 kg" in rendu
-    assert "+2.5 kg depuis la fois d'avant" in rendu
-    assert "record 62,5 kg" in rendu
-    assert "charges par séance : 60 kg, 62,5 kg" in rendu
-    # L'identifiant permet d'enchaîner sur une action ; sans lui la tranche informe sans
-    # rendre agissable.
-    assert f"exercise_id={exercise_id}" in rendu
-
-
-async def test_le_detail_des_seances_porte_series_repetitions_et_volume(
-    store: FileStore,
-) -> None:
-    exercise_id = await _exercice(store, "Squat", groupe="jambes")
-    await _seance(store, HIER, exercise_id, charge=90, series=4, reps=6)
-
-    rendu = await _rendu(store, "detail_seances")
-
-    assert f"Séance du {HIER:%d/%m/%Y}" in rendu
-    assert "Squat 4×6 à 90 kg" in rendu
-    assert "volume 2160 kg" in rendu
 
 
 async def test_l_hydratation_du_jour_est_servie_avec_sa_cible(store: FileStore) -> None:
@@ -237,23 +178,6 @@ async def test_une_seance_porte_son_effort_percu(store: FileStore) -> None:
 # ── Ce qui n'est pas inventé ──────────────────────────
 
 
-async def test_une_charge_nulle_est_le_poids_du_corps_et_non_une_absence(
-    store: FileStore,
-) -> None:
-    """`ACT-07` : `weight_kg = 0` est une valeur légitime.
-
-    Rendre « 0 kg » inviterait le modèle à lire une charge nulle là où il y a eu des
-    tractions — et à conseiller « augmente la charge » sur un exercice qui n'en porte pas.
-    """
-    exercise_id = await _exercice(store, "Tractions", groupe="dos")
-    await _seance(store, HIER, exercise_id, charge=0, series=4, reps=8)
-
-    rendu = await _rendu(store, "progression_charges") + await _rendu(store, "detail_seances")
-
-    assert "poids du corps" in rendu
-    assert "0 kg" not in rendu
-
-
 async def test_un_detail_non_releve_ne_devient_pas_zero(store: FileStore) -> None:
     """Une allure absente ne s'écrit pas — elle ne vaut pas zéro."""
     await RunService(store).create(RunPayload(date=HIER, duration_min=30, distance_km=5.0))
@@ -269,8 +193,6 @@ async def test_un_detail_non_releve_ne_devient_pas_zero(store: FileStore) -> Non
 async def test_les_tranches_vides_disent_l_absence_sans_chiffre_invente(
     store: FileStore,
 ) -> None:
-    assert "aucun exercice relevé" in await _rendu(store, "progression_charges")
-    assert "aucune série relevée" in await _rendu(store, "detail_seances")
     assert "Prises du" in await _rendu(store, "hydratation_du_jour")
     assert "aucun" in await _rendu(store, "repas_du_jour")
 
@@ -289,12 +211,9 @@ LECTURE_PAR_ECRITURE = {
     "meal.delete": "repas_du_jour",
     "run.add": "activites_recentes",
     "run.delete": "activites_recentes",
-    "workout.add": "activites_recentes",
-    "workout.delete": "activites_recentes",
-    "exercise.create": "exercices",
-    # Sa tranche porte deux choses : les séances déjà enregistrées, et les 35 noms qui
-    # affichent une illustration dans Cadence. Sans elle, un modèle inventerait « Pompes »
-    # — qui tourne, mais sans image — ou pire « Push-Ups », qui en affiche une fausse.
+    # Sa tranche porte les séances déjà enregistrées. L'orthographe exacte d'un exercice,
+    # elle, vient de `exercices_cadence` — c'est elle qui décide de la démonstration
+    # affichée pendant l'effort, et un nom approché en prive la séance.
     "circuit.create": "seances_cadence",
     "supplement.take": "supplements_du_jour",
     "plan.add": "planning_a_venir",

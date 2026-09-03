@@ -1,27 +1,28 @@
 /**
- * Créer ou corriger une activité — séance et course, dans une feuille.
+ * Créer ou corriger une course, dans une feuille.
  *
- * Les deux formulaires occupaient le bas de l'écran, sous quatre sections de statistiques.
- * Ils s'ouvrent maintenant depuis l'en-tête du journal, là où le geste commence. Une
- * feuille n'est pas un geste caché : elle part d'un bouton nommé, présent dans le
- * document, et au-delà de 600 px elle devient un panneau centré.
+ * Le formulaire occupait le bas de l'écran, sous quatre sections de statistiques. Il
+ * s'ouvre maintenant depuis un bouton nommé, là où le geste commence. Une feuille n'est
+ * pas un geste caché : elle part d'un élément présent dans le document, et au-delà de
+ * 600 px elle devient un panneau centré.
  *
- * **Un seul composant pour quatre gestes** — créer une séance, créer une course, corriger
- * l'une, corriger l'autre. Corriger n'est pas un autre formulaire : c'est le même, avec
- * une valeur de départ et un autre verbe, comme sur `/corps`. Deux formulaires
- * divergeraient au premier champ ajouté.
+ * **Un seul composant pour deux gestes** — créer, corriger. Corriger n'est pas un autre
+ * formulaire : c'est le même, avec une valeur de départ et un autre verbe, comme sur
+ * `/corps`. Deux formulaires divergeraient au premier champ ajouté.
  *
- * La nature ne se change **qu'à la création** : une course et une séance vivent dans deux
- * fichiers, avec deux identifiants. Transformer l'une en l'autre serait une suppression
- * suivie d'une création, et rien n'annonce cela dans un formulaire de correction.
+ * **Le sélecteur de nature a disparu, pas le fichier.** La feuille servait aussi à saisir
+ * une séance de musculation ; la phase 5 de `docs/refonte-activite.md` l'a supprimée, et
+ * il ne reste qu'une nature à créer à la main. Le plan rangeait ce fichier parmi ceux qui
+ * partaient — à tort : il portait la saisie de la course, que **R1** protège. C'est sa
+ * moitié séance qui est partie.
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ReactNode, SyntheticEvent } from 'react';
 
-import { Button, Chip, ChipStrip, Field, Segmented, Sheet } from '@/components/ui';
-import { activityApi, type Run, type Workout } from '@/features/activity/api';
+import { Button, Field, Sheet } from '@/components/ui';
+import { activityApi, type Run } from '@/features/activity/api';
 import { ApiError } from '@/lib/api';
 import { celebrate } from '@/lib/confetti';
 import { shortDate } from '@/lib/format';
@@ -31,8 +32,6 @@ import { useToast } from '@/lib/toast';
 import styles from '../Activity.module.css';
 import { useInvalidateActivity } from './shared';
 
-export type ActivityKind = 'run' | 'workout';
-
 /**
  * La ligne à corriger, réduite à ce qui suffit pour l'ouvrir.
  *
@@ -40,176 +39,26 @@ export type ActivityKind = 'run' | 'workout';
  * Un jeton pris sur l'historique aurait pu vieillir entre l'affichage et l'appui.
  */
 export interface EditTarget {
-  kind: ActivityKind;
+  kind: 'run';
   id: number;
   date: string;
 }
 
-/** Ce que la feuille doit savoir pour s'ouvrir : une nature, et une ligne ou rien. */
+/**
+ * Ce que la feuille doit savoir pour s'ouvrir : une ligne, ou rien.
+ *
+ * `kind` a survécu à la disparition de la séance, et volontairement : l'appelant nomme ce
+ * qu'il ouvre, et le jour où une deuxième nature reviendrait, c'est ici qu'elle se
+ * déclarerait plutôt que dans un booléen qui ne dit rien.
+ */
 export interface SheetTarget {
-  kind: ActivityKind;
+  kind: 'run';
   editing: EditTarget | null;
 }
 
 /** Un nombre du serveur, réécrit pour un champ français (`ACT-01`). */
 function fieldText(value: number | null | undefined): string {
   return value == null ? '' : String(value).replace('.', ',');
-}
-
-// ── Séance ────────────────────────────────────────────
-
-function WorkoutForm({
-  editing,
-  today,
-  onSaved,
-  onClose,
-}: {
-  editing: Workout | null;
-  today: string;
-  onSaved: (workout: Workout) => void;
-  onClose: () => void;
-}) {
-  const invalidate = useInvalidateActivity();
-  const { notify } = useToast();
-  const { data: types } = useQuery({ queryKey: keys.activity.types(), queryFn: activityApi.types });
-
-  const [fields, setFields] = useState({
-    date: editing?.date ?? today,
-    type: editing?.type ?? 'musculation',
-    duration_min: fieldText(editing?.duration_min),
-    rpe: editing?.rpe == null ? '' : String(editing.rpe),
-    note: editing?.note ?? '',
-  });
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const save = useMutation({
-    mutationFn: () => {
-      const payload = {
-        date: fields.date,
-        type: fields.type,
-        duration_min: fields.duration_min,
-        rpe: fields.rpe ? Number(fields.rpe) : null,
-        note: fields.note || null,
-      };
-      return editing === null
-        ? activityApi.createWorkout(payload)
-        : activityApi.updateWorkout(editing.id, editing.token, payload);
-    },
-    onSuccess: (workout) => {
-      invalidate();
-      notify(
-        editing === null ? 'Séance enregistrée. Ajoute tes exercices.' : 'Séance corrigée.',
-        'effort',
-      );
-      setError(null);
-      onSaved(workout);
-    },
-    onError: (caught: unknown) => {
-      setError(caught instanceof ApiError ? caught : null);
-      // La ligne a changé ailleurs : recharger est la seule issue honnête. La feuille,
-      // elle, reste ouverte — la refermer emporterait ce qui vient d'être tapé.
-      if (caught instanceof ApiError && caught.code === 'conflict') invalidate();
-    },
-  });
-
-  const set = (name: keyof typeof fields) => (event: { target: { value: string } }) => {
-    setFields((current) => ({ ...current, [name]: event.target.value }));
-  };
-
-  function submit(event: SyntheticEvent) {
-    event.preventDefault();
-    save.mutate();
-  }
-
-  return (
-    <form className={styles.form} onSubmit={submit} noValidate>
-      {error !== null && (
-        <p className={styles.error} role="alert">
-          {error.message}
-        </p>
-      )}
-
-      <div className={styles.pair}>
-        <Field
-          label="Date de séance"
-          type="date"
-          value={fields.date}
-          max={today}
-          error={error?.messageFor('date')}
-          onChange={set('date')}
-        />
-        <Field
-          label="Durée de séance"
-          placeholder="1h15"
-          hint={editing === null ? 'approximative : elle se corrige à la fin' : undefined}
-          value={fields.duration_min}
-          error={error?.messageFor('duration_min')}
-          onChange={set('duration_min')}
-        />
-      </div>
-
-      {/* Le champ **puis** ses suggestions, dans cet ordre : une bande de pastilles
-          posée avant un champ nommé « Type » se lisait comme un contrôle sans rapport
-          avec lui. Le type reste libre (`ACT-03`) — les sept valeurs abrègent, elles
-          ne contraignent pas.
-
-          Des pastilles plutôt qu'une liste native : c'est la décision déjà prise pour le
-          sélecteur d'exercice, et l'argument est le même — un panneau système, un
-          défilement et un second appui pour choisir un mot parmi sept. */}
-      <Field
-        label="Type de séance"
-        placeholder="escalade…"
-        value={fields.type}
-        error={error?.messageFor('type')}
-        onChange={set('type')}
-      />
-
-      <ChipStrip label="Types proposés">
-        {(types ?? []).map((type) => (
-          <Chip
-            key={type}
-            selected={fields.type === type}
-            onClick={() => {
-              setFields((current) => ({ ...current, type }));
-            }}
-          >
-            {type}
-          </Chip>
-        ))}
-      </ChipStrip>
-
-      <Field
-        label="Effort perçu (1–10)"
-        inputMode="numeric"
-        placeholder="8"
-        value={fields.rpe}
-        error={error?.messageFor('rpe')}
-        onChange={set('rpe')}
-      />
-
-      <Field
-        label="Note"
-        placeholder="contenu de la séance…"
-        value={fields.note}
-        onChange={set('note')}
-      />
-
-      <div className={styles.sheetCommit}>
-        <Button
-          type="submit"
-          variant="primary"
-          className={styles.commit}
-          busy={save.isPending}
-          disabled={fields.duration_min === '' || fields.type.trim() === ''}
-        >
-          {editing === null ? 'Enregistrer la séance' : 'Corriger la séance'}
-        </Button>
-        <Button variant="quiet" onClick={onClose}>
-          Annuler
-        </Button>
-      </div>
-    </form>
-  );
 }
 
 // ── Course ────────────────────────────────────────────
@@ -393,111 +242,36 @@ function EditRun(props: { id: number; today: string; onSaved: () => void; onClos
   );
 }
 
-function EditWorkout(props: {
-  id: number;
-  today: string;
-  onSaved: (workout: Workout) => void;
-  onClose: () => void;
-}) {
-  const query = useQuery({
-    queryKey: keys.activity.workout(props.id),
-    queryFn: () => activityApi.readWorkout(props.id),
-  });
-
-  return (
-    <Loaded
-      query={query}
-      render={(workout) => (
-        <WorkoutForm
-          key={workout.token}
-          editing={workout}
-          today={props.today}
-          onSaved={props.onSaved}
-          onClose={props.onClose}
-        />
-      )}
-    />
-  );
-}
-
 // ── La feuille ────────────────────────────────────────
 
 export function ActivitySheet({
   target,
   today,
   onClose,
-  onSaved,
 }: {
   target: SheetTarget;
   today: string;
   onClose: () => void;
-  /** Rend la séance quand il y en a une : le journal s'ouvre dessus. */
-  onSaved: (workout: Workout | null) => void;
 }) {
-  // La nature choisie dans la feuille. Elle part de celle du bouton qui l'a ouverte ;
-  // l'appelant remonte la feuille à chaque ouverture, donc elle repart juste.
-  const [kind, setKind] = useState<ActivityKind>(target.kind);
-
   const editing = target.editing;
-  const title =
-    editing !== null
-      ? editing.kind === 'run'
-        ? `Corriger la course du ${shortDate(editing.date)}`
-        : `Corriger la séance du ${shortDate(editing.date)}`
-      : kind === 'run'
-        ? 'Nouvelle course'
-        : 'Nouvelle séance';
 
   return (
     <Sheet
       open
       onClose={onClose}
-      title={title}
+      title={
+        editing !== null ? `Corriger la course du ${shortDate(editing.date)}` : 'Nouvelle course'
+      }
       lede={
         editing !== null
           ? 'Ce qui est corrigé remplace ce qui était consigné — il n’y a pas d’annulation.'
-          : 'La date et la durée suffisent. Les charges se consignent ensuite au journal.'
+          : 'Le temps et l’allure suffisent : la distance s’en déduit.'
       }
     >
       {editing !== null ? (
-        editing.kind === 'run' ? (
-          <EditRun
-            id={editing.id}
-            today={today}
-            onSaved={() => {
-              onSaved(null);
-            }}
-            onClose={onClose}
-          />
-        ) : (
-          <EditWorkout id={editing.id} today={today} onSaved={onSaved} onClose={onClose} />
-        )
+        <EditRun id={editing.id} today={today} onSaved={onClose} onClose={onClose} />
       ) : (
-        <>
-          <Segmented
-            label="Nature de l'activité"
-            value={kind}
-            onChange={setKind}
-            options={[
-              { value: 'workout', label: 'Séance' },
-              { value: 'run', label: 'Course' },
-            ]}
-          />
-          <div className={styles.spaced}>
-            {kind === 'run' ? (
-              <RunForm
-                editing={null}
-                today={today}
-                onSaved={() => {
-                  onSaved(null);
-                }}
-                onClose={onClose}
-              />
-            ) : (
-              <WorkoutForm editing={null} today={today} onSaved={onSaved} onClose={onClose} />
-            )}
-          </div>
-        </>
+        <RunForm editing={null} today={today} onSaved={onClose} onClose={onClose} />
       )}
     </Sheet>
   );

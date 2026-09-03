@@ -29,6 +29,9 @@ RUNS = "Metric/activity/runs.csv"
 CIRCUIT_SESSIONS = "Metric/activity/circuit_sessions.csv"
 EXERCISES = "Metric/activity/exercises.csv"
 EXERCISE_LOG = "Metric/activity/exercise_log.csv"
+CIRCUIT_LOAD_LOG = "Metric/activity/circuit_load_log.csv"
+CIRCUITS = "Metric/activity/circuits.csv"
+CIRCUIT_EXERCISES = "Metric/activity/circuit_exercises.csv"
 MEALS = "Metric/nutrition/meals.csv"
 HYDRATION = "Metric/hydration/intake_log.csv"
 SUPPLEMENT_LOG = "Metric/supplements/intake_log.csv"
@@ -580,22 +583,27 @@ def test_a_weekly_metric_is_dated_on_the_monday(
 def test_a_parameterised_metric_needs_its_subject(
     app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
 ) -> None:
-    """`AGG-04` sert aussi la charge d'un exercice donné, sans endpoint dédié."""
+    """`AGG-04` sert aussi la charge d'un exercice donné, sans endpoint dédié.
+
+    **Le sujet est un nom, plus un `exercise_id`.** Le catalogue de Metric a disparu avec
+    `exercise_log.csv` ; c'est `circuit_load_log.csv` qui porte désormais l'historique
+    d'une charge, et il désigne ses exercices par leur nom.
+    """
     today = today_local()
-    dav.seed(EXERCISES, "id,name,muscle_group\ne1,Développé couché,pectoraux\ne2,Squat,jambes\n")
     dav.seed(
-        EXERCISE_LOG,
-        "workout_id,date,exercise_id,exercise_name,muscle_group,weight_kg,sets,reps,note\n"
-        f"w1,{today},e1,Développé couché,pectoraux,80,3,8,\n"
-        f"w1,{today},e2,Squat,jambes,120,3,5,\n",
+        CIRCUIT_LOAD_LOG,
+        "name,date,weight_kg,bodyweight\n"
+        f"dumbbell biceps curl,{today},10.0,false\n"
+        f"dumbbell kickback,{today},8.0,false\n",
     )
 
-    bench = app_client.get(
-        f"{SERIES}?metric=exercise_load&subject=e1&range=all", headers=auth
+    curl = app_client.get(
+        f"{SERIES}?metric=exercise_load&subject=dumbbell%20biceps%20curl&range=all",
+        headers=auth,
     ).json()
 
-    assert bench["subject"] == "e1"
-    assert [point["value"] for point in bench["points"]] == [80.0]
+    assert curl["subject"] == "dumbbell biceps curl"
+    assert [point["value"] for point in curl["points"]] == [10.0]
 
 
 def test_an_unknown_metric_is_refused(app_client: TestClient, auth: dict[str, str]) -> None:
@@ -621,15 +629,27 @@ def test_the_metric_catalogue_is_published(
 ) -> None:
     """Le sélecteur de l'écran ne code aucune liste : ajouter une métrique au serveur la
     rend choisissable sans toucher au client."""
-    dav.seed(EXERCISES, "id,name,muscle_group\ne1,Développé couché,pectoraux\n")
+    # Les sujets de « charge par exercice » sont les exercices **d'un circuit** : c'est là
+    # qu'une charge existe désormais, et ils se désignent par leur nom.
+    dav.seed(CIRCUITS, "id,name,rounds,round_rest_s,created,note\nc1,Bras,3,45,2026-09-01,\n")
+    dav.seed(
+        CIRCUIT_EXERCISES,
+        "circuit_id,position,name,muscle_group,duration_s,reps,rest_s\n"
+        "c1,1,dumbbell biceps curl,biceps,20,12,30\n",
+    )
 
     catalogue = app_client.get(METRICS, headers=auth).json()
     keys = {entry["key"] for entry in catalogue}
 
-    assert {"weight", "hydration", "weekly_minutes", "weekly_volume_kg", "waist_cm"} <= keys
+    # `weekly_volume_kg` est parti avec le tonnage : un tabata au temps porte `reps = -1`,
+    # et le multiplier par une charge donnerait un chiffre négatif (**C4**).
+    assert {"weight", "hydration", "weekly_minutes", "exercise_load", "waist_cm"} <= keys
+    assert "weekly_volume_kg" not in keys
 
     parameterised = next(entry for entry in catalogue if entry["key"] == "exercise_load")
-    assert parameterised["subjects"] == [{"key": "e1", "label": "Développé couché"}]
+    assert parameterised["subjects"] == [
+        {"key": "dumbbell biceps curl", "label": "dumbbell biceps curl"}
+    ]
     assert all(entry["subjects"] == [] for entry in catalogue if entry["key"] != "exercise_load")
 
 

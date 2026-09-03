@@ -438,8 +438,6 @@ def test_every_undo_domain_is_a_real_delete_route(ai_app_client: TestClient) -> 
         "hydration",
         "nutrition",
         "activity/runs",
-        "activity/workouts",
-        "activity/exercises",
         "activity/circuits",
         "planning/sessions",
     }

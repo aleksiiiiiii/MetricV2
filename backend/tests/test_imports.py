@@ -353,9 +353,16 @@ def test_a_validated_run_is_written_with_its_source(
     assert dict(zip(header.split(","), line.split(","), strict=True))["source"] == "apple"
 
 
-def test_a_validated_workout_is_written_with_its_source(
-    store_client: TestClient, dav: FakeWebDav, auth: dict[str, str]
+def test_a_strength_session_is_refused_rather_than_written_elsewhere(
+    store_client: TestClient, auth: dict[str, str]
 ) -> None:
+    """**L'import ne crée plus de séance de musculation.** Elles n'ont plus de fichier
+    depuis que le monde tabata a pris leur place.
+
+    Le refus porte un code et nomme le geste utile — créer une séance Cadence. Écrire la
+    capture ailleurs « pour ne pas la perdre » mettrait une séance de vélo dans un fichier
+    de circuits, ce que personne ne penserait à aller corriger.
+    """
     response = store_client.post(
         "/api/import/apple",
         json={
@@ -367,9 +374,9 @@ def test_a_validated_workout_is_written_with_its_source(
         headers=auth,
     )
 
-    assert response.status_code == 201
-    assert response.json()["source"] == "apple"
-    assert "apple" in dav.content_of(WORKOUTS_FILE)
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "validation_error"
+    assert "Cadence" in response.json()["message"]
 
 
 def test_corrected_values_are_the_ones_written(

@@ -1,9 +1,9 @@
 /**
  * Ce que les morceaux de l'écran Activité partagent.
  *
- * L'écran est découpé en sections — journal, historique, feuilles — comme
- * `routes/settings/` l'a fait pour Réglages. Ces quatre pièces sont les seules qui
- * traversent le découpage ; tout le reste appartient à une section et une seule.
+ * L'écran est découpé en sections — circuits, historique, feuilles — comme
+ * `routes/settings/` l'a fait pour Réglages. Ces pièces sont les seules qui traversent le
+ * découpage ; tout le reste appartient à une section et une seule.
  *
  * Les sections partagent aussi **un seul module CSS**, `../Activity.module.css`. Ce sont
  * les morceaux d'un même écran et non des composants indépendants : leur donner six
@@ -13,25 +13,9 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 
-import type {
-  Circuit,
-  CircuitExercisePayload,
-  CircuitPayload,
-  Workout,
-} from '@/features/activity/api';
+import type { Circuit, CircuitExercisePayload, CircuitPayload } from '@/features/activity/api';
 import { num } from '@/lib/format';
 import { CROSS_CUTTING, keys } from '@/lib/query';
-
-/** Ce qu'il faut d'une séance pour la proposer au choix, sans avoir à la relire. */
-export interface Session {
-  id: number;
-  date: string;
-  label: string;
-}
-
-export function toSession(workout: Workout): Session {
-  return { id: workout.id, date: workout.date, label: workout.type };
-}
 
 export function useInvalidateActivity(): () => void {
   const client = useQueryClient();
@@ -48,8 +32,8 @@ export function useInvalidateActivity(): () => void {
  * une charge change le 4ᵉ champ du lien de chaque séance qui emploie l'exercice, et un
  * lien périmé dans le cache est un bouton qui ouvre la mauvaise séance.
  *
- * `CROSS_CUTTING` est délibérément absent. Noter une charge n'écrit **aucune mesure** —
- * `exercise_log.csv` reste à `weight_kg = 0` (**C4**) — donc ni les agrégats ni
+ * `CROSS_CUTTING` est délibérément absent. Noter une charge n'écrit **aucune mesure**
+ * (**C4**) : les séances tabata ne portent pas de tonnage, donc ni les agrégats ni
  * l'assiduité ne bougent. Si cette décision se rouvre un jour, cette ligne est la seconde
  * à changer, après `mark_done`.
  */

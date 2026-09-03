@@ -7,15 +7,13 @@ destructrices l'exigent en `If-Match` (`STO-05`, voir `docs/patron-domaine.md`).
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Body, File, Form, Header, Path, Query, UploadFile, status
+from fastapi import APIRouter, Header, Path, Query, status
 
 from app.core.deps import StoreDep
-from app.core.exceptions import ValidationFailedError
 from app.core.validation import today_local
-from app.domains.activity.models import WORKOUT_TYPES, MuscleGroup
+from app.domains.activity.models import MuscleGroup
 from app.domains.activity.schemas import (
     ActivityOverview,
     Circuit,
@@ -24,31 +22,23 @@ from app.domains.activity.schemas import (
     CircuitList,
     CircuitPayload,
     CircuitProposal,
+    CircuitSession,
     CircuitSuggestion,
     ComposeRequest,
-    Exercise,
-    ExerciseEntry,
-    ExerciseEntryPayload,
-    ExercisePayload,
-    ExerciseProgress,
     Load,
     LoadDetail,
     LoadList,
     LoadPayload,
-    NoteDraft,
     Run,
     RunDetail,
     RunPayload,
     RunProgress,
-    Workout,
-    WorkoutPayload,
 )
 from app.domains.activity.service import (
     CircuitLoadService,
     CircuitService,
-    ExerciseService,
+    CircuitSessionService,
     RunService,
-    WorkoutService,
 )
 from app.domains.activity.stats import ActivityStats
 from app.domains.ai.deps import AiServiceDep
@@ -81,17 +71,6 @@ async def overview(
     """Totaux de la semaine, volume par jour, huit semaines, tonnage, groupes négligés
     et historique fusionné — en une requête."""
     return await ActivityStats(store).overview(today_local(), limit=limit)
-
-
-@router.get("/progress", response_model=list[ExerciseProgress], summary="Progression des charges")
-async def progress(store: StoreDep) -> list[ExerciseProgress]:
-    return await ActivityStats(store).progress()
-
-
-@router.get("/types", response_model=list[str], summary="Types de séance suggérés")
-def workout_types() -> list[str]:
-    """Suggestions et non contrainte : le champ reste libre (`ACT-03`)."""
-    return list(WORKOUT_TYPES)
 
 
 @router.get("/muscle-groups", response_model=list[str], summary="Groupes musculaires")
@@ -181,179 +160,6 @@ async def update_run(
 )
 async def delete_run(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
     await RunService(store).delete(row_id, _token(if_match))
-
-
-# ── Séances ───────────────────────────────────────────
-
-
-@router.post(
-    "/workouts",
-    response_model=Workout,
-    status_code=status.HTTP_201_CREATED,
-    summary="Enregistrer une séance",
-)
-async def create_workout(payload: WorkoutPayload, store: StoreDep) -> Workout:
-    return await WorkoutService(store).create(payload)
-
-
-@router.get("/workouts/{row_id}", response_model=Workout, summary="Détail d'une séance")
-async def read_workout(row_id: RowId, store: StoreDep) -> Workout:
-    return await WorkoutService(store).get(row_id)
-
-
-@router.patch("/workouts/{row_id}", response_model=Workout, summary="Corriger une séance")
-async def update_workout(
-    row_id: RowId, payload: WorkoutPayload, store: StoreDep, if_match: IfMatch = None
-) -> Workout:
-    return await WorkoutService(store).update(row_id, _token(if_match), payload)
-
-
-@router.delete(
-    "/workouts/{row_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer une séance"
-)
-async def delete_workout(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
-    """Supprime la séance **et purge ses exercices** (`ACT-04`)."""
-    await WorkoutService(store).delete(row_id, _token(if_match))
-
-
-@router.post(
-    "/workouts/{row_id}/duplicate",
-    response_model=Workout,
-    status_code=status.HTTP_201_CREATED,
-    summary="Dupliquer une séance",
-)
-async def duplicate_workout(
-    row_id: RowId,
-    store: StoreDep,
-    day: Annotated[date | None, Body(embed=True, alias="date")] = None,
-) -> Workout:
-    """Recrée une séance passée, exercices compris (`ACT-17`)."""
-    return await WorkoutService(store).duplicate(row_id, day or today_local())
-
-
-# ── Exercices ─────────────────────────────────────────
-
-
-@router.get("/exercises", response_model=list[Exercise], summary="Catalogue d'exercices")
-async def list_exercises(store: StoreDep) -> list[Exercise]:
-    """Catalogue enrichi de la dernière performance de chaque exercice (`ACT-08`)."""
-    return await ExerciseService(store).catalogue()
-
-
-@router.post(
-    "/exercises",
-    response_model=Exercise,
-    status_code=status.HTTP_201_CREATED,
-    summary="Ajouter un exercice",
-)
-async def create_exercise(payload: ExercisePayload, store: StoreDep) -> Exercise:
-    return await ExerciseService(store).create(payload)
-
-
-@router.patch("/exercises/{row_id}", response_model=Exercise, summary="Corriger un exercice")
-async def update_exercise(
-    row_id: RowId, payload: ExercisePayload, store: StoreDep, if_match: IfMatch = None
-) -> Exercise:
-    """Corrige le nom ou le groupe, et répercute la correction sur les séries (`ACT-06`).
-
-    L'identifiant de l'exercice ne change pas : c'est lui qui porte tout l'historique.
-    """
-    return await ExerciseService(store).update(row_id, _token(if_match), payload)
-
-
-@router.delete(
-    "/exercises/{row_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Retirer un exercice"
-)
-async def delete_exercise(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
-    """Retire du catalogue sans toucher au journal : l'historique survit (`ACT-06`)."""
-    await ExerciseService(store).delete(row_id, _token(if_match))
-
-
-# ── Lecture d'une séance écrite en clair (`C07`) ──────
-
-
-@router.post("/notes/read", response_model=NoteDraft, summary="Lire une séance en notes libres")
-async def read_notes(
-    ai: AiServiceDep,
-    store: StoreDep,
-    text: Annotated[str | None, Form(max_length=4000)] = None,
-    photo: Annotated[UploadFile | None, File()] = None,
-) -> NoteDraft:
-    """Traduit « développé couché 4x8 60kg / tractions 3xmax » en lignes relisables.
-
-    **Rien n'est écrit** : ni séance, ni série, ni entrée de catalogue. Ce qui sort d'ici
-    est un tableau que l'écran fait valider ligne par ligne — une fusion de deux noms est
-    difficile à défaire et pollue l'historique, elle ne peut pas se faire en silence.
-
-    Texte ou photo, jamais rien : une photo passe par le **même modèle** que le reste,
-    avec la même consigne. L'OCR n'est pas une brique à part.
-    """
-    data = await photo.read() if photo is not None else None
-    if photo is not None:
-        await photo.close()
-
-    written = (text or "").strip()
-    if not data and not written:
-        raise ValidationFailedError("Colle tes notes, ou choisis une photo.")
-
-    return await ExerciseService(store).read_notes(ai, written, data)
-
-
-@router.post(
-    "/exercises/{exercise_id}/aliases",
-    response_model=Exercise,
-    summary="Reconnaître une autre écriture d'un exercice",
-)
-async def add_alias(
-    exercise_id: Annotated[str, Path(min_length=1, max_length=40)],
-    store: StoreDep,
-    alias: Annotated[str, Body(embed=True, max_length=80)],
-) -> Exercise:
-    """Ajoute une graphie reconnue à un exercice existant (`C07`).
-
-    C'est ce qui rend la lecture de notes de plus en plus silencieuse : « dev couché »
-    validé une fois est reconnu tout seul les fois suivantes. **Le nom du catalogue ne
-    change pas** — un alias s'ajoute à côté de lui, il ne le remplace jamais.
-
-    Sans garde `If-Match`, comme le renommage d'un fil : l'exercice se désigne par son
-    identifiant stable et non par sa position, et l'opération est sûre à rejouer — un
-    alias déjà connu ne se réécrit pas.
-    """
-    return await ExerciseService(store).add_alias(exercise_id, alias)
-
-
-# ── Journal d'exercices ───────────────────────────────
-
-
-@router.post(
-    "/workouts/{row_id}/exercises",
-    response_model=ExerciseEntry,
-    status_code=status.HTTP_201_CREATED,
-    summary="Consigner une performance",
-)
-async def log_exercise(
-    row_id: RowId, payload: ExerciseEntryPayload, store: StoreDep
-) -> ExerciseEntry:
-    workout = await WorkoutService(store).get(row_id)
-    return await ExerciseService(store).log(workout.workout_id, workout.date, payload)
-
-
-@router.patch(
-    "/exercise-log/{row_id}", response_model=ExerciseEntry, summary="Corriger une performance"
-)
-async def update_exercise_entry(
-    row_id: RowId, payload: ExerciseEntryPayload, store: StoreDep, if_match: IfMatch = None
-) -> ExerciseEntry:
-    return await ExerciseService(store).update_entry(row_id, _token(if_match), payload)
-
-
-@router.delete(
-    "/exercise-log/{row_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Supprimer une performance",
-)
-async def delete_exercise_entry(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
-    await ExerciseService(store).delete_entry(row_id, _token(if_match))
 
 
 # ── Circuits ouverts dans Cadence Tabata (**D2**) ─────
@@ -463,11 +269,13 @@ async def compose_circuit(
 
 @router.post(
     "/circuits/{row_id}/done",
-    response_model=Workout,
+    response_model=CircuitSession,
     status_code=status.HTTP_201_CREATED,
     summary="Déclarer un circuit fait",
 )
-async def complete_circuit(row_id: RowId, payload: CircuitDonePayload, store: StoreDep) -> Workout:
+async def complete_circuit(
+    row_id: RowId, payload: CircuitDonePayload, store: StoreDep
+) -> CircuitSession:
     """Écrit une séance `HIIT` marquée `cadence`, et **rien d'autre** (**D3**).
 
     Aucun `If-Match` : c'est une **addition**, pas une modification. Elle se défait par la
@@ -478,6 +286,27 @@ async def complete_circuit(row_id: RowId, payload: CircuitDonePayload, store: St
     donc de la déclarer deux fois, et rien ne rappellera de la déclarer. C'est assumé.
     """
     return await CircuitService(store).mark_done(row_id, payload)
+
+
+# ── Séances tabata déclarées faites ───────────────────
+
+
+@router.delete(
+    "/sessions/{row_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Supprimer une séance tabata",
+)
+async def delete_session(row_id: RowId, store: StoreDep, if_match: IfMatch = None) -> None:
+    """Supprime la séance et les séries qu'elle a produites.
+
+    **C'est ce qui autorise `done` à ne rien demander.** L'addition se défait par la
+    suppression que l'utilisateur ferait de toute façon ; sans cette route, un tabata
+    déclaré deux fois — ce que **D6** rend possible — comptait pour toujours.
+
+    Aucune route de correction en face, et c'est délibéré : une séance dit ce qui a eu
+    lieu, telle que Cadence l'a jouée. Ce qui se corrige, c'est le circuit qui la produit.
+    """
+    await CircuitSessionService(store).delete(row_id, _token(if_match))
 
 
 # ── Charges des exercices de tabata (**C1**) ──────────

@@ -22,11 +22,12 @@ routeur, les objectifs et six tests connaissent, et la déplacer n'apporterait r
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
+from app.domains.activity.service import CircuitLoadService
 from app.domains.activity.stats import ActivityStats
 from app.domains.body.models import MEASUREMENT_FIELDS
 from app.domains.body.service import MeasurementService, WeightService
@@ -61,7 +62,7 @@ class Metric:
     label: str
     unit: str
     granularity: str
-    load: Callable[[FileStore, str | None], Awaitable[list[tuple[date, float]]]]
+    load: Callable[[FileStore, str | None], Awaitable[Sequence[tuple[date, float]]]]
     #: Vrai quand la métrique désigne un sujet — un exercice du catalogue.
     parameterised: bool = False
 
@@ -121,19 +122,18 @@ def _catalogue() -> dict[str, Metric]:
             granularity="week",
             load=lambda store, _: ActivityStats(store).weekly_distance(),
         ),
-        Metric(
-            key="weekly_volume_kg",
-            label="Tonnage hebdomadaire",
-            unit="kg",
-            granularity="week",
-            load=lambda store, _: ActivityStats(store).weekly_volume(),
-        ),
+        # Le tonnage hebdomadaire est parti avec `exercise_log.csv`. Il ne revient pas :
+        # un tabata au temps porte `reps = -1`, et le multiplier par une charge donnerait
+        # un tonnage négatif (**C4** de `docs/charges.md`).
         Metric(
             key="exercise_load",
             label="Charge par exercice",
             unit="kg",
             granularity="day",
-            load=lambda store, subject: ActivityStats(store).exercise_load(subject or ""),
+            # Le sujet est désormais le **nom** de l'exercice de tabata, pas un
+            # `exercise_id` du catalogue disparu. L'historique est celui des décisions de
+            # charge, pas d'un maximum du jour — voir `CircuitLoadService.load_history`.
+            load=lambda store, subject: CircuitLoadService(store).load_history(subject or ""),
             parameterised=True,
         ),
     ]

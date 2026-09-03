@@ -153,7 +153,7 @@ async def load_points(store: FileStore, metric_key: str) -> list[tuple[date, flo
     metric = METRICS.get(metric_key)
     if metric is None:  # pragma: no cover - les appelants filtrent sur `GOAL_METRICS`
         return []
-    return await metric.load(store, None)
+    return list(await metric.load(store, None))
 
 
 class GoalService:

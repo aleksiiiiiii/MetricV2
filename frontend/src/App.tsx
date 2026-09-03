@@ -3,13 +3,11 @@ import { Route, Routes } from 'react-router';
 import { RequireAuth } from '@/app/RequireAuth';
 import { Shell } from '@/app/Shell';
 import { Activity } from '@/routes/Activity';
-import { Catalogue } from '@/routes/activity/Catalogue';
 import { Circuits } from '@/routes/activity/Circuits';
 import { Compose } from '@/routes/activity/Compose';
 import { Loads } from '@/routes/activity/Loads';
 import { Run } from '@/routes/activity/Run';
 import { Runs } from '@/routes/activity/Runs';
-import { Stats } from '@/routes/activity/Stats';
 import { Assiduity } from '@/routes/Assiduity';
 import { Assistant } from '@/routes/Assistant';
 import { Body } from '@/routes/Body';
@@ -49,16 +47,18 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/corps" element={<Body />} />
         <Route path="/activite" element={<Activity />} />
-        {/* Deux sous-pages d'Activité, et non deux replis sans adresse. Elles n'entrent
+        {/* Les sous-pages d'Activité, et non des replis sans adresse. Elles n'entrent
             ni dans `NAV` ni dans `MORE` : on y arrive par un bouton de leur page mère,
             comme on ouvre un dossier depuis celui qui le contient. Ce qu'elles gagnent à
-            être des routes est le bouton système « précédent », qui ramène au journal
-            avec la séance ouverte au lieu de quitter l'application. */}
-        <Route path="/activite/catalogue" element={<Catalogue />} />
+            être des routes est le bouton système « précédent », qui ramène à l'écran
+            d'où l'on vient au lieu de quitter l'application.
+
+            `/activite/catalogue` et `/activite/statistiques` ont disparu avec
+            `exercise_log.csv` : le catalogue était celui de Metric, que celui de Cadence
+            remplace, et les statistiques dérivaient toutes du tonnage. */}
         <Route path="/activite/seances" element={<Circuits />} />
         <Route path="/activite/creer" element={<Compose />} />
         <Route path="/activite/charges" element={<Loads />} />
-        <Route path="/activite/statistiques" element={<Stats />} />
         {/* Deux adresses, un seul écran. Sans paramètre, c'est la dernière course —
             l'adresse que le plan nomme. Avec, celle qu'on ouvre depuis l'historique :
             s'en tenir à la première aurait rendu les paliers de toutes les courses

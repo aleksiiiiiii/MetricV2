@@ -72,6 +72,15 @@
   --recover-rgb: 251 113 133;
   --ink-rgb: 227 232 238;
 
+  /* Le fond d'un média venu d'ailleurs. **Le seul jeton de couleur que le thème ne
+     retourne pas**, et c'est la raison qui le justifie : les GIF de démonstration des
+     exercices ont un fond blanc cuit dans l'image. Un panneau sombre derrière eux
+     dessinerait un carré blanc au milieu de la feuille, et un panneau gris clair un
+     liseré gris autour — dans les deux cas on verrait le cadre au lieu du mouvement.
+     Le panneau s'accorde donc au média, pas au thème. Il n'est jamais surchargé plus
+     bas : le bloc clair le laisse tel quel exprès. */
+  --media-bg: #ffffff;
+
   /* Accent courant : ce que lisent les composants génériques. Une piste le
      surcharge localement, la valeur par défaut reste le signal primaire. */
   --accent: var(--signal);

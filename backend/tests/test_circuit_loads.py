@@ -21,7 +21,7 @@ from tests.fake_webdav import FakeWebDav
 ACTIVITY = "/api/activity"
 LOADS_FILE = "Metric/activity/circuit_loads.csv"
 LOG_FILE = "Metric/activity/circuit_load_log.csv"
-EXERCISE_LOG_FILE = "Metric/activity/exercise_log.csv"
+SESSION_SETS_FILE = "Metric/activity/circuit_session_sets.csv"
 SETTINGS_FILE = "Metric/settings/settings.csv"
 
 BASE = "https://cadence.exemple.fr"
@@ -423,21 +423,27 @@ def test_changing_a_load_changes_every_circuit_that_uses_it(
 # ── C4 — le tonnage ne bouge pas ──────────────────────
 
 
-def test_a_declared_tabata_still_logs_bodyweight(
+def test_a_declared_tabata_writes_no_load_anywhere(
     app_client: TestClient, auth: dict[str, str], dav: FakeWebDav, circuit: Any
 ) -> None:
-    """La décision inconfortable du lot, vérifiée pour qu'elle ne change pas par accident :
-    `exercise_log.weight_kg` reste à 0, donc `weight_kg × sets × reps` reste à 0 — et un
-    gainage au temps (`reps = -1`) ne produit pas de tonnage négatif."""
+    """**C4, devenu structurel.** La charge vivait dans `exercise_log.weight_kg`, qu'il
+    fallait tenir à zéro pour qu'un gainage au temps (`reps = -1`) ne produise pas un
+    tonnage négatif. Ce fichier n'existe plus : les séries d'une séance tabata ne portent
+    aucune colonne de charge, et le piège a disparu avec elle.
+
+    Ce test garde la porte fermée : réintroduire une charge dans les séries ramènerait le
+    produit `charge × séries × reps` et son chiffre négatif.
+    """
     declare(app_client, auth, name="Rowing", weight_kg=12)
     app_client.post(
         f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 20}, headers=auth
     )
 
-    written = dav.content_of(EXERCISE_LOG_FILE)
+    entete = dav.content_of(SESSION_SETS_FILE).splitlines()[0]
 
-    assert ",12.0," not in written
-    assert all(",0.0," in row or "weight_kg" in row for row in written.splitlines() if row.strip())
+    # La colonne, pas le texte : « 12 » apparaît légitimement en répétitions.
+    assert entete == "session_id,date,exercise_name,muscle_group,sets,reps"
+    assert not {"weight_kg", "load", "charge"} & set(entete.split(","))
 
 
 # ── 9. Quand monter — les deux chiffres du coach (§5 bis) ──

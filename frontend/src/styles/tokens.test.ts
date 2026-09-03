@@ -143,17 +143,40 @@ describe('composantes RVB', () => {
 
 // ── 2. Le thème clair n'oublie aucune couleur ─────────
 
+/**
+ * Les couleurs qui ne se retournent **pas** avec le thème, et pourquoi.
+ *
+ * Une exception nommée plutôt qu'une redéclaration identique dans le bloc clair : la
+ * seconde passerait le test sans rien dire, et le prochain lecteur « corrigerait » le
+ * doublon en la teintant. Ici, la liste porte la raison.
+ *
+ * `--media-bg` est le fond des GIF de démonstration servis par Cadence. Ces images ont un
+ * fond blanc cuit dedans : le panneau s'accorde au média, pas à la page. Le teinter
+ * dessinerait un liseré autour du mouvement, dans un thème comme dans l'autre.
+ */
+const THEME_INDEPENDENT = ['--media-bg'];
+
 describe('thème clair', () => {
   it('redéfinit chaque token de couleur du thème sombre', () => {
     // Tout ce qui porte un hex ou un `rgb(` littéral dépend de la clarté du fond.
     // Les indirections (`var(…)`) et les valeurs sans couleur ne sont pas concernées.
     const colourTokens = [...THEMES.sombre.entries()]
       .filter(([, value]) => /#[0-9a-f]{3,8}|rgb\(/i.test(value))
-      .map(([name]) => name);
+      .map(([name]) => name)
+      .filter((name) => !THEME_INDEPENDENT.includes(name));
 
     expect(colourTokens.length).toBeGreaterThan(10);
     const missing = colourTokens.filter((name) => !THEMES.clair.has(name));
     expect(missing, 'tokens de couleur laissés à leur valeur sombre').toEqual([]);
+  });
+
+  it('laisse les couleurs indépendantes du thème hors du bloc clair', () => {
+    // L'exception doit rester une exception : si l'une d'elles finit par être redéclarée,
+    // c'est que la raison de la liste ne tient plus, et la liste doit maigrir avec.
+    for (const name of THEME_INDEPENDENT) {
+      expect(THEMES.sombre.has(name), `${name} n'existe plus`).toBe(true);
+      expect(THEMES.clair.has(name), `${name} est redéclaré : sort-le de la liste`).toBe(false);
+    }
   });
 
   it('redéfinit les composantes RVB et les opacités qui en dérivent', () => {

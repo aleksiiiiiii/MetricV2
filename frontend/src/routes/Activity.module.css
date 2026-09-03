@@ -1091,3 +1091,39 @@
   font-size: var(--t-sub);
   line-height: 1.6;
 }
+
+/* ── La démonstration d'un exercice (feuille de charge) ─ */
+
+/*
+ * Le GIF vient de l'instance Cadence de l'utilisateur, et les images de Gym visual ont
+ * toutes un **fond blanc cuit dans l'image**. Le panneau est donc blanc lui aussi, dans
+ * les deux thèmes : c'est la seule valeur qui fait disparaître la limite entre le média
+ * et son cadre. `--surface-2` laissait un liseré gris autour du mouvement.
+ *
+ * `--media-bg` et non `#fff` : la règle du dépôt est qu'aucune couleur ne s'écrit en dur
+ * dans un module. Le jeton porte, à sa définition, la raison pour laquelle il ne se
+ * retourne pas avec le thème.
+ */
+.demo {
+  display: block;
+  /* Une taille fixe plutôt qu'un ratio : la feuille s'ouvre sur la charge et sa courbe,
+     qui sont ce qu'on vient lire. Une image pleine hauteur les pousserait sous la ligne
+     de flottaison d'un téléphone de 390 px.
+
+     **Carré, et pas pleine largeur.** Les GIF du catalogue font 180 × 180 : sur un
+     panneau large, `object-fit: contain` laissait une bande de blanc de chaque côté de
+     l'illustration — et le fond du GIF n'est pas tout à fait blanc. Mesuré à la capture :
+     `rgb(251,251,251)` contre `rgb(255,255,255)`, quatre points d'écart, assez pour
+     dessiner deux coutures verticales bien visibles sur le thème clair. Le panneau épouse
+     donc l'image au lieu de l'encadrer, ce qui rend la question de la nuance sans objet —
+     colorer le panneau au `#fbfbfb` mesuré n'aurait tenu que jusqu'au premier GIF au fond
+     différent. L'illustration, elle, ne change pas de taille : elle occupait déjà ces
+     168 px. */
+  height: 168px;
+  width: 168px;
+  margin: 0 auto var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--media-bg);
+  object-fit: contain;
+}

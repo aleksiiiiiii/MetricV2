@@ -25,7 +25,7 @@ from datetime import date, timedelta
 
 from app.core.dates import days_between
 from app.core.text import fr
-from app.domains.activity.service import CircuitSessionService, ExerciseService, RunService
+from app.domains.activity.service import CircuitLoadService, CircuitSessionService, RunService
 from app.domains.activity.stats import ActivityStats
 from app.domains.aggregates.metrics import (
     DEFAULT_METRIC,
@@ -87,11 +87,11 @@ class SeriesService:
         Publier le catalogue évite au client d'en tenir une copie : une liste recopiée
         dans deux langages finit par ne plus décrire la même chose.
         """
-        exercises = await ExerciseService(self._store).catalogue()
-        subjects = [
-            MetricSubject(key=item.exercise_id, label=item.name)
-            for item in sorted(exercises, key=lambda item: item.name)
-        ]
+        # Les sujets de « charge par exercice » sont les exercices **de tabata**, désignés
+        # par leur nom : le catalogue de Metric et ses `exercise_id` ont disparu avec
+        # `exercise_log.csv`, et c'est `circuit_loads.csv` qui porte désormais une charge.
+        loads = await CircuitLoadService(self._store).list()
+        subjects = [MetricSubject(key=item.name, label=item.name) for item in loads.loads]
 
         return [
             MetricDescriptor(

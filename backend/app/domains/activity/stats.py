@@ -9,19 +9,17 @@ calcule cette borne.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
 from app.core.dates import week_start
-from app.core.parsing import estimate_one_rep_max, pace_min_per_km
-from app.domains.activity.models import CircuitSessionRow, MuscleGroup, RunRow, WorkoutRow
+from app.core.parsing import pace_min_per_km
+from app.domains.activity.models import CircuitSessionRow, MuscleGroup, RunRow
 from app.domains.activity.schemas import (
     ActivityItem,
     ActivityOverview,
     DayVolume,
-    ExerciseProgress,
-    MuscleVolume,
     NeglectedGroup,
     TrainingSplit,
     TrainingTotals,
@@ -30,9 +28,7 @@ from app.domains.activity.schemas import (
 )
 from app.domains.activity.service import (
     CircuitSessionService,
-    ExerciseService,
     RunService,
-    WorkoutService,
 )
 from app.storage.csv_repo import Row
 from app.storage.files import FileStore
@@ -66,16 +62,6 @@ def _sessions_of(rows: Sequence[Row[CircuitSessionRow]]) -> list[_Session]:
     return [_Session(date=row.model.date, duration_min=row.model.duration_min) for row in rows]
 
 
-def _workouts_as_sessions(rows: Sequence[Row[WorkoutRow]]) -> list[_Session]:
-    """Les séances historiques, réduites de même.
-
-    **Cet adaptateur meurt avec `workouts.csv`** (phase 5). Il n'existe que pour l'écran
-    `/activite`, seul consommateur restant de l'ancien monde — les totaux, l'assiduité,
-    le planning et les rappels lisent déjà l'autre.
-    """
-    return [_Session(date=row.model.date, duration_min=row.model.duration_min) for row in rows]
-
-
 def _round(value: float | None, digits: int = 2) -> float | None:
     return None if value is None else round(value, digits)
 
@@ -85,8 +71,6 @@ class ActivityStats:
 
     def __init__(self, store: FileStore) -> None:
         self._runs = RunService(store)
-        self._workouts = WorkoutService(store)
-        self._exercises = ExerciseService(store)
         self._tabata = CircuitSessionService(store)
 
     @staticmethod
@@ -105,36 +89,28 @@ class ActivityStats:
         return minutes, sessions
 
     async def overview(self, today: date, *, limit: int = 30) -> ActivityOverview:
+        """Ce que `/activite` affiche : la semaine, les volumes, et l'historique fusionné.
+
+        **Deux fichiers, et plus trois.** Depuis la phase 5, une séance d'entraînement est
+        soit une course, soit un circuit déclaré fait. Le tonnage a disparu avec
+        `exercise_log.csv` et ne revient pas : un exercice au temps porte `reps = -1`, et
+        le multiplier par une charge donnerait un chiffre négatif (**C4**).
+        """
         runs = await self._runs.all()
-        workouts = await self._workouts.all()
-        entries = await self._exercises.log_entries()
+        done = await self._tabata.all()
 
         current = week_start(today)
-        # L'écran `/activite` est le dernier consommateur de l'ancien monde, et il le
-        # reste jusqu'à la phase 5 : il compte ses propres séances, pas les tabatas.
-        history = _workouts_as_sessions(workouts)
+        history = _sessions_of(done)
         minutes, sessions = self._per_day(runs, history)
-
-        # Séries par séance : ce que la suppression d'une séance emporterait avec elle
-        # (`ACT-04`). Compté ici, sur un journal déjà lu pour le tonnage — l'écran ne peut
-        # pas le dériver, et il n'aurait pas le droit.
-        per_workout: defaultdict[str, int] = defaultdict(int)
-        for entry in entries:
-            per_workout[entry.model.workout_id] += 1
 
         return ActivityOverview(
             today=today,
             week=self._week_totals(runs, history, current),
             days=self._days(minutes, current),
             weeks=self._weeks(minutes, sessions, current),
-            muscles=self._muscles(entries, current),
-            # Le seul indicateur de cet écran déjà rebranché : il sert le coach — la page
-            # de création et la proposition de planning le lisent — et non `/activite`,
-            # que la phase 5 supprime. Le tonnage juste au-dessus reste sur l'ancien monde
-            # jusque-là, faute d'avoir un sens dans le nouveau (**C4**).
             neglected=self._neglected(await self._tabata.sets(), today),
-            history=self._history(runs, workouts, per_workout)[:limit],
-            total=len(runs) + len(workouts),
+            history=self._history(runs, done)[:limit],
+            total=len(runs) + len(done),
         )
 
     # ── Totaux d'entraînement (`AGG-02`) ──────────────
@@ -244,30 +220,6 @@ class ActivityStats:
             per_day[row.model.date] += row.model.distance_km
         return self._by_week(per_day)
 
-    async def weekly_volume(self) -> list[tuple[date, float]]:
-        """Tonnage par semaine ISO : charge × séries × réps (`ACT-14`)."""
-        entries = await self._exercises.log_entries()
-        per_day: defaultdict[date, float] = defaultdict(float)
-        for row in entries:
-            model = row.model
-            per_day[model.date] += model.weight_kg * model.sets * model.reps
-        return self._by_week(per_day)
-
-    async def exercise_load(self, exercise_id: str) -> list[tuple[date, float]]:
-        """Charge maximale par jour pour un exercice (`ACT-09`).
-
-        Une séance peut contenir plusieurs lignes du même exercice : la charge du jour
-        est la plus lourde, pas la dernière consignée.
-        """
-        entries = await self._exercises.log_entries()
-        per_day: dict[date, float] = {}
-        for row in entries:
-            model = row.model
-            if model.exercise_id != exercise_id:
-                continue
-            per_day[model.date] = max(per_day.get(model.date, 0.0), model.weight_kg)
-        return sorted(per_day.items())
-
     @staticmethod
     def _by_week(per_day: dict[date, float]) -> list[tuple[date, float]]:
         per_week: defaultdict[date, float] = defaultdict(float)
@@ -352,30 +304,6 @@ class ActivityStats:
     # ── Muscles (`ACT-14`, `ACT-16`) ──────────────────
 
     @staticmethod
-    def _muscles(entries: list, current: date) -> list[MuscleVolume]:  # type: ignore[type-arg]
-        """Tonnage de la semaine par groupe musculaire (`ACT-14`).
-
-        Charge × séries × réps : c'est la charge réelle, là où les minutes ne
-        distinguent pas trois séries de huit d'une heure de repos entre les séries.
-        """
-        end = current + timedelta(days=7)
-        volume: defaultdict[str, float] = defaultdict(float)
-        sets: defaultdict[str, int] = defaultdict(int)
-
-        for row in entries:
-            model = row.model
-            if not current <= model.date < end:
-                continue
-            volume[model.muscle_group] += model.weight_kg * model.sets * model.reps
-            sets[model.muscle_group] += model.sets
-
-        return [
-            MuscleVolume(muscle_group=group, volume_kg=_round(volume[group]) or 0, sets=sets[group])
-            for group in (item.value for item in MuscleGroup)
-            if volume[group] or sets[group]
-        ]
-
-    @staticmethod
     def _neglected(entries: list, today: date) -> list[NeglectedGroup]:  # type: ignore[type-arg]
         """Jours depuis la dernière sollicitation de chaque groupe (`ACT-16`).
 
@@ -419,10 +347,8 @@ class ActivityStats:
     @staticmethod
     def _history(
         runs: list[Row[RunRow]],
-        workouts: list[Row[WorkoutRow]],
-        per_workout: Mapping[str, int] | None = None,
+        done: Sequence[Row[CircuitSessionRow]],
     ) -> list[ActivityItem]:
-        counts = per_workout or {}
         items: list[ActivityItem] = []
 
         for run in runs:
@@ -444,72 +370,22 @@ class ActivityStats:
                 )
             )
 
-        for workout in workouts:
-            session = workout.model
+        for row in done:
+            session = row.model
             items.append(
                 ActivityItem(
                     kind="workout",
-                    id=workout.index,
-                    token=workout.token,
+                    id=row.index,
+                    token=row.token,
                     date=session.date,
-                    label=session.type,
+                    # Le nom du circuit, dupliqué au moment où il a été fait : supprimer le
+                    # patron laisse l'historique lisible (`ACT-06`).
+                    label=session.name,
                     duration_min=session.duration_min,
                     rpe=session.rpe,
-                    entries=counts.get(session.id, 0),
+                    entries=session.rounds,
                     source=session.source,
                 )
             )
 
         return sorted(items, key=lambda item: (item.date, item.kind), reverse=True)
-
-    # ── Progression par exercice (`ACT-09`, `ACT-15`) ──
-
-    async def progress(self) -> list[ExerciseProgress]:
-        """Progression et records, exercice par exercice, groupés par muscle."""
-        entries = await self._exercises.log_entries()
-
-        by_exercise: defaultdict[str, list] = defaultdict(list)  # type: ignore[type-arg]
-        for row in entries:
-            by_exercise[row.model.exercise_id].append(row)
-
-        progress: list[ExerciseProgress] = []
-        for exercise_id, rows in by_exercise.items():
-            ordered = sorted(rows, key=lambda row: (row.model.date, row.index))
-
-            # Une séance peut contenir plusieurs lignes du même exercice : la charge du
-            # jour est la plus lourde, pas la dernière consignée.
-            per_day: dict[date, float] = {}
-            for row in ordered:
-                day = row.model.date
-                per_day[day] = max(per_day.get(day, 0.0), row.model.weight_kg)
-
-            days = sorted(per_day)
-            maxima = [per_day[day] for day in days]
-            latest = ordered[-1].model
-
-            best = max(row.model.weight_kg for row in ordered)
-            best_1rm = max(
-                (
-                    value
-                    for row in ordered
-                    if (value := estimate_one_rep_max(row.model.weight_kg, row.model.reps))
-                ),
-                default=None,
-            )
-
-            progress.append(
-                ExerciseProgress(
-                    exercise_id=exercise_id,
-                    name=latest.exercise_name,
-                    muscle_group=latest.muscle_group,
-                    last_weight_kg=maxima[-1] if maxima else None,
-                    last_date=days[-1] if days else None,
-                    delta_kg=_round(maxima[-1] - maxima[-2]) if len(maxima) >= 2 else None,
-                    max_series=maxima,
-                    dates=days,
-                    best_weight_kg=best,
-                    best_one_rep_max_kg=_round(best_1rm),
-                )
-            )
-
-        return sorted(progress, key=lambda item: (item.muscle_group, item.name))

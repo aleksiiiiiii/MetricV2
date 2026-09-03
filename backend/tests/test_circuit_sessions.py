@@ -166,35 +166,34 @@ def test_declaring_an_unknown_circuit_done_writes_nothing(
 # ── 3. Les deux mondes disent la même séance ──────────
 
 
-def test_one_gesture_fills_both_worlds(
+def test_one_gesture_writes_one_world(
     app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
 ) -> None:
-    """**Le test qui porte la phase 1.** Tant que les sept consommateurs lisent l'ancien
-    monde, le nouveau se vérifie contre lui — c'est toute la raison de les remplir
-    ensemble avant de rebrancher quoi que ce soit."""
+    """**Un seul fichier depuis la phase 5.** L'écriture double — `workouts.csv` en plus —
+    n'existait que le temps de rebrancher les sept consommateurs. Ils lisent tous
+    `circuit_sessions.csv` maintenant, et l'ancien monde a été supprimé."""
     create(app_client, auth)
     complete(app_client, auth)
 
-    workout = rows(dav, WORKOUTS_FILE)[0]
     session = rows(dav, SESSIONS_FILE)[0]
 
     # date, durée, provenance : les trois colonnes que les agrégats et le planning lisent.
-    assert session[2] == workout[0] == TODAY.isoformat()
-    assert session[5] == workout[2] == "18.0"
-    assert session[7] == workout[6] == "cadence"
+    assert session[2] == TODAY.isoformat()
+    assert session[5] == "18.0"
+    assert session[7] == "cadence"
+    assert WORKOUTS_FILE not in dav.files
 
 
-def test_each_round_counts_as_one_set_in_both_worlds(
+def test_each_round_counts_as_one_set(
     app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
 ) -> None:
     """Quatre rounds, quatre séries de chaque exercice — et le chiffre est calculé **une
-    fois**. Deux calculs donneraient quatre séries d'un côté et cent de l'autre le jour où
-    un fichier corrigé à la main sort des bornes de Cadence."""
+    fois**, par `circuit_link.normalise`. Le recalculer ici donnerait quatre séries d'un
+    côté et cent de l'autre le jour où un fichier corrigé à la main sort des bornes."""
     create(app_client, auth)
     complete(app_client, auth)
 
     assert [row[4] for row in rows(dav, SETS_FILE)] == ["4", "4"]
-    assert [row[6] for row in rows(dav, LOG_FILE)] == ["4", "4"]
     assert rows(dav, SESSIONS_FILE)[0][4] == "4"
 
 
@@ -310,16 +309,17 @@ def test_each_completion_gets_its_own_stable_identifier(
     ]
 
 
-def test_the_session_identifier_is_not_the_workout_one(
+def test_the_session_carries_its_own_identifier(
     app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
 ) -> None:
-    """Reprendre le `workout_id` serait commode le temps de la transition, et l'identifiant
-    disparaîtrait avec le fichier qui le porte. Ce monde-ci doit tenir debout seul le jour
-    où l'autre est supprimé."""
+    """Il est frappé ici, et il est rendu tel quel : c'est lui qui rattache les séries, et
+    une position de ligne se décale à la première suppression."""
     create(app_client, auth)
-    workout = complete(app_client, auth)
+    session = complete(app_client, auth)
 
-    assert rows(dav, SESSIONS_FILE)[0][0] != workout["workout_id"]
+    assert session["session_id"]
+    assert rows(dav, SESSIONS_FILE)[0][0] == session["session_id"]
+    assert {row[0] for row in rows(dav, SETS_FILE)} == {session["session_id"]}
 
 
 # ── 5. Lire, y compris sur historique vide ────────────
@@ -396,11 +396,11 @@ async def test_an_exercise_without_a_group_is_read_as_other(store: FileStore) ->
 def test_an_exercise_without_a_name_does_not_break_the_completion(
     app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
 ) -> None:
-    """Un `500` **après** que la séance ait été écrite, et il a survécu à la phase 1.
+    """Une ligne de `circuit_exercises.csv` vidée dans un tableur ne doit pas faire tomber
+    la déclaration — et surtout pas **après** que la séance ait été écrite.
 
-    Le catalogue filtrait les exercices sans nom, le journal les appariait ensuite par
-    `zip(strict=True)` : les deux listes n'avaient plus la même longueur. Une ligne de
-    `circuit_exercises.csv` corrigée à la main — ou vidée dans un tableur — suffisait.
+    Le filtre est fait une seule fois, dans `mark_done`, avant toute écriture : c'est ce
+    qui garantit que la séance et ses séries décrivent les mêmes exercices.
     """
     dav.seed(
         "Metric/activity/circuits.csv",
@@ -413,9 +413,9 @@ def test_an_exercise_without_a_name_does_not_break_the_completion(
         "c1,2, ,jambes,20,10,15\n",
     )
 
-    workout = complete(app_client, auth)
+    session = complete(app_client, auth)
 
-    assert [entry["exercise_name"] for entry in workout["exercises"]] == ["Squat"]
+    assert [entry["exercise_name"] for entry in session["sets"]] == ["Squat"]
     assert [row[2] for row in rows(dav, SETS_FILE)] == ["Squat"]
 
 
@@ -546,3 +546,68 @@ async def test_the_day_detail_names_the_circuit_and_its_exercises(
     # `-1` reste dans le fichier et ne sort pas de l'API : c'est `reps` à `null` qui dit
     # qu'un exercice était au temps.
     assert [item.reps for item in series] == [15, None]
+
+
+# ── 6. Défaire une addition ───────────────────────────
+#
+# `done` n'exige aucun `If-Match` et ne demande aucune confirmation. L'invariant qui
+# l'autorise dit qu'une addition se défait par la suppression que l'utilisateur ferait de
+# toute façon — ces trois tests sont ce qui rend cette phrase vraie.
+
+
+def test_a_deleted_session_takes_its_sets_with_it(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """Deux fichiers, un seul geste. Des séries orphelines seraient invisibles à l'écran
+    et comptées par l'assiduité : un jour resterait validé par une séance disparue."""
+    create(app_client, auth)
+    session = complete(app_client, auth)
+
+    response = app_client.delete(
+        f"{ACTIVITY}/sessions/{session['id']}",
+        headers={**auth, "If-Match": session["token"]},
+    )
+
+    assert response.status_code == 204, response.text
+    assert rows(dav, SESSIONS_FILE) == []
+    assert rows(dav, SETS_FILE) == []
+
+
+def test_a_stale_token_leaves_the_session_and_its_sets_untouched(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """**Un conflit ne change rien.** Le jeton est vérifié avant que les séries ne partent :
+    les supprimer d'abord détruirait le détail d'une séance que le refus conserve."""
+    create(app_client, auth)
+    session = complete(app_client, auth)
+
+    response = app_client.delete(
+        f"{ACTIVITY}/sessions/{session['id']}",
+        # Un jeton est une empreinte ASCII : un en-tête HTTP ne porte pas d'accent, et
+        # httpx refuse d'encoder celui qu'on aurait écrit en français par réflexe.
+        headers={**auth, "If-Match": "perime"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "conflict"
+    assert len(rows(dav, SESSIONS_FILE)) == 1
+    assert len(rows(dav, SETS_FILE)) == 2
+
+
+def test_deleting_one_session_leaves_the_other_one_whole(
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+) -> None:
+    """`session_id` et non la position : supprimer la première ligne décale la seconde,
+    et c'est par l'identifiant stable que ses séries restent les siennes."""
+    create(app_client, auth)
+    first = complete(app_client, auth)
+    complete(app_client, auth)
+
+    response = app_client.delete(
+        f"{ACTIVITY}/sessions/{first['id']}",
+        headers={**auth, "If-Match": first["token"]},
+    )
+
+    assert response.status_code == 204, response.text
+    assert len(rows(dav, SESSIONS_FILE)) == 1
+    assert len(rows(dav, SETS_FILE)) == 2

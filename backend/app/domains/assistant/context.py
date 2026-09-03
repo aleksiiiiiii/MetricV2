@@ -62,7 +62,7 @@ MAX_TRACKING_DAYS = 30
 #: Jours d'activité servis d'office avant aujourd'hui. Sept couvrent « hier »,
 #: « avant-hier » et « cette semaine » — l'écrasante majorité des références à une séance
 #: passée. Au-delà, la question devient « ma progression », et une liste la sert moins bien
-#: que `progression_charges` ou `tendances`.
+#: que `progression_tabata` ou `tendances`.
 WEEK_BACK = 7
 
 #: Jours de planning servis d'office. Même fenêtre que le passé, et pour la même raison :
@@ -87,7 +87,7 @@ _SOURCES = {
 #: Toutes les autres rapportent ce qui a eu lieu : leur servir un jour à venir produirait
 #: un relevé sur une journée qui n'existe pas encore. Une seule tranche fait exception, et
 #: c'est celle dont c'est le métier — un entraînement prévu jeudi prochain est une donnée.
-FORWARD_LOOKING = frozenset({"planning_a_venir", "exercices"})
+FORWARD_LOOKING = frozenset({"planning_a_venir"})
 
 _WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
@@ -551,18 +551,6 @@ def _charge(kg: float) -> str:
     return "poids du corps" if kg == 0 else f"{fr(kg)} kg"
 
 
-async def _exercises(store: FileStore, _today: date) -> list[str]:
-    from app.domains.activity.service import ExerciseService
-
-    catalogue = await ExerciseService(store).catalogue()
-    if not catalogue:
-        return ["Catalogue d'exercices : vide"]
-    return [
-        f"Exercice « {item.name} » (exercise_id={item.exercise_id}, {item.muscle_group})"
-        for item in catalogue
-    ]
-
-
 async def _cadence_circuits(store: FileStore, _today: date) -> list[str]:
     """Les séances Cadence enregistrées, **et les noms qui affichent une illustration**.
 
@@ -617,45 +605,6 @@ async def _cadence_circuits(store: FileStore, _today: date) -> list[str]:
         "la séance et tout ce que tu me dis restent en français. Un nom hors catalogue "
         "reste utilisable : la séance tourne, simplement sans démonstration."
     )
-    return lines
-
-
-async def _lift_progress(store: FileStore, _today: date) -> list[str]:
-    """Charges, écarts et records par exercice — **le trou que ce lot comble**.
-
-    Sans cette tranche, l'assistant voyait « Séance du 12/08 : muscu » et rien d'autre : il
-    pouvait constater qu'on s'était entraîné, jamais dire quoi charger la fois suivante.
-
-    **Rien n'est calculé ici.** `ActivityStats.progress()` détient la règle — la charge du
-    jour est la plus lourde de la séance et non la dernière consignée, le 1RM vient de
-    `estimate_one_rep_max`. Recalculer un écart à cet endroit serait le plus sûr moyen que
-    l'assistant annonce un chiffre que `/activite` contredit.
-    """
-    from app.domains.activity.stats import ActivityStats
-
-    rows = await ActivityStats(store).progress()
-    if not rows:
-        return ["Progression des charges : aucun exercice relevé"]
-
-    lines: list[str] = []
-    for item in rows[:MAX_PROGRESS]:
-        details: list[str] = []
-        if item.last_weight_kg is not None and item.last_date is not None:
-            details.append(f"{_charge(item.last_weight_kg)} le {item.last_date:%d/%m/%Y}")
-        if item.delta_kg is not None:
-            # Le signe porte l'information : « +2,5 » et « -2,5 » ne se coachent pas pareil.
-            details.append(f"{item.delta_kg:+g} kg depuis la fois d'avant")
-        if item.best_weight_kg is not None:
-            details.append(f"record {_charge(item.best_weight_kg)}")
-        if item.best_one_rep_max_kg is not None:
-            details.append(f"1RM estimé {fr(item.best_one_rep_max_kg)} kg")
-        if item.max_series:
-            serie = ", ".join(_charge(kg) for kg in item.max_series[-MAX_SERIES:])
-            details.append(f"charges par séance : {serie}")
-        lines.append(
-            f"« {item.name} » ({item.muscle_group}, exercise_id={item.exercise_id}) : "
-            + " — ".join(details or ["jamais chargé"])
-        )
     return lines
 
 
@@ -714,39 +663,6 @@ async def _tabata_progress(store: FileStore, today: date) -> list[str]:
     ]
     lines.append("Groupes par ancienneté de sollicitation — " + " · ".join(negliges))
     return lines
-
-
-async def _session_detail(store: FileStore, _today: date) -> list[str]:
-    """Les séries des dernières séances : exercice, charge, séries, répétitions, volume.
-
-    Complémentaire de `progression_charges`, qui agrège par exercice : ici on voit ce
-    qu'une séance a réellement contenu, donc ce qui a été négligé.
-    """
-    from app.domains.activity.service import ExerciseService
-
-    rows = await ExerciseService(store).log_entries()
-    if not rows:
-        return ["Détail des séances : aucune série relevée"]
-
-    entries = [ExerciseService.entry_to_schema(row) for row in rows]
-    par_seance: dict[tuple[date, str], list[str]] = {}
-    for entry in sorted(entries, key=lambda e: (e.date, e.id)):
-        rendu = f"{entry.exercise_name} {entry.sets}×{entry.reps} à {_charge(entry.weight_kg)}"
-        # Au poids du corps, `volume_kg` vaut zéro — le domaine le calcule ainsi et il a
-        # raison, un tonnage sans charge n'existe pas. Mais écrire « volume 0 kg » dirait à
-        # un coach que la séance n'a rien produit, alors qu'elle a produit 32 répétitions.
-        # Ce qui se compte alors, ce sont les répétitions.
-        if entry.weight_kg:
-            rendu += f" (volume {fr(entry.volume_kg)} kg)"
-        else:
-            rendu += f" ({entry.sets * entry.reps} répétitions)"
-        par_seance.setdefault((entry.date, entry.workout_id), []).append(rendu)
-
-    dernieres = sorted(par_seance)[-MAX_SESSIONS:]
-    return [
-        f"Séance du {jour:%d/%m/%Y} : " + " · ".join(par_seance[(jour, workout_id)])
-        for jour, workout_id in dernieres
-    ]
 
 
 async def _meals_today(store: FileStore, today: date) -> list[str]:
@@ -1144,11 +1060,6 @@ async def _search_cadence_exercises(store: FileStore, query: str) -> list[str]:
 #: longtemps — l'asymétrie n'avait aucune raison d'être, et personne ne devine ce que
 #: `jours_suivis` contient. Une possibilité non décrite est une possibilité morte.
 SLICES: dict[str, Slice] = {
-    "exercices": Slice(
-        _exercises,
-        "le catalogue des exercices, avec leur groupe musculaire et leur identifiant "
-        "— à demander avant d'ajouter une série",
-    ),
     "exercices_cadence": Slice(
         _cadence_exercises,
         "les noms exacts du catalogue Cadence pour un mot-clé **en anglais** "
@@ -1163,22 +1074,12 @@ SLICES: dict[str, Slice] = {
         "les séances Cadence déjà enregistrées, et la façon de nommer un exercice "
         "— à demander avant de créer une séance Cadence",
     ),
-    "progression_charges": Slice(
-        _lift_progress,
-        "par exercice : dernière charge, écart avec la fois d'avant, record, 1RM estimé "
-        "et les charges des dernières séances",
-    ),
     "progression_tabata": Slice(
         _tabata_progress,
         "par exercice de tabata : la charge déclarée, depuis quand elle n'a pas bougé et "
         "combien de séances elle a tenu, plus les groupes par ancienneté de sollicitation "
         "— à demander avant de conseiller de monter ou de composer une séance. "
         "Ni 1RM ni record : un tabata n'a pas de charge maximale lisible",
-    ),
-    "detail_seances": Slice(
-        _session_detail,
-        "ce que les dernières séances ont réellement contenu, exercice par exercice : "
-        "séries, répétitions, charge et volume",
     ),
     "repas_du_jour": Slice(
         _meals_today,

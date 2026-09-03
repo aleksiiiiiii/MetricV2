@@ -20,9 +20,9 @@ from collections.abc import Sequence
 from datetime import date
 
 from app.core.dates import today_local
-from app.core.exceptions import AiUnreadableError
-from app.domains.activity.schemas import RunPayload, WorkoutPayload
-from app.domains.activity.service import RunService, WorkoutService
+from app.core.exceptions import AiUnreadableError, ValidationFailedError
+from app.domains.activity.schemas import RunPayload
+from app.domains.activity.service import RunService
 from app.domains.ai.images import prepare_data_url
 from app.domains.ai.service import AiService
 from app.domains.imports.analysis import INSTRUCTION, PROMPT, is_unreadable, read_draft
@@ -43,7 +43,6 @@ DUPLICATE_TOLERANCE_MIN = 1.0
 class AppleImportService:
     def __init__(self, store: FileStore) -> None:
         self._runs = RunService(store)
-        self._workouts = WorkoutService(store)
 
     # ── Analyse (`IMP-01` → `IMP-04`, `IMP-06`) ───────
 
@@ -102,17 +101,9 @@ class AppleImportService:
                     )
             return None
 
-        for workout in await self._workouts.all():
-            if workout.model.date == draft.date and self._close(
-                workout.model.duration_min, draft.duration_min
-            ):
-                return DuplicateWarning(
-                    kind="workout",
-                    id=workout.index,
-                    date=workout.model.date,
-                    label=workout.model.type,
-                    duration_min=workout.model.duration_min,
-                )
+        # Une séance de musculation n'a plus de fichier où chercher un doublon : Metric ne
+        # les enregistre plus, et `confirm` le dira franchement au moment d'écrire. Avertir
+        # ici d'un doublon introuvable serait une fausse assurance.
         return None
 
     @staticmethod
@@ -162,24 +153,15 @@ class AppleImportService:
                 source=run.source,
             )
 
-        workout = await self._workouts.create(
-            WorkoutPayload(
-                date=payload.date,
-                type=payload.type,
-                duration_min=payload.duration_min,
-                calories=payload.calories,
-                # L'effort perçu appartient à celui qui l'a vécu : aucune capture ne le
-                # porte, et le déduire d'une fréquence cardiaque serait l'inventer.
-                rpe=None,
-                note=payload.note,
-            ),
-            source="apple",
-        )
-        return ImportResult(
-            kind="workout",
-            id=workout.id,
-            date=workout.date,
-            label=workout.type,
-            duration_min=workout.duration_min,
-            source=workout.source,
+        # **L'import ne crée plus de séance de musculation.** Elles n'ont plus de fichier
+        # depuis que le monde tabata a pris leur place : une capture qui en décrit une est
+        # lisible, simplement pas enregistrable ici.
+        #
+        # Un refus qui porte un code plutôt qu'une écriture silencieuse dans un fichier
+        # voisin : la capture reste sous les yeux, et le geste utile — créer une séance
+        # Cadence — est nommé.
+        raise ValidationFailedError(
+            "Cette capture décrit une séance de musculation, et Metric ne les enregistre "
+            "plus. Crée une séance Cadence depuis « Activité », puis déclare-la faite.",
+            detail=f"import refusé : kind={payload.kind}",
         )

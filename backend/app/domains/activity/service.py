@@ -12,14 +12,14 @@ from collections.abc import Sequence
 from datetime import date, timedelta
 
 from app.core.exceptions import AiUnreadableError, ValidationFailedError
-from app.core.parsing import estimate_one_rep_max, pace_min_per_km
+from app.core.parsing import pace_min_per_km
 from app.core.text import fold, fr
 from app.core.validation import today_local
 from app.domains.activity import (
     circuit_link,
     composer,
     exercise_catalog,
-    notes,
+    exercise_media,
     progress,
     splits,
 )
@@ -30,12 +30,9 @@ from app.domains.activity.models import (
     CircuitRow,
     CircuitSessionRow,
     CircuitSessionSetRow,
-    ExerciseLogRow,
-    ExerciseRow,
     MuscleGroup,
     RunRow,
     RunSplitRow,
-    WorkoutRow,
 )
 from app.domains.activity.schemas import (
     Circuit,
@@ -45,13 +42,11 @@ from app.domains.activity.schemas import (
     CircuitList,
     CircuitPayload,
     CircuitProposal,
+    CircuitSession,
+    CircuitSessionSet,
     CircuitSuggestion,
     ComposeRequest,
     DistanceBand,
-    Exercise,
-    ExerciseEntry,
-    ExerciseEntryPayload,
-    ExercisePayload,
     Load,
     LoadDay,
     LoadDetail,
@@ -61,7 +56,6 @@ from app.domains.activity.schemas import (
     LoadState,
     MonthTotals,
     NeglectedGroup,
-    NoteDraft,
     ProposedCircuitExercise,
     Run,
     RunContext,
@@ -72,10 +66,7 @@ from app.domains.activity.schemas import (
     RunSplit,
     RunSplits,
     RunWindow,
-    Workout,
-    WorkoutPayload,
 )
-from app.domains.ai.images import prepare_data_url
 from app.domains.ai.service import AiService
 from app.domains.app_settings.service import SettingsService
 from app.storage.csv_repo import CsvRepository, Row
@@ -88,11 +79,8 @@ from app.storage.paths import (
     CIRCUIT_SESSION_SETS,
     CIRCUIT_SESSIONS,
     CIRCUITS,
-    EXERCISE_LOG,
-    EXERCISES,
     RUN_SPLITS,
     RUNS,
-    WORKOUTS,
 )
 
 #: Longueur des identifiants stables. Assez court pour rester lisible dans un tableur,
@@ -615,513 +603,6 @@ def write_aliases(aliases: list[str]) -> str:
     return ";".join(aliases)
 
 
-class ExerciseService:
-    """Catalogue d'exercices et journal des performances (`ACT-06` → `ACT-09`)."""
-
-    def __init__(self, store: FileStore) -> None:
-        self._repo: CsvRepository[ExerciseRow] = CsvRepository(store, EXERCISES, ExerciseRow)
-        self._log: CsvRepository[ExerciseLogRow] = CsvRepository(
-            store, EXERCISE_LOG, ExerciseLogRow
-        )
-
-    @staticmethod
-    def entry_to_schema(row: Row[ExerciseLogRow]) -> ExerciseEntry:
-        model = row.model
-        return ExerciseEntry(
-            id=row.index,
-            token=row.token,
-            workout_id=model.workout_id,
-            date=model.date,
-            exercise_id=model.exercise_id,
-            exercise_name=model.exercise_name,
-            muscle_group=model.muscle_group,
-            weight_kg=model.weight_kg,
-            sets=model.sets,
-            reps=model.reps,
-            note=model.note,
-            volume_kg=_round(model.weight_kg * model.sets * model.reps) or 0,
-            one_rep_max_kg=_round(estimate_one_rep_max(model.weight_kg, model.reps)),
-        )
-
-    async def catalogue(self) -> list[Exercise]:
-        """Catalogue enrichi du rappel de dernière performance (`ACT-08`)."""
-        rows = await self._repo.read_all()
-        entries = await self._log.read_all()
-
-        latest: dict[str, ExerciseLogRow] = {}
-        # Ce que le catalogue conserve derrière lui : le compte des séries qui portent une
-        # copie de cet exercice. Il dit ce qu'un retrait laisse intact et ce qu'une
-        # correction touche — deux phrases que l'écran ne peut pas écrire sans lui, et
-        # qu'il n'a pas le droit de calculer.
-        counts: dict[str, int] = {}
-        for entry in sorted(entries, key=lambda item: (item.model.date, item.index)):
-            latest[entry.model.exercise_id] = entry.model
-            counts[entry.model.exercise_id] = counts.get(entry.model.exercise_id, 0) + 1
-
-        catalogue: list[Exercise] = []
-        for row in rows:
-            if not row.model.id:
-                continue  # ligne sans identifiant : le journal ne peut pas s'y rattacher
-            last = latest.get(row.model.id)
-            catalogue.append(
-                Exercise(
-                    id=row.index,
-                    token=row.token,
-                    exercise_id=row.model.id,
-                    name=row.model.name,
-                    muscle_group=row.model.muscle_group,
-                    aliases=read_aliases(row.model.aliases),
-                    entries=counts.get(row.model.id, 0),
-                    last_weight_kg=last.weight_kg if last else None,
-                    last_reps=last.reps if last else None,
-                    last_sets=last.sets if last else None,
-                    last_date=last.date if last else None,
-                )
-            )
-        return catalogue
-
-    async def read_notes(self, ai: AiService, text: str, photo: bytes | None) -> NoteDraft:
-        """Lit une séance écrite en clair, ou photographiée (`C07`). **N'écrit rien.**
-
-        Une photo passe par le **même modèle** que le reste : l'OCR n'est pas une brique
-        à part, c'est la même consigne avec une image. Le texte tiré de l'image alimente
-        ensuite exactement le même rapprochement qu'une note tapée — un second chemin
-        divergerait du premier au premier cas limite.
-        """
-        # Le catalogue part **avec** la consigne : sans lui le modèle ne peut rien
-        # rapprocher, et tout arriverait en création.
-        existing = await self.catalogue()
-        prompt = notes.prompt_with(existing)
-
-        if photo:
-            payload = await ai.ask_json(
-                instruction=notes.INSTRUCTION,
-                prompt=prompt,
-                images=[prepare_data_url(photo)],
-                max_tokens=1200,
-            )
-        else:
-            payload = await ai.ask_json(
-                instruction=notes.INSTRUCTION,
-                prompt=f"{prompt}\n\n## La note\n\n{text.strip()}",
-                max_tokens=1200,
-            )
-
-        lines = notes.read_lines(payload)
-        if notes.is_unreadable(payload, lines):
-            raise AiUnreadableError(
-                "Rien n'a pu être lu dans cette note. Vérifie qu'elle porte bien des "
-                "exercices, ou saisis-les à la main."
-            )
-
-        return NoteDraft(lines=notes.match(lines, existing), source_text=text.strip())
-
-    async def create(self, payload: ExercisePayload) -> Exercise:
-        row = await self._repo.append(
-            ExerciseRow(
-                id=new_id(),
-                name=payload.name,
-                muscle_group=payload.muscle_group,
-                aliases=write_aliases(payload.aliases or []),
-            )
-        )
-        return Exercise(
-            id=row.index,
-            token=row.token,
-            exercise_id=row.model.id,
-            name=row.model.name,
-            muscle_group=row.model.muscle_group,
-            aliases=read_aliases(row.model.aliases),
-        )
-
-    async def update(self, index: int, token: str, payload: ExercisePayload) -> Exercise:
-        """Corrige le nom ou le groupe d'un exercice, **et le répercute au journal**.
-
-        Deux décisions, et elles ont chacune une conséquence qui ne se voit pas tout de
-        suite.
-
-        **`id` survit à la correction.** C'est la clé stable à laquelle `exercise_log.csv`
-        rattache tout l'historique. En régénérer un orphelinerait des années de relevés
-        sans lever la moindre erreur — c'est la ligne la plus dangereuse de ce module.
-
-        **Les copies du journal suivent.** `exercise_log.csv` duplique `exercise_name` et
-        `muscle_group`, et trois lecteurs se servent de la copie plutôt que du catalogue :
-        la progression (`stats.progress`), le tonnage par groupe et les groupes négligés
-        (`stats._muscles`, `stats._neglected`), et le détail d'une journée d'assiduité.
-        Sans répercussion, corriger une faute de frappe laisserait la barre de progression
-        étiquetée avec la faute pendant que le sélecteur affiche la forme corrigée — et
-        changer un groupe ferait compter le même exercice dans deux groupes, selon la date
-        de chaque série.
-
-        La duplication existe pour qu'un exercice **supprimé** garde son historique
-        lisible (`ACT-06`, `STO-02`), pas pour figer un nom contre sa propre correction.
-        Le corollaire est assumé et l'écran l'annonce avant le geste : renommer est une
-        *correction*, pas un recyclage de ligne.
-
-        L'ordre compte, comme pour `WorkoutService.delete` : la ligne gardée part en
-        premier. Si la garde refuse, rien n'a bougé. Si la répercussion échoue après coup,
-        le journal garde ses anciennes copies et rejouer la même correction converge — le
-        projet n'a pas de transaction.
-        """
-        rows = await self._repo.read_all(fresh=True)
-        if not 0 <= index < len(rows):
-            raise StorageConflictError(detail=f"exercice {index} absent du catalogue")
-
-        existing = rows[index].model
-        row = await self._repo.replace_by_token(
-            index,
-            token,
-            ExerciseRow(
-                id=existing.id,
-                name=payload.name,
-                muscle_group=payload.muscle_group,
-                # `None` laisse les alias en place : le formulaire du catalogue n'en parle
-                # pas, et corriger une faute de frappe ne doit pas effacer ce que la
-                # lecture de notes a appris.
-                aliases=existing.aliases
-                if payload.aliases is None
-                else write_aliases(payload.aliases),
-            ),
-        )
-
-        if existing.id:
-            await self._log.update_where(
-                lambda entry: entry.exercise_id == existing.id,
-                lambda entry: entry.model_copy(
-                    update={
-                        "exercise_name": payload.name,
-                        "muscle_group": payload.muscle_group,
-                    }
-                ),
-            )
-
-        return Exercise(
-            id=row.index,
-            token=row.token,
-            exercise_id=row.model.id,
-            name=row.model.name,
-            muscle_group=row.model.muscle_group,
-            aliases=read_aliases(row.model.aliases),
-        )
-
-    async def delete(self, index: int, token: str) -> None:
-        """Retire un exercice du catalogue.
-
-        Le journal n'est **pas** touché : `ACT-06` exige que l'historique survive. C'est
-        précisément pourquoi `exercise_log.csv` duplique le nom et le groupe musculaire —
-        les lignes passées restent lisibles sans le catalogue.
-        """
-        await self._repo.delete_by_token(index, token)
-
-    async def add_alias(self, exercise_id: str, alias: str) -> Exercise:
-        """Ajoute une graphie reconnue à un exercice existant (`C07`).
-
-        Un ajout et non un remplacement : la fois suivante, « dev couché » **et** toutes
-        les abréviations déjà apprises seront reconnues. Un alias déjà présent — au repli
-        près — ne se réécrit pas, ce qui rend l'opération sûre à rejouer.
-        """
-        rows = await self._repo.read_all(fresh=True)
-        for index, row in enumerate(rows):
-            if row.model.id != exercise_id:
-                continue
-            existing = read_aliases(row.model.aliases)
-            known = {fold(item) for item in [*existing, row.model.name]}
-            if fold(alias) not in known:
-                existing.append(alias.replace(";", " ").strip())
-            saved = await self._repo.replace_by_token(
-                index, row.token, row.model.model_copy(update={"aliases": write_aliases(existing)})
-            )
-            return Exercise(
-                id=saved.index,
-                token=saved.token,
-                exercise_id=saved.model.id,
-                name=saved.model.name,
-                muscle_group=saved.model.muscle_group,
-                aliases=read_aliases(saved.model.aliases),
-            )
-        raise StorageNotFoundError("Cet exercice n'existe pas.")
-
-    async def resolve(self, exercise_id: str) -> ExerciseRow:
-        rows = await self._repo.read_all()
-        for row in rows:
-            if row.model.id == exercise_id:
-                return row.model
-        raise StorageNotFoundError("Cet exercice n'est pas au catalogue.")
-
-    async def log_entries(self) -> list[Row[ExerciseLogRow]]:
-        return await self._log.read_all()
-
-    async def ensure(self, name: str, muscle_group: str) -> ExerciseRow:
-        """L'exercice du catalogue portant ce nom, **créé s'il n'y est pas**.
-
-        C'est le pont entre un circuit Cadence et le catalogue de Metric : « Push-Ups
-        Classic » y entre au premier circuit déclaré fait, puis se réutilise. Sans ça, le
-        journal porterait un `exercise_id` vide et « Progression des charges » ignorerait
-        ces exercices.
-
-        La reconnaissance passe par `fold` — casse, accents et ponctuation ignorés — et par
-        les alias, exactement comme la relecture d'une note manuscrite (`C07`). Deux
-        graphies du même mouvement ne doivent pas donner deux lignes de catalogue, sinon
-        l'historique de charge se coupe en deux au premier changement d'orthographe.
-
-        **Ne renomme jamais un exercice existant** et ne corrige pas son groupe : le
-        catalogue appartient à l'utilisateur, un circuit n'est pas une autorité sur lui.
-        """
-        wanted = fold(name)
-        for row in await self._repo.read_all():
-            if fold(row.model.name) == wanted:
-                return row.model
-            if any(fold(alias) == wanted for alias in read_aliases(row.model.aliases)):
-                return row.model
-
-        created = await self._repo.append(
-            ExerciseRow(id=new_id(), name=name, muscle_group=muscle_group)
-        )
-        return created.model
-
-    async def log_timed(
-        self, workout_id: str, day: date, exercise: ExerciseRow, *, sets: int, reps: int
-    ) -> ExerciseEntry:
-        """Journalise une série **sans passer par `ExerciseEntryPayload`**, et c'est assumé.
-
-        Le schéma de saisie borne `reps` à `ge=1`, parce qu'une saisie manuelle n'a aucune
-        raison d'écrire un nombre négatif. Un exercice de circuit au temps, lui, n'a pas de
-        répétitions du tout : il porte la sentinelle `-1`, la même que
-        `circuit_exercises.csv`, et la même règle de lecture — c'est `reps` qui dit la
-        nature de la ligne.
-
-        Desserrer `Reps` pour l'accueillir aurait rendu `-1` acceptable **à la saisie
-        manuelle** aussi, où ce serait une faute de frappe silencieuse dans un journal de
-        charge. Un second point d'entrée, documenté et étroit, coûte moins cher qu'une
-        borne relâchée pour tout le monde.
-
-        `weight_kg = 0` est le poids du corps, valeur légitime (`ACT-07`) : le tonnage
-        d'un tabata est donc nul, ce qui est vrai. Ce qu'il apporte aux statistiques, ce
-        sont ses **séries** par groupe musculaire.
-        """
-        row = await self._log.append(
-            ExerciseLogRow(
-                workout_id=workout_id,
-                date=day,
-                exercise_id=exercise.id,
-                exercise_name=exercise.name,
-                muscle_group=exercise.muscle_group,
-                weight_kg=0,
-                sets=sets,
-                reps=reps,
-            )
-        )
-        return self.entry_to_schema(row)
-
-    async def log(self, workout_id: str, day: date, payload: ExerciseEntryPayload) -> ExerciseEntry:
-        exercise = await self.resolve(payload.exercise_id)
-        row = await self._log.append(
-            ExerciseLogRow(
-                workout_id=workout_id,
-                date=day,
-                exercise_id=exercise.id,
-                # Dupliqués volontairement : le fichier doit rester compréhensible seul.
-                exercise_name=exercise.name,
-                muscle_group=exercise.muscle_group,
-                weight_kg=payload.weight_kg,
-                sets=payload.sets,
-                reps=payload.reps,
-                note=payload.note,
-            )
-        )
-        return self.entry_to_schema(row)
-
-    async def update_entry(
-        self, index: int, token: str, payload: ExerciseEntryPayload
-    ) -> ExerciseEntry:
-        rows = await self._log.read_all(fresh=True)
-        if not 0 <= index < len(rows):
-            raise StorageConflictError(detail=f"ligne {index} absente du journal")
-
-        existing = rows[index].model
-        exercise = await self.resolve(payload.exercise_id)
-        row = await self._log.replace_by_token(
-            index,
-            token,
-            ExerciseLogRow(
-                workout_id=existing.workout_id,
-                date=existing.date,
-                exercise_id=exercise.id,
-                exercise_name=exercise.name,
-                muscle_group=exercise.muscle_group,
-                weight_kg=payload.weight_kg,
-                sets=payload.sets,
-                reps=payload.reps,
-                note=payload.note,
-            ),
-        )
-        return self.entry_to_schema(row)
-
-    async def delete_entry(self, index: int, token: str) -> None:
-        await self._log.delete_by_token(index, token)
-
-    async def purge_workout(self, workout_id: str) -> int:
-        """Supprime les performances rattachées à une séance (`ACT-04`)."""
-        return await self._log.remove_where(lambda row: row.workout_id == workout_id)
-
-
-# ── Séances ───────────────────────────────────────────
-
-
-class WorkoutService:
-    """Séances : saisie, exercices rattachés, duplication (`ACT-03`, `ACT-04`, `ACT-17`)."""
-
-    def __init__(self, store: FileStore) -> None:
-        self._repo: CsvRepository[WorkoutRow] = CsvRepository(store, WORKOUTS, WorkoutRow)
-        self._exercises = ExerciseService(store)
-
-    async def all(self) -> list[Row[WorkoutRow]]:
-        return await self._repo.read_all()
-
-    def _to_schema(self, row: Row[WorkoutRow], entries: list[ExerciseEntry]) -> Workout:
-        model = row.model
-        return Workout(
-            id=row.index,
-            token=row.token,
-            workout_id=model.id,
-            date=model.date,
-            type=model.type,
-            duration_min=model.duration_min,
-            calories=model.calories,
-            rpe=model.rpe,
-            note=model.note,
-            source=model.source,
-            exercises=entries,
-            volume_kg=_round(sum(entry.volume_kg for entry in entries)) or 0,
-        )
-
-    async def get(self, index: int) -> Workout:
-        rows = await self._repo.read_all()
-        if not 0 <= index < len(rows):
-            raise StorageNotFoundError("Cette séance n'existe pas.")
-
-        row = rows[index]
-        entries = [
-            self._exercises.entry_to_schema(entry)
-            for entry in await self._exercises.log_entries()
-            if entry.model.workout_id == row.model.id
-        ]
-        return self._to_schema(row, entries)
-
-    async def create(self, payload: WorkoutPayload, *, source: str = "manual") -> Workout:
-        """Enregistre une séance, et ses exercices s'il y en a. `source` reste `manual`
-        sauf import (`IMP-05`).
-
-        **Les exercices sont résolus avant la première écriture.** Un identifiant inconnu
-        est le seul échec courant de cette route, et il refuse alors la demande entière
-        sans avoir rien écrit — ce qui est précisément ce qu'un assistant de saisie
-        abandonné en cours de route ne doit pas laisser derrière lui.
-        """
-        # Résolution d'abord : elle lève sur un exercice absent du catalogue, et à ce
-        # moment-là rien n'est encore parti sur le stockage.
-        for entry in payload.exercises:
-            await self._exercises.resolve(entry.exercise_id)
-
-        row = await self._repo.append(
-            WorkoutRow(
-                date=payload.date,
-                type=payload.type,
-                duration_min=payload.duration_min,
-                calories=payload.calories,
-                rpe=payload.rpe,
-                note=payload.note,
-                source=source,
-                id=new_id(),
-            )
-        )
-
-        logged = [
-            await self._exercises.log(row.model.id, payload.date, entry)
-            for entry in payload.exercises
-        ]
-        return self._to_schema(row, logged)
-
-    async def update(self, index: int, token: str, payload: WorkoutPayload) -> Workout:
-        rows = await self._repo.read_all(fresh=True)
-        if not 0 <= index < len(rows):
-            raise StorageConflictError(detail=f"séance {index} absente")
-
-        existing = rows[index].model
-        row = await self._repo.replace_by_token(
-            index,
-            token,
-            WorkoutRow(
-                date=payload.date,
-                type=payload.type,
-                duration_min=payload.duration_min,
-                calories=payload.calories,
-                rpe=payload.rpe,
-                note=payload.note,
-                # Identifiant et source survivent à une correction : les exercices y sont
-                # rattachés, et l'origine de la donnée ne change pas (`IMP-05`).
-                source=existing.source,
-                id=existing.id,
-            ),
-        )
-        entries = [
-            self._exercises.entry_to_schema(entry)
-            for entry in await self._exercises.log_entries()
-            if entry.model.workout_id == existing.id
-        ]
-        return self._to_schema(row, entries)
-
-    async def delete(self, index: int, token: str) -> None:
-        """Supprime une séance **et purge ses exercices** (`ACT-04`).
-
-        L'ordre compte : la séance part en premier, sous garde. Purger d'abord laisserait
-        des exercices orphelins si la garde refusait la suppression.
-        """
-        rows = await self._repo.read_all(fresh=True)
-        if not 0 <= index < len(rows):
-            raise StorageConflictError(detail=f"séance {index} absente")
-        workout_id = rows[index].model.id
-
-        await self._repo.delete_by_token(index, token)
-        await self._exercises.purge_workout(workout_id)
-
-    async def duplicate(self, index: int, day: date) -> Workout:
-        """Recrée une séance passée, exercices compris (`ACT-17`).
-
-        Saisir une répétition de routine devient une action au lieu d'une dizaine.
-        """
-        source = await self.get(index)
-
-        created = await self.create(
-            WorkoutPayload(
-                date=day,
-                type=source.type,
-                duration_min=source.duration_min,
-                calories=source.calories,
-                rpe=None,  # l'effort perçu appartient à la séance vécue, pas au modèle
-                note=source.note,
-            )
-        )
-
-        entries: list[ExerciseEntry] = []
-        for entry in source.exercises:
-            entries.append(
-                await self._exercises.log(
-                    created.workout_id,
-                    day,
-                    ExerciseEntryPayload(
-                        exercise_id=entry.exercise_id,
-                        weight_kg=entry.weight_kg,
-                        sets=entry.sets,
-                        reps=entry.reps,
-                    ),
-                )
-            )
-
-        created.exercises = entries
-        created.volume_kg = _round(sum(entry.volume_kg for entry in entries)) or 0
-        return created
-
-
 # ── Circuits (Cadence Tabata) ─────────────────────────
 
 
@@ -1177,8 +658,6 @@ class CircuitService:
         self._items: CsvRepository[CircuitExerciseRow] = CsvRepository(
             store, CIRCUIT_EXERCISES, CircuitExerciseRow
         )
-        self._workouts = WorkoutService(store)
-        self._exercises = ExerciseService(store)
         self._sessions = CircuitSessionService(store)
         self._settings = SettingsService(store)
         self._loads: CsvRepository[CircuitLoadRow] = CsvRepository(
@@ -1438,43 +917,24 @@ class CircuitService:
         body_part: str | None = None,
         equipment: str | None = None,
     ) -> Sequence[CircuitSuggestion]:
-        """Les noms proposés à la saisie : les tiens d'abord, ceux de Cadence ensuite.
+        """Les noms proposés à la saisie, tous venus du catalogue **figé de Cadence**.
 
-        ## Pourquoi une recherche et plus une liste
+        ## Pourquoi il n'y a plus deux catalogues
 
-        Elle rendait 35 noms, tous ceux qui affichaient alors une illustration. Cadence en
-        embarque **1324** : les servir d'un bloc mettrait 70 ko sur le réseau pour qu'un
-        téléphone les filtre, c'est-à-dire le calcul métier du mauvais côté. Le filtrage
-        est donc ici, et le plafond est celui du catalogue — `exercise_catalog.LIMIT`.
+        Elle mêlait les exercices de Metric — les seuls à porter un groupe musculaire — et
+        ceux de Cadence. `exercises.csv` a disparu avec la musculation historique : il ne
+        reste qu'une source, et c'est celle dont le nom exact décide de la démonstration
+        affichée pendant l'effort.
 
-        ## Pourquoi le catalogue de Metric passe devant
+        **Le groupe musculaire reste donc à choisir à la main**, exercice par exercice, à
+        la création d'un circuit. Le déduire de la zone du corps de Cadence serait une
+        correspondance approximative — `upper arms` recouvre biceps et triceps, qui ne
+        comptent pas dans la même piste d'assiduité.
 
-        Ce sont les seuls noms qui portent un **groupe musculaire**, et c'est lui qui fait
-        qu'un tabata déclaré fait compte dans « groupes négligés » (**D2**). Un nom de
-        Cadence n'en porte aucun, et en deviner un serait inventer une valeur que les
-        statistiques prendraient au sérieux.
-
-        Un exercice nommé des deux côtés n'apparaît **qu'une fois**, sous la graphie de
-        l'utilisateur : le rapprochement passe par `fold`, celui du reste du domaine.
-
-        ## Le filtre par zone ou par matériel ne s'applique qu'au catalogue de Cadence
-
-        Lui seul porte ces champs. Filtrer « je n'ai que des haltères » écarte donc les
-        exercices de Metric plutôt que d'en laisser passer dont on ne sait rien — c'est le
-        seul choix qui ne ment pas sur ce qui a été filtré.
+        Le plafond est celui du catalogue : servir 1324 entrées à un téléphone pour qu'il
+        les filtre serait le réseau **et** le calcul métier du mauvais côté.
         """
-        filtered = body_part is not None or equipment is not None
-        catalogue = [] if filtered else await self._exercises.catalogue()
-        needle = fold(query)
-
-        mine = [
-            CircuitSuggestion(name=item.name, muscle_group=item.muscle_group)
-            for item in catalogue
-            if not needle or needle in fold(item.name)
-        ]
-        known_names = {fold(item.name) for item in catalogue}
-
-        theirs = [
+        return [
             CircuitSuggestion(
                 name=found.name,
                 muscle_group=None,
@@ -1484,10 +944,7 @@ class CircuitService:
             for found in exercise_catalog.search(
                 query, body_part=body_part, equipment=equipment, limit=exercise_catalog.LIMIT
             )
-            if fold(found.name) not in known_names
         ]
-
-        return [*mine, *theirs][: exercise_catalog.LIMIT]
 
     # ── Écriture ──────────────────────────────────────
 
@@ -1679,9 +1136,8 @@ class CircuitService:
 
         return (await ActivityStats(self._store).overview(today_local(), limit=1)).neglected
 
-    async def mark_done(self, index: int, payload: CircuitDonePayload) -> Workout:
-        """Déclare un circuit fait : une séance **et ses séries** (**D3**), dans les deux
-        mondes.
+    async def mark_done(self, index: int, payload: CircuitDonePayload) -> CircuitSession:
+        """Déclare un circuit fait : une séance **et ses séries** (**D3**).
 
         ## Ce qui est écrit
 
@@ -1732,45 +1188,21 @@ class CircuitService:
         # est ce qui garantit que les deux listes ont la même longueur.
         named = [item for item in items if item.name.strip()]
 
-        # Le catalogue d'abord, et en entier : `ensure` peut écrire, et il vaut mieux
-        # qu'il ait fini avant que la séance existe.
-        catalogue = [await self._exercises.ensure(item.name, _group_of(item)) for item in named]
-
         day = today_local()
-        workout = await self._workouts.create(
-            WorkoutPayload(
-                date=day,
-                type=self.WORKOUT_TYPE,
-                duration_min=payload.duration_min,
-                rpe=payload.rpe,
-                note=circuit.name,
-            ),
-            source=self.SOURCE,
-        )
-
         rounds = circuit_link.normalise(self._to_link(circuit, items)).rounds
-        entries = [
-            await self._exercises.log_timed(
-                workout.workout_id, day, exercise, sets=rounds, reps=item.reps
-            )
-            for item, exercise in zip(named, catalogue, strict=True)
-        ]
 
-        # Le monde tabata en dernier, et l'ancien inchangé devant lui. Il est encore la
-        # seule source des sept consommateurs : une coupure ici doit laisser la séance
-        # complète là où on la lit, pas l'inverse. Et si l'utilisateur redéclare après une
-        # coupure, le doublon tombe dans le fichier que la phase 6 supprime — pas dans
-        # celui qui reste.
-        await self._sessions.record(
+        # **Un seul monde depuis la phase 5.** L'écriture double — `workouts.csv` plus
+        # `exercise_log.csv` — n'existait que le temps de rebrancher les consommateurs. Ils
+        # lisent tous `circuit_sessions.csv` maintenant, et le catalogue de Metric dans
+        # lequel `ensure` versait chaque nom d'exercice a disparu avec eux.
+        return await self._sessions.record(
             circuit,
-            items,
+            named,
             day=day,
             rounds=rounds,
             duration_min=payload.duration_min,
             rpe=payload.rpe,
         )
-
-        return workout.model_copy(update={"exercises": entries})
 
 
 # ── Séances tabata — ce qui a eu lieu ─────────────────
@@ -1843,8 +1275,8 @@ class CircuitSessionService:
         rounds: int,
         duration_min: float,
         rpe: int | None = None,
-    ) -> CircuitSessionRow:
-        """Écrit une séance et ses séries.
+    ) -> CircuitSession:
+        """Écrit une séance et ses séries, et rend ce que l'écran affiche.
 
         ## Ce que l'appelant fournit, et ce qu'il ne décide pas
 
@@ -1880,21 +1312,72 @@ class CircuitSessionService:
 
         # Un exercice sans nom ne produit pas de ligne : `ACT-06` duplique le nom pour que
         # l'historique reste lisible sans son patron, et une ligne muette n'y répond pas.
-        await self._sets.extend(
-            [
-                CircuitSessionSetRow(
-                    session_id=session.session_id,
-                    date=day,
-                    exercise_name=item.name.strip(),
-                    muscle_group=_group_of(item),
-                    sets=rounds,
-                    reps=item.reps,
+        sets = [
+            CircuitSessionSetRow(
+                session_id=session.session_id,
+                date=day,
+                exercise_name=item.name.strip(),
+                muscle_group=_group_of(item),
+                sets=rounds,
+                reps=item.reps,
+            )
+            for item in items
+            if item.name.strip()
+        ]
+        await self._sets.extend(sets)
+
+        return CircuitSession(
+            id=row.index,
+            token=row.token,
+            session_id=session.session_id,
+            circuit_id=session.circuit_id,
+            date=day,
+            name=session.name,
+            rounds=rounds,
+            duration_min=duration_min,
+            rpe=rpe,
+            source=self.SOURCE,
+            sets=[
+                CircuitSessionSet(
+                    exercise_name=entry.exercise_name,
+                    muscle_group=entry.muscle_group,
+                    sets=entry.sets,
+                    # La sentinelle `-1` reste dans le fichier : l'API ne la voit jamais.
+                    reps=None if entry.reps == circuit_link.TIMED else entry.reps,
                 )
-                for item in items
-                if item.name.strip()
-            ]
+                for entry in sets
+            ],
         )
-        return row.model
+
+    async def delete(self, index: int, token: str) -> None:
+        """Supprime une séance tabata **et ses séries**.
+
+        **Pourquoi cette suppression existe.** `mark_done` n'exige aucun `If-Match` et ne
+        demande aucune confirmation, et l'invariant qui l'autorise est explicite : une
+        addition se défait par la suppression que l'utilisateur ferait de toute façon.
+        Sans cette méthode, l'addition ne se défaisait plus. Le cas n'est pas théorique —
+        Cadence ne peut pas dire à Metric qu'une séance a eu lieu (**D6**), rien n'empêche
+        donc de la déclarer deux fois, et le doublon comptait jusqu'ici pour toujours.
+
+        **Les séries d'abord, la séance ensuite**, comme pour une course et ses paliers.
+        L'ordre inverse laisserait des séries que plus aucune ligne ne désigne, et
+        l'assiduité les compterait quand même : un jour resterait validé par une séance
+        qui n'existe plus, sur un écran où rien ne le dirait.
+
+        **Le jeton est vérifié avant que quoi que ce soit ne parte.** `delete_by_token` le
+        vérifie déjà, mais il le fait trop tard pour les séries : sur un jeton périmé,
+        elles seraient détruites et la séance conservée. Un conflit doit ne rien changer.
+        """
+        rows = await self._repo.read_all(fresh=True)
+        if not 0 <= index < len(rows):
+            raise StorageConflictError(detail=f"séance {index} absente")
+        if rows[index].token != token:
+            raise StorageConflictError(detail=f"séance {index} : jeton « {token} » périmé")
+
+        session_id = rows[index].model.session_id
+        if session_id:
+            await self._sets.remove_where(lambda row: row.session_id == session_id)
+        await self._repo.delete_by_token(index, token)
 
 
 # ── Charges des exercices de tabata (**C1**) ──────────
@@ -1939,6 +1422,7 @@ class CircuitLoadService:
         )
         self._circuits: CsvRepository[CircuitRow] = CsvRepository(store, CIRCUITS, CircuitRow)
         self._sessions_of = CircuitSessionService(store)
+        self._settings = SettingsService(store)
 
     @staticmethod
     def _state(row: CircuitLoadRow | None) -> LoadState:
@@ -2107,11 +1591,40 @@ class CircuitLoadService:
             history=history,
             sessions=await self._sessions(key),
             circuits=circuits,
+            # Le **nom affiché**, celui du fichier, et non `name` tel qu'il arrive dans la
+            # requête : c'est l'orthographe qu'on a écrite dans le circuit qui a une chance
+            # de correspondre au catalogue, pas celle qu'un lien a pu abîmer en chemin.
+            demo_url=await exercise_media.demo_url(
+                (await self._settings.values()).cadence_base_url, display
+            ),
         )
 
     # `Sequence` et non `list`, pour la raison écrite plus haut sur `CircuitService` :
     # cette classe porte une méthode `list`, qui masque le type dans toute annotation de
     # son corps, et mypy le signale sans jamais nommer la collision.
+    # `Sequence` et non `list`, pour la raison écrite plus haut : cette classe porte une
+    # méthode `list`, qui masque le type dans toute annotation de son corps.
+    async def load_history(self, name: str) -> Sequence[tuple[date, float]]:
+        """La charge d'un exercice au fil du temps, pour une piste d'assiduité.
+
+        **Elle remplace `ActivityStats.exercise_load`**, qui lisait `exercise_log.csv` et
+        rendait la charge la plus lourde du jour. Ici l'historique est celui des
+        **décisions** (`circuit_load_log.csv`, **C2**) : ce qu'on a choisi de charger, et
+        quand. Sur un même jour corrigé deux fois, c'est la dernière décision qui vaut —
+        c'est elle qui est partie dans le lien.
+
+        Un passage au poids du corps n'a **aucune charge** et ne produit donc pas de point :
+        zéro serait une charge nulle, l'absence est autre chose (**C2** encore).
+        """
+        key = fold(name)
+        per_day: dict[date, float] = {}
+        for row in await self._history.read_all():
+            item = row.model
+            if fold(item.name) != key or item.bodyweight or item.weight_kg is None:
+                continue
+            per_day[item.date] = item.weight_kg
+        return sorted(per_day.items())
+
     async def _sessions(self, key: str) -> Sequence[LoadDay]:
         """Les trente derniers jours, un par entrée, séances comptées.
 

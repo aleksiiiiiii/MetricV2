@@ -16,8 +16,6 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.text import fold
-from app.core.validation import today_local
 from app.domains.activity import exercise_catalog
 from app.storage.files import FileStore
 from app.storage.provider import StorageProvider
@@ -310,84 +308,6 @@ def test_deleting_one_circuit_leaves_the_other_ones_exercises_alone(
 # ── Deux mondes séparés (**D2**, **D3**) ──────────────
 
 
-def test_declaring_a_circuit_done_writes_a_workout_and_its_sets(
-    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
-) -> None:
-    """**Le test qui porte D3.** Un tabata *est* du sport : il entre dans `workouts.csv`
-    **et** dans le journal de charge, comme n'importe quelle séance."""
-    circuit = create(app_client, auth)
-
-    response = app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    assert response.status_code == 201, response.text
-    workout = response.json()
-    assert workout["type"] == "HIIT"
-    assert workout["source"] == "cadence"
-    assert workout["date"] == today_local().isoformat()
-    assert workout["note"] == "Haut du corps"
-    assert [entry["exercise_name"] for entry in workout["exercises"]] == [
-        "Push-Ups Classic",
-        "Plank",
-    ]
-    assert "Push-Ups Classic" in dav.content_of(LOG_FILE)
-
-
-def test_each_round_counts_as_one_set(app_client: TestClient, auth: dict[str, str]) -> None:
-    """Quatre rounds, c'est quatre séries de chaque exercice — c'est ce qu'on a fait."""
-    circuit = create(app_client, auth)
-
-    response = app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    assert [entry["sets"] for entry in response.json()["exercises"]] == [4, 4]
-
-
-def test_a_timed_exercise_carries_the_sentinel_into_the_log(
-    app_client: TestClient, auth: dict[str, str]
-) -> None:
-    """`-1` dans `exercise_log.csv` aussi, et par un point d'entrée à part : desserrer la
-    borne `Reps` la desserrerait pour la saisie manuelle, où ce serait une faute de frappe
-    silencieuse dans un journal de charge."""
-    circuit = create(app_client, auth)
-
-    response = app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    assert [entry["reps"] for entry in response.json()["exercises"]] == [15, -1]
-
-
-def test_a_bodyweight_circuit_adds_no_tonnage(app_client: TestClient, auth: dict[str, str]) -> None:
-    """`weight_kg = 0` est le poids du corps, pas une absence. Le tonnage d'un tabata est
-    donc nul — ce qui est vrai. Ce qu'il apporte, ce sont ses séries par groupe."""
-    circuit = create(app_client, auth)
-
-    response = app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    assert response.json()["volume_kg"] == 0
-
-
-def test_the_muscle_groups_travel_all_the_way_to_the_log(
-    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
-) -> None:
-    """C'est la colonne qui relie les deux mondes : sans elle, tous les tabatas finiraient
-    dans « autre » et l'équilibre par groupe cesserait de vouloir dire quelque chose."""
-    circuit = create(app_client, auth)
-
-    app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    log = dav.content_of(LOG_FILE)
-    assert "pectoraux" in log
-    assert "abdos" in log
-
-
 def test_the_duration_is_the_one_confirmed_and_not_the_estimate(
     app_client: TestClient, auth: dict[str, str]
 ) -> None:
@@ -417,25 +337,6 @@ def test_a_completion_without_a_duration_is_refused(
     assert response.status_code == 422
 
 
-def test_the_exercises_join_the_catalogue_on_the_first_completion(
-    app_client: TestClient, auth: dict[str, str]
-) -> None:
-    """Sans ça le journal porterait un `exercise_id` vide, et « Progression des charges »
-    ignorerait ces exercices. Le catalogue ne bouge pas tant que rien n'est fait."""
-    circuit = create(app_client, auth)
-    assert app_client.get(f"{ACTIVITY}/exercises", headers=auth).json() == []
-
-    app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    catalogue = app_client.get(f"{ACTIVITY}/exercises", headers=auth).json()
-    assert {item["name"]: item["muscle_group"] for item in catalogue} == {
-        "Push-Ups Classic": "pectoraux",
-        "Plank": "abdos",
-    }
-
-
 def test_a_second_completion_reuses_the_catalogue_entry(
     app_client: TestClient, auth: dict[str, str]
 ) -> None:
@@ -448,51 +349,6 @@ def test_a_second_completion_reuses_the_catalogue_entry(
     app_client.post(f"{ACTIVITY}/circuits/{circuit['id']}/done", json=body, headers=auth)
 
     assert len(app_client.get(f"{ACTIVITY}/exercises", headers=auth).json()) == 2
-
-
-def test_an_existing_catalogue_entry_is_recognised_whatever_its_spelling(
-    app_client: TestClient, auth: dict[str, str]
-) -> None:
-    """`fold` ignore casse et accents — la même reconnaissance que la relecture d'une note
-    manuscrite, et pas une seconde règle inventée ici.
-
-    Le groupe déjà choisi n'est **pas** écrasé : le catalogue appartient à l'utilisateur,
-    un circuit n'est pas une autorité sur lui.
-    """
-    app_client.post(
-        f"{ACTIVITY}/exercises", json={"name": "PLANK", "muscle_group": "jambes"}, headers=auth
-    )
-    circuit = create(app_client, auth)
-
-    app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    catalogue = app_client.get(f"{ACTIVITY}/exercises", headers=auth).json()
-    assert {item["name"] for item in catalogue} == {"PLANK", "Push-Ups Classic"}
-    assert next(item for item in catalogue if item["name"] == "PLANK")["muscle_group"] == "jambes"
-
-
-def test_a_name_that_only_differs_by_a_missing_space_is_a_different_exercise(
-    app_client: TestClient, auth: dict[str, str]
-) -> None:
-    """`fold` n'est pas une distance d'édition : « push ups » et « Push-Ups » ne se
-    rejoignent pas, parce que le tiret disparaît sans laisser d'espace. C'est le
-    comportement de `notes.py` depuis toujours, et le reproduire vaut mieux qu'une seconde
-    règle de reconnaissance qui divergerait au premier cas limite."""
-    app_client.post(
-        f"{ACTIVITY}/exercises",
-        json={"name": "push ups classic", "muscle_group": "épaules"},
-        headers=auth,
-    )
-    circuit = create(app_client, auth)
-
-    app_client.post(
-        f"{ACTIVITY}/circuits/{circuit['id']}/done", json={"duration_min": 18}, headers=auth
-    )
-
-    names = {item["name"] for item in app_client.get(f"{ACTIVITY}/exercises", headers=auth).json()}
-    assert names == {"push ups classic", "Push-Ups Classic", "Plank"}
 
 
 # ── Relire un lien collé ──────────────────────────────
@@ -577,28 +433,6 @@ def test_orphan_exercise_lines_are_not_attached_to_an_unnamed_circuit(
 # ── Les noms proposés à la saisie ─────────────────────
 
 
-def test_the_users_own_exercises_come_first_with_their_group(
-    app_client: TestClient, auth: dict[str, str]
-) -> None:
-    """Le catalogue de Metric passe devant celui de Cadence, et la raison est un chiffre :
-    ce sont les seuls noms qui portent un **groupe musculaire**, donc les seuls qui font
-    qu'un tabata déclaré fait compte dans « groupes négligés » (**D2**)."""
-    app_client.post(
-        f"{ACTIVITY}/exercises",
-        json={"name": "Développé couché", "muscle_group": "pectoraux"},
-        headers=auth,
-    )
-
-    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises", headers=auth).json()
-
-    assert proposed[0] == {
-        "name": "Développé couché",
-        "muscle_group": "pectoraux",
-        "body_part": None,
-        "equipment": None,
-    }
-
-
 def test_the_cadence_catalogue_follows_with_its_body_part_and_equipment(
     app_client: TestClient, auth: dict[str, str]
 ) -> None:
@@ -612,24 +446,6 @@ def test_the_cadence_catalogue_follows_with_its_body_part_and_equipment(
         "body_part": "chest",
         "equipment": "body weight",
     }
-
-
-def test_a_name_shared_by_both_catalogues_appears_once(
-    app_client: TestClient, auth: dict[str, str]
-) -> None:
-    """Proposer les deux graphies laisserait choisir celle qui perd le groupe musculaire.
-    La reconnaissance passe par `fold`, celle du reste du domaine."""
-    app_client.post(
-        f"{ACTIVITY}/exercises", json={"name": "Burpee", "muscle_group": "abdos"}, headers=auth
-    )
-
-    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises?q=burpee", headers=auth).json()
-    burpees = [item for item in proposed if fold(item["name"]) == "burpee"]
-
-    assert len(burpees) == 1
-    # C'est la graphie de l'utilisateur qui gagne : elle seule porte un groupe musculaire,
-    # et c'est lui qui décide de ce qu'un tabata fait ajoute aux statistiques.
-    assert burpees[0]["muscle_group"] == "abdos"
 
 
 def test_the_search_never_serves_the_whole_catalogue(
@@ -664,3 +480,32 @@ def test_the_route_is_not_swallowed_by_the_row_id_one(
     response = app_client.get(f"{ACTIVITY}/circuits/exercises", headers=auth)
 
     assert response.status_code == 200, response.text
+
+
+def test_the_suggestions_come_from_the_frozen_cadence_catalogue(
+    app_client: TestClient, auth: dict[str, str]
+) -> None:
+    """**Une seule source depuis la phase 5.** Le catalogue de Metric a disparu avec la
+    musculation historique ; il ne reste que celui de Cadence, dont le nom exact décide de
+    la démonstration affichée pendant l'effort."""
+    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises?q=push-up", headers=auth).json()
+
+    assert proposed[0] == {
+        "name": "push-up",
+        "muscle_group": None,
+        "body_part": "chest",
+        "equipment": "body weight",
+    }
+
+
+def test_no_suggestion_carries_a_muscle_group(app_client: TestClient, auth: dict[str, str]) -> None:
+    """Le groupe musculaire reste **à choisir à la main**, exercice par exercice.
+
+    Le déduire de la zone du corps de Cadence serait une correspondance approximative :
+    `upper arms` recouvre biceps et triceps, qui ne comptent pas dans la même piste
+    d'assiduité — et c'est cette colonne qui décide de ce qu'un tabata apporte.
+    """
+    proposed = app_client.get(f"{ACTIVITY}/circuits/exercises?q=curl", headers=auth).json()
+
+    assert proposed
+    assert all(item["muscle_group"] is None for item in proposed)

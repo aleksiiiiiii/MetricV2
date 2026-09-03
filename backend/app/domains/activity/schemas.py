@@ -820,7 +820,6 @@ class ActivityOverview(BaseModel):
     week: WeekTotals
     days: list[DayVolume]
     weeks: list[WeekVolume]
-    muscles: list[MuscleVolume]
     neglected: list[NeglectedGroup]
     history: list[ActivityItem]
     total: int
@@ -1198,3 +1197,52 @@ class LoadDetail(BaseModel):
     sessions: list[LoadDay]
     #: Les circuits qui emploient cet exercice, par leur nom.
     circuits: list[str]
+    #: L'adresse du GIF de démonstration, servi par l'instance Cadence de l'utilisateur —
+    #: `null` quand il n'y a pas d'adresse de base, que l'instance ne répond pas, ou que le
+    #: nom n'a pas de correspondance exacte au catalogue.
+    #:
+    #: **Une adresse et non une image.** Metric ne relaie aucun octet de média : les GIF
+    #: appartiennent à Gym visual, et c'est le navigateur qui va les chercher là où ils sont
+    #: déjà servis. Les trois `null` se disent d'une seule façon à l'écran — pas de
+    #: démonstration — parce qu'ils n'appellent aucun geste différent.
+    demo_url: str | None = None
+
+
+# ── Séances tabata — ce qui a eu lieu ─────────────────
+
+
+class CircuitSessionSet(BaseModel):
+    """Une série d'un exercice, dans une séance tabata déclarée faite."""
+
+    exercise_name: str
+    muscle_group: str
+    sets: int
+    #: `null` sur un exercice **au temps**. La sentinelle `-1` du fichier n'arrive jamais
+    #: jusqu'ici : c'est une convention de stockage, pas une valeur à interpréter à
+    #: l'écran.
+    reps: int | None = None
+
+
+class CircuitSession(BaseModel):
+    """Un circuit déclaré fait, tel que le client le reçoit.
+
+    **Elle remplace `Workout` dans la réponse de « je l'ai fait ».** Une séance de
+    musculation manuelle n'existe plus ; ce qu'un tabata produit est une séance de
+    circuit, et lui rendre l'ancien schéma obligerait l'écran à lire un `type` et un
+    `workout_id` qui ne désignent plus rien.
+    """
+
+    id: int
+    token: str
+    session_id: str
+    circuit_id: str
+    #: Le jour du **serveur**. L'écran ne date rien (**D6**).
+    date: date
+    #: Le nom du circuit **au moment où il a été fait**, dupliqué : supprimer le patron
+    #: doit laisser l'historique lisible (`ACT-06`).
+    name: str
+    rounds: int
+    duration_min: float
+    rpe: int | None = None
+    source: str
+    sets: list[CircuitSessionSet]

@@ -1,14 +1,18 @@
 /**
- * L'historique fusionné des courses et des séances.
+ * L'historique fusionné des courses et des séances tabata.
  *
  * Ce n'était pas une liste mais un tableau de six colonnes — illisible à 390 px, et une
  * ligne de tableau ne se tire pas au doigt. Les colonnes reviennent en grille dès qu'il y
  * a la place : c'est la même structure qui s'aligne, pas un second rendu.
  *
+ * **C'est ici que « qu'est-ce que j'ai fait la semaine dernière » se lit.** La musculation
+ * saisie série par série a disparu avec son journal ; ce qui reste sur cet écran est cette
+ * liste, et elle est devenue la seule réponse à la question. Le §8 de
+ * `docs/refonte-activite.md` laissait le choix entre la supprimer et la rebrancher : elle
+ * est rebranchée.
+ *
  * **Chaque ligne dit ce que sa suppression emporte.** Supprimer une séance purge ses
- * séries (`ACT-04`) ; l'état armé, lui, dit « Confirmer ? » avec les mêmes mots qu'elle
- * en emporte zéro ou douze. Le compte vient du serveur et se lit **avant** d'armer — ce
- * qui vaut mieux qu'un libellé plus long dans un panneau de 96 px.
+ * séries (`ACT-04`), et l'état armé le dit avant que le second appui ne l'exécute.
  */
 
 import { Card, Chip, Empty, SwipeRow } from '@/components/ui';
@@ -18,12 +22,18 @@ import { duration, km, pace, plural, shortDate } from '@/lib/format';
 
 import styles from '../Activity.module.css';
 
-/** Le nom accessible d'une suppression doit désigner la ligne **et** son coût. */
+/**
+ * Le nom accessible d'une suppression doit désigner la ligne **et** son coût.
+ *
+ * Le nombre de séries n'y figure pas, et c'est délibéré : la réponse du serveur porte les
+ * **rounds** de la séance, pas le compte de ses lignes de série. Écrire « et ses 4
+ * séries » là où quatre est un nombre de tours serait une valeur inventée — le genre que
+ * l'écran affiche sans broncher et que personne ne vient corriger.
+ */
 function removalLabel(row: ActivityItem): string {
-  const what = row.kind === 'run' ? 'la course' : 'la séance';
   const day = shortDate(row.date);
-  if (row.kind !== 'workout' || row.entries === 0) return `Supprimer ${what} du ${day}`;
-  return `Supprimer ${what} du ${day} et ses ${String(row.entries)} ${plural(row.entries, 'série')}`;
+  if (row.kind === 'run') return `Supprimer la course du ${day}`;
+  return `Supprimer la séance « ${row.label} » du ${day} et ses séries`;
 }
 
 function HistoryRow({
@@ -31,14 +41,12 @@ function HistoryRow({
   busy,
   onOpen,
   onEdit,
-  onDuplicate,
   onRemove,
 }: {
   row: ActivityItem;
   busy: boolean;
   onOpen: () => void;
   onEdit: () => void;
-  onDuplicate: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -52,10 +60,12 @@ function HistoryRow({
           {row.kind === 'run' && row.label.toLowerCase() !== 'course' && (
             <span className={styles.entryDetail}> · course</span>
           )}
+          {/* Des **rounds**, et non des séries : c'est ce que la séance a joué, et c'est
+              le seul des deux nombres que la réponse porte. */}
           {row.kind === 'workout' && row.entries > 0 && (
             <span className={styles.entryDetail}>
               {' '}
-              · {row.entries} {plural(row.entries, 'série')}
+              · {row.entries} {plural(row.entries, 'round')}
             </span>
           )}
         </span>
@@ -75,35 +85,25 @@ function HistoryRow({
           <span className={cx(styles.histNum, styles.histNone)}>—</span>
         )}
 
+        {/* **Une séance n'a plus ni « ouvrir » ni « corriger ».** Il n'y a plus de journal
+            à ouvrir en place, et le serveur n'a aucune route pour la modifier : elle dit
+            ce que Cadence a joué. Ce qui se corrige, c'est le circuit qui la produit, sur
+            `/activite/seances`. Une puce qui ouvrirait une feuille vide serait pire que
+            son absence. */}
         <div className={styles.histActions}>
-          {row.kind === 'workout' && (
-            <Chip aria-label={`Ouvrir la séance du ${shortDate(row.date)}`} onClick={onOpen}>
-              ouvrir
-            </Chip>
-          )}
-          {/* « détail » et non « ouvrir » : une course mène ailleurs qu'une séance — à sa
-              page de paliers, pas au journal de la ligne. Le mot dit où l'on va. */}
           {row.kind === 'run' && (
-            <Chip
-              aria-label={`Voir le détail de la course du ${shortDate(row.date)}`}
-              onClick={onOpen}
-            >
-              détail
-            </Chip>
-          )}
-          <Chip
-            aria-label={`Corriger ${row.kind === 'run' ? 'la course' : 'la séance'} du ${shortDate(row.date)}`}
-            onClick={onEdit}
-          >
-            corriger
-          </Chip>
-          {row.kind === 'workout' && (
-            <Chip
-              aria-label={`Dupliquer la séance du ${shortDate(row.date)}`}
-              onClick={onDuplicate}
-            >
-              dupliquer
-            </Chip>
+            <>
+              {/* « détail » et non « ouvrir » : une course mène à sa page de paliers. */}
+              <Chip
+                aria-label={`Voir le détail de la course du ${shortDate(row.date)}`}
+                onClick={onOpen}
+              >
+                détail
+              </Chip>
+              <Chip aria-label={`Corriger la course du ${shortDate(row.date)}`} onClick={onEdit}>
+                corriger
+              </Chip>
+            </>
           )}
         </div>
       </div>
@@ -117,7 +117,6 @@ export function History({
   removing,
   onOpen,
   onEdit,
-  onDuplicate,
   onRemove,
 }: {
   data: ActivityOverview | undefined;
@@ -125,7 +124,6 @@ export function History({
   removing: boolean;
   onOpen: (row: ActivityItem) => void;
   onEdit: (row: ActivityItem) => void;
-  onDuplicate: (row: ActivityItem) => void;
   onRemove: (row: ActivityItem) => void;
 }) {
   return (
@@ -148,9 +146,6 @@ export function History({
                 }}
                 onEdit={() => {
                   onEdit(row);
-                }}
-                onDuplicate={() => {
-                  onDuplicate(row);
                 }}
                 onRemove={() => {
                   onRemove(row);

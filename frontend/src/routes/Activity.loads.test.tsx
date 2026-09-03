@@ -14,7 +14,7 @@
  */
 
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -97,6 +97,7 @@ function stub(loads: unknown[] = [FENTES, ROWING, GAINAGE], detail?: unknown) {
             ],
             sessions: SESSIONS,
             circuits: ['Haut du corps', 'Full body'],
+            demo_url: 'https://ct.exemple.fr/exercise-db/gifs/0025-AbCdEf.gif?key=274',
           },
         ),
       );
@@ -338,6 +339,68 @@ describe('charges des exercices de tabata', () => {
     const row = await screen.findByRole('img', { name: /30 derniers jours/ });
     expect(row).toBeInTheDocument();
     expect(row.children).toHaveLength(30);
+  });
+
+  it('montre la démonstration servie par l’instance Cadence', async () => {
+    // Le nom du catalogue est anglais : l'image dit de quel mouvement on parle, ce que
+    // « Rowing » ne dit pas à tout le monde.
+    stub([ROWING]);
+    renderLoads();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Rowing' }));
+
+    const demo = await screen.findByRole('img', { name: 'Démonstration de Rowing' });
+    expect(demo).toHaveAttribute(
+      'src',
+      'https://ct.exemple.fr/exercise-db/gifs/0025-AbCdEf.gif?key=274',
+    );
+  });
+
+  it('n’écrit rien à la place quand il n’y a pas de démonstration', async () => {
+    // Trois raisons possibles — pas d'adresse réglée, instance éteinte, nom sans
+    // correspondance — et aucune n'appelle un geste. Un encart « indisponible » ferait
+    // passer pour une panne l'état normal d'un exercice écrit à la main.
+    stub([ROWING], {
+      name: 'Rowing',
+      state: 'weighted',
+      weight_kg: 12,
+      history: [],
+      sessions: SESSIONS,
+      circuits: ['Haut du corps'],
+      demo_url: null,
+    });
+    renderLoads();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Rowing' }));
+    await screen.findByText('12 kg');
+
+    expect(screen.queryByRole('img', { name: /Démonstration/ })).toBeNull();
+    expect(screen.queryByText(/démonstration/i)).toBeNull();
+  });
+
+  it('ne peint pas deux fois la même graduation sur une charge inchangée', async () => {
+    // Vu dans la console de l'application : « Encountered two children with the same key,
+    // `8` ». Les deux bornes du domaine sont le même nombre dès que la charge n'a pas
+    // bougé — le cas le plus courant de cette page — et la courbe se collait alors au bord
+    // inférieur du cadre, où elle se lit comme une chute vers zéro.
+    stub([ROWING], {
+      name: 'Rowing',
+      state: 'weighted',
+      weight_kg: 8,
+      history: [
+        { date: '2026-07-02', weight_kg: 8 },
+        { date: '2026-08-11', weight_kg: 8 },
+      ],
+      sessions: SESSIONS,
+      circuits: ['Haut du corps'],
+      demo_url: null,
+    });
+    renderLoads();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Rowing' }));
+    const chart = await screen.findByRole('img', { name: /Charge/ });
+
+    expect(within(chart).getAllByText('8 kg')).toHaveLength(1);
   });
 
   it('ne trace pas de courbe sur un seul point', async () => {

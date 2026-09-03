@@ -123,66 +123,6 @@ class RunSplitRow(CsvModel):
     partial: bool = False
 
 
-class WorkoutRow(CsvModel):
-    """Une séance. `activity/workouts.csv`.
-
-    `id` est un identifiant **stable** et non la position dans le fichier : les exercices
-    s'y rattachent (`ACT-03`), et une suppression de ligne décalerait tous les index.
-    """
-
-    date: date
-    type: str
-    duration_min: float
-    calories: int | None = None
-    #: Effort perçu 1–10 (`ACT-18`), transmis à l'IA comme signal de charge et de fatigue.
-    rpe: int | None = None
-    note: str | None = None
-    source: str = "manual"
-    id: str = ""
-
-
-class ExerciseRow(CsvModel):
-    """Un exercice du catalogue. `activity/exercises.csv`.
-
-    Colonnes toutes optionnelles, comme pour tout fichier que l'utilisateur peut ouvrir
-    dans un tableur : une cellule vide coûte sa ligne, jamais le fichier (`STO-04`).
-    Le journal des performances, lui, reste strict — c'est une mesure.
-    """
-
-    id: str = ""
-    name: str = ""
-    muscle_group: str = ""
-    #: Les autres façons d'écrire cet exercice, séparées par des points-virgules —
-    #: `dev couché;développé couché barre`. C'est ce qui permet de reconnaître une note
-    #: manuscrite au deuxième passage (`C07`).
-    #:
-    #: **Une colonne et non un fichier à part**, et la raison est une conséquence : retirer
-    #: un exercice doit emporter ses alias. Un `exercise_aliases.csv` laisserait des
-    #: orphelins, et un nom retiré du catalogue continuerait d'être reconnu à la saisie.
-    #:
-    #: Le point-virgule et non la virgule : c'est un CSV, et le lecteur de `csv` de la
-    #: bibliothèque standard couperait la cellule au mauvais endroit sans se plaindre.
-    aliases: str = ""
-
-
-class ExerciseLogRow(CsvModel):
-    """Une performance. `activity/exercise_log.csv`.
-
-    `weight_kg = 0` signifie **poids du corps** (`ACT-07`) : c'est une valeur légitime,
-    pas une absence de donnée.
-    """
-
-    workout_id: str
-    date: date
-    exercise_id: str
-    exercise_name: str
-    muscle_group: str
-    weight_kg: float
-    sets: int
-    reps: int
-    note: str | None = None
-
-
 class CircuitRow(CsvModel):
     """Une séance **modèle**, ouverte dans Cadence Tabata. `activity/circuits.csv`.
 

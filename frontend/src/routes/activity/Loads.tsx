@@ -423,6 +423,38 @@ function LoadSheet({ name, onClose }: { name: string | null; onClose: () => void
   );
 }
 
+/**
+ * La démonstration de l'exercice, quand l'instance de l'utilisateur en sert une.
+ *
+ * **Rien à la place quand il n'y en a pas.** Le serveur rend `null` pour trois raisons —
+ * pas d'adresse réglée, instance injoignable, nom sans correspondance — et aucune
+ * n'appelle un geste : un encart « démonstration indisponible » ferait passer pour une
+ * panne l'état normal d'un exercice écrit à la main.
+ *
+ * `onError` couvre le quatrième cas, celui que le serveur ne peut pas voir : l'adresse
+ * était bonne à la réponse et l'instance s'est éteinte entre-temps. Le cadre vide qui
+ * resterait sinon est le seul de tous ces cas qui ressemble à un bug.
+ */
+function Demo({ url, name }: { url: string; name: string }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return null;
+
+  return (
+    <img
+      className={styles.demo}
+      src={url}
+      alt={`Démonstration de ${name}`}
+      // Le navigateur va la chercher sur une autre origine : sans cela, il y enverrait
+      // l'adresse de Metric en `Referer`.
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onError={() => {
+        setBroken(true);
+      }}
+    />
+  );
+}
+
 function LoadDetailBody({ detail }: { detail: LoadDetail }) {
   /**
    * Les points de la courbe, sans ceux qui n'en sont pas.
@@ -436,6 +468,11 @@ function LoadDetailBody({ detail }: { detail: LoadDetail }) {
 
   return (
     <>
+      {/* En tête : elle dit **de quel mouvement on parle**, ce qu'un nom anglais du
+          catalogue ne dit pas toujours. Sous la charge, elle aurait été un ornement en bas
+          de feuille ; au-dessus, elle identifie ce qu'on est en train de lire. */}
+      {detail.demo_url ? <Demo url={detail.demo_url} name={detail.name} /> : null}
+
       {/* Le chiffre qu'on vient chercher, écrit. Il se lisait sur l'axe de la courbe, ce
           qui demande de savoir lequel des cinq points est le dernier — et ne se lit pas du
           tout quand il n'y a pas de courbe. */}

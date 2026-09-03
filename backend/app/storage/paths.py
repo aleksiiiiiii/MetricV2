@@ -23,9 +23,6 @@ RUNS = "activity/runs.csv"
 #: `exercise_log.csv`, pour la même raison.
 RUN_SPLITS = "activity/run_splits.csv"
 
-WORKOUTS = "activity/workouts.csv"
-EXERCISES = "activity/exercises.csv"
-EXERCISE_LOG = "activity/exercise_log.csv"
 
 #: Les séances **modèles** ouvertes dans Cadence Tabata (**D2**), et leurs exercices.
 #:

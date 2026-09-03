@@ -57,9 +57,7 @@ if TYPE_CHECKING:  # pragma: no cover - annotations seulement, jamais exécuté
     # rouvrir le cycle.
     from app.domains.activity.schemas import (
         CircuitPayload,
-        ExercisePayload,
         RunPayload,
-        WorkoutPayload,
     )
     from app.domains.body.schemas import WeightPayload
     from app.domains.hydration.schemas import IntakePayload
@@ -360,30 +358,6 @@ async def _add_run(store: FileStore, payload: RunPayload) -> Outcome:
     )
 
 
-async def _add_workout(store: FileStore, payload: WorkoutPayload) -> Outcome:
-    from app.domains.activity.service import (
-        WorkoutService,
-    )
-
-    workout = await WorkoutService(store).create(payload, source=SOURCE)
-    return Outcome(
-        summary=f"Séance « {workout.type} » notée le {workout.date:%d/%m/%Y}.",
-        undo=Undo("activity/workouts", workout.id, workout.token),
-    )
-
-
-async def _create_exercise(store: FileStore, payload: ExercisePayload) -> Outcome:
-    from app.domains.activity.service import (
-        ExerciseService,
-    )
-
-    exercise = await ExerciseService(store).create(payload)
-    return Outcome(
-        summary=f"Exercice « {exercise.name} » ajouté au catalogue ({exercise.muscle_group}).",
-        undo=Undo("activity/exercises", exercise.id, exercise.token),
-    )
-
-
 async def _create_circuit(store: FileStore, payload: CircuitPayload) -> Outcome:
     """Enregistre une séance Cadence, et rend son adresse.
 
@@ -458,15 +432,6 @@ async def _delete_run(store: FileStore, payload: DeleteByRowArgs) -> Outcome:
     return Outcome(summary="Course supprimée.")
 
 
-async def _delete_workout(store: FileStore, payload: DeleteByRowArgs) -> Outcome:
-    from app.domains.activity.service import (
-        WorkoutService,
-    )
-
-    await WorkoutService(store).delete(payload.row_id, payload.token)
-    return Outcome(summary="Séance supprimée.")
-
-
 # ── La table ──────────────────────────────────────────
 
 
@@ -484,9 +449,7 @@ def catalogue() -> dict[str, ActionSpec]:
     """
     from app.domains.activity.schemas import (
         CircuitPayload,
-        ExercisePayload,
         RunPayload,
-        WorkoutPayload,
     )
     from app.domains.body.schemas import WeightPayload
     from app.domains.hydration.schemas import IntakePayload
@@ -531,20 +494,6 @@ def catalogue() -> dict[str, ActionSpec]:
             _add_run,
         ),
         _spec(
-            "workout.add",
-            Level.ADD,
-            "noter une séance",
-            WorkoutPayload,
-            _add_workout,
-        ),
-        _spec(
-            "exercise.create",
-            Level.ADD,
-            "ajouter un exercice au catalogue",
-            ExercisePayload,
-            _create_exercise,
-        ),
-        _spec(
             "circuit.create",
             Level.ADD,
             "créer une séance Cadence, ouvrable d'un appui. Chaque exercice porte "
@@ -585,13 +534,6 @@ def catalogue() -> dict[str, ActionSpec]:
             "supprimer une course",
             DeleteByRowArgs,
             _delete_run,
-        ),
-        _spec(
-            "workout.delete",
-            Level.CHANGE,
-            "supprimer une séance",
-            DeleteByRowArgs,
-            _delete_workout,
         ),
         _spec(
             "plan.delete",

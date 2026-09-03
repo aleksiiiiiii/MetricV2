@@ -34,560 +34,44 @@
  * parcours. C'est `ActivitySheet` qui s'en charge, inchangée.
  */
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
-import {
-  Badge,
-  Button,
-  Chip,
-  ChipStrip,
-  Field,
-  LogButton,
-  Sheet,
-  SheetRow,
-  Stepper,
-} from '@/components/ui';
-import {
-  activityApi,
-  type Exercise,
-  type ExerciseEntryPayload,
-  type Workout,
-} from '@/features/activity/api';
+import { Button, Field, Sheet, Stepper } from '@/components/ui';
+import { activityApi } from '@/features/activity/api';
 import { useAiStatus } from '@/features/ai/useAiStatus';
 import { importsApi, type AppleDraft } from '@/features/imports/api';
 import { ApiError } from '@/lib/api';
-import { cx } from '@/lib/cx';
-import { num, plural } from '@/lib/format';
 import { fileSize, reduceImage } from '@/lib/image';
-import { keys } from '@/lib/query';
 import { useToast } from '@/lib/toast';
 
 import styles from '../Activity.module.css';
-import { NotesStep } from './NotesStep';
-import { fold, useInvalidateActivity } from './shared';
-
-/** Ce qu'un exercice ajouté à la séance porte, avant l'envoi. */
-export interface DraftEntry extends ExerciseEntryPayload {
-  /** Pour l'afficher sans relire le catalogue. */
-  name: string;
-  muscle_group: string;
-}
-
-type Kind = 'workout' | 'run';
-
-/** Exercices proposés d'emblée, avant toute recherche — les plus récents. */
-const SUGGESTED = 6;
-const MATCHES = 8;
+import { useInvalidateActivity } from './shared';
 
 export function NewActivitySheet({
   open,
   today,
   onClose,
-  onSaved,
 }: {
   open: boolean;
   today: string;
   onClose: () => void;
-  /** Rend la séance quand il y en a une : le journal s'ouvre dessus. */
-  onSaved: (workout: Workout | null) => void;
 }) {
-  const [kind, setKind] = useState<Kind | null>(null);
   const [step, setStep] = useState(1);
 
-  function reset(): void {
-    setKind(null);
-    setStep(1);
-  }
-
   function close(): void {
-    reset();
+    setStep(1);
     onClose();
   }
 
   return (
-    <Sheet
-      open={open}
-      onClose={close}
-      title={kind === null ? 'Enregistrer une activité' : kind === 'run' ? 'Course' : 'Séance'}
-      lede={
-        kind === null
-          ? 'De quoi s’agit-il ? Rien n’est enregistré avant ta validation.'
-          : `Étape ${String(step)} sur 2`
-      }
-    >
-      {kind === null ? (
-        <div className={styles.modes}>
-          <SheetRow
-            label="Séance"
-            hint="musculation, yoga, vélo…"
-            aria-label="Séance"
-            onClick={() => {
-              setKind('workout');
-            }}
-          />
-          <SheetRow
-            label="Course"
-            hint="temps, allure, distance"
-            aria-label="Course"
-            onClick={() => {
-              setKind('run');
-            }}
-          />
-        </div>
-      ) : kind === 'workout' ? (
-        <WorkoutWizard
-          today={today}
-          step={step}
-          onStep={setStep}
-          onBack={reset}
-          onSaved={onSaved}
-          onDone={close}
-        />
-      ) : (
-        <RunWizard
-          today={today}
-          step={step}
-          onStep={setStep}
-          onBack={reset}
-          onSaved={() => {
-            onSaved(null);
-          }}
-          onDone={close}
-        />
-      )}
+    <Sheet open={open} onClose={close} title="Course" lede={`Étape ${String(step)} sur 2`}>
+      {/* **L'étape 0 a disparu avec la séance.** Elle demandait « Course ou Séance ? » ;
+          il ne reste qu'une nature à saisir à la main, et poser une question dont la
+          réponse est déjà connue est un appui de plus pour rien. « Retour », à la
+          première étape, ferme donc la feuille au lieu de remonter à ce choix. */}
+      <RunWizard today={today} step={step} onStep={setStep} onBack={close} onDone={close} />
     </Sheet>
-  );
-}
-
-// ── Parcours Séance ───────────────────────────────────
-
-function WorkoutWizard({
-  today,
-  step,
-  onStep,
-  onBack,
-  onSaved,
-  onDone,
-}: {
-  today: string;
-  step: number;
-  onStep: (step: number) => void;
-  onBack: () => void;
-  onSaved: (workout: Workout) => void;
-  onDone: () => void;
-}) {
-  const invalidate = useInvalidateActivity();
-  const { notify } = useToast();
-  const { data: types } = useQuery({ queryKey: keys.activity.types(), queryFn: activityApi.types });
-
-  const [fields, setFields] = useState({
-    date: today,
-    type: 'musculation',
-    duration_min: '',
-    rpe: '',
-    note: '',
-  });
-  const [entries, setEntries] = useState<DraftEntry[]>([]);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  const save = useMutation({
-    mutationFn: () =>
-      activityApi.createWorkout({
-        date: fields.date,
-        type: fields.type,
-        duration_min: fields.duration_min,
-        rpe: fields.rpe ? Number(fields.rpe) : null,
-        note: fields.note || null,
-        exercises: entries.map((entry) => ({
-          exercise_id: entry.exercise_id,
-          weight_kg: entry.weight_kg,
-          sets: entry.sets,
-          reps: entry.reps,
-        })),
-      }),
-    onSuccess: (workout) => {
-      invalidate();
-      notify(
-        entries.length === 0
-          ? 'Séance enregistrée. Ajoute tes exercices au journal.'
-          : `Séance enregistrée avec ${String(entries.length)} ${plural(entries.length, 'exercice')}.`,
-        'effort',
-      );
-      onSaved(workout);
-      onDone();
-    },
-    onError: (caught: unknown) => {
-      setError(caught instanceof ApiError ? caught : null);
-    },
-  });
-
-  const set = (name: keyof typeof fields) => (event: { target: { value: string } }) => {
-    setFields((current) => ({ ...current, [name]: event.target.value }));
-  };
-
-  if (step === 1) {
-    return (
-      <div className={styles.form}>
-        {error !== null && (
-          <p className={styles.error} role="alert">
-            {error.message}
-          </p>
-        )}
-
-        <div className={styles.pair}>
-          <Field
-            label="Date de séance"
-            type="date"
-            value={fields.date}
-            max={today}
-            error={error?.messageFor('date')}
-            onChange={set('date')}
-          />
-          <Field
-            label="Durée de séance"
-            placeholder="1h15"
-            hint="approximative : elle se corrige à la fin"
-            value={fields.duration_min}
-            error={error?.messageFor('duration_min')}
-            onChange={set('duration_min')}
-          />
-        </div>
-
-        {/* Le champ **puis** ses suggestions : une bande de pastilles posée avant un
-            champ nommé « Type » se lisait comme un contrôle sans rapport avec lui. Le
-            type reste libre (`ACT-03`) — les sept valeurs abrègent, elles ne contraignent
-            pas. */}
-        <Field
-          label="Type de séance"
-          placeholder="escalade…"
-          value={fields.type}
-          error={error?.messageFor('type')}
-          onChange={set('type')}
-        />
-        <ChipStrip label="Types proposés">
-          {(types ?? []).map((type) => (
-            <Chip
-              key={type}
-              selected={fields.type === type}
-              onClick={() => {
-                setFields((current) => ({ ...current, type }));
-              }}
-            >
-              {type}
-            </Chip>
-          ))}
-        </ChipStrip>
-
-        <Field
-          label="Effort perçu (1–10)"
-          inputMode="numeric"
-          placeholder="8"
-          value={fields.rpe}
-          error={error?.messageFor('rpe')}
-          onChange={set('rpe')}
-        />
-
-        <div className={styles.sheetCommit}>
-          <Button
-            variant="primary"
-            className={styles.commit}
-            disabled={fields.duration_min === '' || fields.type.trim() === ''}
-            onClick={() => {
-              onStep(2);
-            }}
-          >
-            Suivant
-          </Button>
-          <Button variant="quiet" onClick={onBack}>
-            Retour
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.form}>
-      {error !== null && (
-        <p className={styles.error} role="alert">
-          {error.message}
-        </p>
-      )}
-
-      <ExercisePicker
-        entries={entries}
-        onAdd={(entry) => {
-          setEntries((current) => [...current, entry]);
-        }}
-        onRemove={(position) => {
-          setEntries((current) => current.filter((_item, index) => index !== position));
-        }}
-      />
-
-      <div className={styles.sheetCommit}>
-        <Button
-          variant="primary"
-          className={styles.commit}
-          busy={save.isPending}
-          onClick={() => {
-            save.mutate();
-          }}
-        >
-          {entries.length === 0
-            ? 'Enregistrer sans exercice'
-            : `Enregistrer la séance (${String(entries.length)})`}
-        </Button>
-        <Button
-          variant="quiet"
-          disabled={save.isPending}
-          onClick={() => {
-            onStep(1);
-          }}
-        >
-          Retour
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ── L'étape 2 : chercher, puis chiffrer ───────────────
-
-/**
- * La recherche dans le catalogue, et la saisie qui la suit.
- *
- * **Pas de seconde popup.** Appuyer sur un exercice le déplie à sa place, avec ses trois
- * pas-à-pas et son bouton. Deux surfaces modales empilées à 360 px sont une impasse : on
- * ne sait plus laquelle se ferme, et la seconde recouvre la première.
- */
-function ExercisePicker({
-  entries,
-  onAdd,
-  onRemove,
-}: {
-  entries: DraftEntry[];
-  onAdd: (entry: DraftEntry) => void;
-  onRemove: (position: number) => void;
-}) {
-  const ai = useAiStatus();
-  const { data: catalogue } = useQuery({
-    queryKey: keys.activity.exercises(),
-    queryFn: activityApi.exercises,
-  });
-
-  const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState<Exercise | null>(null);
-  const [notes, setNotes] = useState(false);
-  const [form, setForm] = useState({ weight_kg: '', sets: '3', reps: '8' });
-
-  const formRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (picked === null) return;
-    formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-  }, [picked]);
-
-  const all = catalogue ?? [];
-  const asked = fold(query.trim());
-  const matched =
-    asked === ''
-      ? [...all].sort((a, b) => (b.last_date ?? '').localeCompare(a.last_date ?? ''))
-      : all.filter(
-          (item) => fold(item.name).includes(asked) || fold(item.muscle_group).includes(asked),
-        );
-  const shown = matched.slice(0, asked === '' ? SUGGESTED : MATCHES);
-  const hidden = matched.length - shown.length;
-
-  function add(): void {
-    if (picked === null) return;
-    onAdd({
-      exercise_id: picked.exercise_id,
-      name: picked.name,
-      muscle_group: picked.muscle_group,
-      weight_kg: form.weight_kg,
-      sets: Number(form.sets.replace(',', '.')) || 1,
-      reps: Number(form.reps.replace(',', '.')) || 1,
-    });
-    setPicked(null);
-    setForm({ weight_kg: '', sets: '3', reps: '8' });
-    setQuery('');
-  }
-
-  if (notes) {
-    return (
-      <NotesStep
-        catalogue={all}
-        onCancel={() => {
-          setNotes(false);
-        }}
-        onAccepted={(lines) => {
-          for (const line of lines) onAdd(line);
-          setNotes(false);
-        }}
-      />
-    );
-  }
-
-  return (
-    <>
-      {entries.length > 0 && (
-        <div className={styles.entries}>
-          <p className={styles.pickLabel}>
-            {entries.length} {plural(entries.length, 'exercice')} {plural(entries.length, 'ajouté')}
-          </p>
-          {entries.map((entry, position) => (
-            <div className={styles.draftRow} key={`${entry.exercise_id}-${String(position)}`}>
-              <span>
-                {entry.name}
-                <span className={styles.entryDetail}>
-                  {' · '}
-                  {entry.weight_kg === '' || entry.weight_kg === '0'
-                    ? 'poids du corps'
-                    : `${entry.weight_kg} kg`}
-                  {' · '}
-                  {entry.sets}×{entry.reps}
-                </span>
-              </span>
-              <Chip
-                aria-label={`Retirer ${entry.name} de la séance`}
-                onClick={() => {
-                  onRemove(position);
-                }}
-              >
-                Retirer
-              </Chip>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Les deux entrées de C07, au niveau où le ticket les place : dans l'étape 2.
-
-          Un libellé **court**. « Coller mes notes ou photographier » faisait une pastille
-          aussi large que la feuille, collée à ses deux bords — elle se lisait comme un
-          champ, pas comme une cible. C'est le même défaut que « Cet exercice n'est pas
-          dans la liste ? » avait produit, et la même correction : nommer l'action. */}
-      {ai.enabled && (
-        <div className={styles.missing}>
-          <Chip
-            aria-label="Saisir la séance depuis des notes ou une photo"
-            onClick={() => {
-              setNotes(true);
-            }}
-          >
-            Depuis mes notes
-          </Chip>
-        </div>
-      )}
-
-      <Field
-        label="Chercher un exercice"
-        type="search"
-        placeholder="nom ou groupe musculaire…"
-        value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
-        }}
-      />
-
-      <div className={styles.pickList} role="group" aria-label="Exercices proposés">
-        {shown.map((item) => (
-          <LogButton
-            key={item.exercise_id}
-            label={item.name}
-            hint={
-              item.last_weight_kg == null
-                ? item.muscle_group
-                : item.last_weight_kg === 0
-                  ? 'poids du corps'
-                  : `${num(item.last_weight_kg, 1)} kg`
-            }
-            aria-pressed={picked?.exercise_id === item.exercise_id}
-            className={cx(picked?.exercise_id === item.exercise_id && styles.pickOn)}
-            onClick={() => {
-              setPicked(item);
-              // Les séries et réps de la dernière fois : des valeurs **mesurées**, que le
-              // catalogue rend (`ACT-08`). La charge reste vide, c'est elle qui progresse.
-              setForm({
-                weight_kg: '',
-                sets: item.last_sets == null ? '3' : String(item.last_sets),
-                reps: item.last_reps == null ? '8' : String(item.last_reps),
-              });
-            }}
-          />
-        ))}
-      </div>
-
-      {shown.length === 0 ? (
-        <span className={styles.empty}>
-          {all.length === 0
-            ? 'catalogue vide — déclare un exercice depuis /activite/catalogue'
-            : 'aucun exercice ne correspond'}
-        </span>
-      ) : (
-        hidden > 0 && (
-          <span className={styles.empty}>
-            {hidden} {plural(hidden, 'autre')} au catalogue
-            {asked === '' ? ' — cherche par nom ou groupe' : ' — précise ta recherche'}
-          </span>
-        )
-      )}
-
-      {/* La saisie se déplie **à la place** de la ligne choisie, sans empiler une seconde
-          surface modale par-dessus la feuille. */}
-      {picked !== null && (
-        <div className={styles.draftForm} ref={formRef}>
-          <p className={styles.pickLabel}>
-            {picked.name} <Badge tone="signal">{picked.muscle_group}</Badge>
-          </p>
-          <div className={styles.logGrid}>
-            <Stepper
-              label="Charge (kg)"
-              value={form.weight_kg}
-              onChange={(value) => {
-                setForm((current) => ({ ...current, weight_kg: value }));
-              }}
-              step={2.5}
-              min={0}
-              placeholder="0 = poids du corps"
-            />
-            <Stepper
-              label="Séries"
-              inputMode="numeric"
-              value={form.sets}
-              onChange={(value) => {
-                setForm((current) => ({ ...current, sets: value }));
-              }}
-              min={1}
-              max={20}
-            />
-            <Stepper
-              label="Réps"
-              inputMode="numeric"
-              value={form.reps}
-              onChange={(value) => {
-                setForm((current) => ({ ...current, reps: value }));
-              }}
-              min={1}
-              max={50}
-            />
-          </div>
-          <div className={styles.sheetCommit}>
-            <Button variant="primary" className={styles.commit} onClick={add}>
-              Ajouter à la séance
-            </Button>
-            <Button
-              variant="quiet"
-              onClick={() => {
-                setPicked(null);
-              }}
-            >
-              Annuler
-            </Button>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -609,14 +93,12 @@ function RunWizard({
   step,
   onStep,
   onBack,
-  onSaved,
   onDone,
 }: {
   today: string;
   step: number;
   onStep: (step: number) => void;
   onBack: () => void;
-  onSaved: () => void;
   onDone: () => void;
 }) {
   const invalidate = useInvalidateActivity();
@@ -660,7 +142,6 @@ function RunWizard({
     onSuccess: () => {
       invalidate();
       notify('Course enregistrée.', 'effort');
-      onSaved();
       onDone();
     },
     onError: (caught: unknown) => {

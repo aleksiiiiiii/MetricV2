@@ -154,6 +154,19 @@ que sous leurs conditions. Les **données** — noms, zones, matériel, cibles �
 licence MIT, et ce sont les seules qu'on fige. Le fichier porte une clé `"license"` qui le
 dit, et le script la réécrit à chaque génération.
 
+> **Suite (3 septembre 2026) — la démonstration s'affiche quand même.** Le champ `f` reste
+> hors du dépôt ; [`exercise_media.py`](../backend/app/domains/activity/exercise_media.py)
+> le **demande à l'instance de l'utilisateur** (`<base>/exercise-db/catalog.json`), au
+> moment d'ouvrir une feuille de charge, et rend une adresse que le navigateur va chercher
+> là-bas. Aucun octet de média ne transite par Metric, et rien n'est écrit dans le dépôt :
+> la décision ci-dessus tient entière.
+>
+> Le rapprochement est **exact** (`fold`), comme partout ailleurs — un nom repris des
+> suggestions affiche sa démonstration, un nom écrit à la main n'en affiche pas, et c'est
+> l'état que la spécification de Cadence appelle bénin. Mesuré sur l'instance réelle :
+> « barbell full squat » et « 3/4 sit-up » résolvent, « Plank » et « Rowing » non — le
+> catalogue les appelle « front plank with twist » et « band one arm standing low row ».
+
 **Ce qui disparaît.** `circuit_link.ILLUSTRATED` et ses 35 noms, en trois endroits :
 
 | Fichier | Ce qu'il devient |

@@ -228,55 +228,14 @@ export interface RunDetail {
   context: RunContext;
 }
 
-export interface ExerciseEntry {
-  id: number;
-  token: string;
-  workout_id: string;
-  date: string;
-  exercise_id: string;
-  exercise_name: string;
-  muscle_group: string;
-  weight_kg: number;
-  sets: number;
-  reps: number;
-  note: string | null;
-  volume_kg: number;
-  one_rep_max_kg: number | null;
-}
-
-export interface Workout {
-  id: number;
-  token: string;
-  workout_id: string;
-  date: string;
-  type: string;
-  duration_min: number;
-  calories: number | null;
-  rpe: number | null;
-  note: string | null;
-  source: string;
-  exercises: ExerciseEntry[];
-  volume_kg: number;
-}
-
-export interface Exercise {
-  id: number;
-  token: string;
-  exercise_id: string;
-  name: string;
-  muscle_group: string;
-  /** Les autres écritures reconnues pour cet exercice (`C07`). */
-  aliases: string[];
-  /** Séries déjà consignées : ce qu'un retrait conserve, ce qu'une correction répercute. */
-  entries: number;
-  last_weight_kg: number | null;
-  last_reps: number | null;
-  last_sets: number | null;
-  last_date: string | null;
-}
-
 export interface ActivityItem {
+  /**
+   * `workout` désigne une **séance tabata déclarée faite**, plus une séance de
+   * musculation saisie à la main : celle-ci n'existe plus. Le mot du fil est resté celui
+   * de l'historique fusionné, où il distingue « ce qui n'est pas une course ».
+   */
   kind: 'run' | 'workout';
+  /** La position de la ligne dans son fichier — `runs.csv` ou `circuit_sessions.csv`. */
   id: number;
   token: string;
   date: string;
@@ -285,7 +244,7 @@ export interface ActivityItem {
   distance_km: number | null;
   pace_min_km: number | null;
   rpe: number | null;
-  /** Séries rattachées à une séance : ce que sa suppression emporterait (`ACT-04`). */
+  /** Les **rounds** d'une séance tabata. Zéro sur une course, qui n'en a pas. */
   entries: number;
   source: string;
 }
@@ -311,12 +270,6 @@ export interface WeekVolume {
   sessions: number;
 }
 
-export interface MuscleVolume {
-  muscle_group: string;
-  volume_kg: number;
-  sets: number;
-}
-
 export interface NeglectedGroup {
   muscle_group: string;
   days_since: number | null;
@@ -329,67 +282,11 @@ export interface ActivityOverview {
   week: WeekTotals;
   days: DayVolume[];
   weeks: WeekVolume[];
-  muscles: MuscleVolume[];
   neglected: NeglectedGroup[];
   history: ActivityItem[];
   total: number;
 }
 
-/**
- * Un exercice lu dans une note, **avant** toute écriture (`C07`).
- *
- * `status` dit ce que la ligne coûterait si on la validait, et l'écran les distingue
- * parce qu'elles ne coûtent pas la même chose :
- *
- * * `known` — l'exercice existe, rien à écrire au catalogue ;
- * * `alias` — même mouvement sous un autre nom : la graphie de la note s'ajoute en alias,
- *   et le nom du catalogue s'impose ;
- * * `new` — absent du catalogue, à créer avec le groupe déduit.
- */
-export interface NoteLine {
-  name: string;
-  muscle_group: string;
-  sets: number | null;
-  reps: number | null;
-  /** `0` = poids du corps, valeur légitime. `null` = absente ou dans une autre unité. */
-  weight_kg: number | null;
-  /** Pourquoi la charge est vide, quand il y a une raison — « charge en lbs ». */
-  note: string | null;
-  status: 'known' | 'alias' | 'new';
-  exercise_id: string | null;
-  /** Sur un `alias` : la graphie de la note, à ajouter à l'exercice du catalogue. */
-  alias_of: string | null;
-}
-
-export interface NoteDraft {
-  lines: NoteLine[];
-  source_text: string;
-}
-
-export interface ExerciseProgress {
-  exercise_id: string;
-  name: string;
-  muscle_group: string;
-  last_weight_kg: number | null;
-  last_date: string | null;
-  delta_kg: number | null;
-  max_series: number[];
-  dates: string[];
-  best_weight_kg: number | null;
-  best_one_rep_max_kg: number | null;
-}
-
-/**
- * Les champs souples restent des chaînes jusqu'au serveur.
- *
- * **Distance et allure ne s'envoient pas ensemble sans conséquence.** Elles sont deux
- * lectures du même trajet, liées par la durée, et le serveur en calcule toujours une
- * depuis l'autre — jamais ce client. Quand les deux partent, l'allure l'emporte et la
- * distance est recalculée : c'est la règle du serveur, et l'écran envoie donc **celle que
- * l'utilisateur vient de corriger**.
- *
- * L'une des deux au moins est requise ; une durée seule est refusée.
- */
 export interface RunPayload {
   date: string;
   duration_min: string;
@@ -402,44 +299,13 @@ export interface RunPayload {
   note?: string | null;
 }
 
-export interface WorkoutPayload {
-  date: string;
-  type: string;
-  duration_min: string;
-  calories?: string | null;
-  rpe?: number | null;
-  note?: string | null;
-  /**
-   * Les exercices de la séance, écrits **avec elle**.
-   *
-   * Facultatif : le journal consigne toujours série par série, au fil de la séance.
-   * C'est l'assistant de saisie qui s'en sert — il construit la séance entière avant de
-   * rien écrire, pour qu'un abandon ne laisse pas une séance vide dans l'historique.
-   */
-  exercises?: ExerciseEntryPayload[];
-}
-
-export interface ExerciseEntryPayload {
-  exercise_id: string;
-  weight_kg: string;
-  sets: number;
-  reps: number;
-  note?: string | null;
-}
-
+/** L'en-tête de garde d'une écriture destructrice (`STO-05`). */
 function guard(token: string): Record<string, string> {
   return { 'If-Match': token };
 }
 
 // ── Circuits ouverts dans Cadence Tabata ──────────────
 
-/**
- * Un exercice d'un circuit.
- *
- * `duration_s` et `reps` **s'excluent** : c'est celui qui vaut `null` qui dit la nature de
- * l'autre. La sentinelle `-1` du fichier CSV n'arrive jamais jusqu'ici — c'est une
- * convention de stockage, pas une valeur à interpréter à l'écran.
- */
 export interface CircuitExercise {
   position: number;
   name: string;
@@ -531,6 +397,37 @@ export interface CircuitPayload {
 export interface CircuitDonePayload {
   duration_min: number;
   rpe?: number | null;
+}
+
+/** Une série d'un exercice, dans une séance déclarée faite. */
+export interface CircuitSessionSet {
+  exercise_name: string;
+  muscle_group: string;
+  sets: number;
+  /** `null` sur un exercice au temps : la sentinelle du fichier ne sort pas de l'API. */
+  reps: number | null;
+}
+
+/**
+ * Un circuit **déclaré fait**, tel que le serveur le rend.
+ *
+ * Elle a remplacé `Workout` dans la réponse de « je l'ai fait » : la séance de
+ * musculation manuelle n'existe plus, et rendre l'ancien schéma aurait obligé l'écran à
+ * lire un `type` et un `workout_id` qui ne désignent plus rien.
+ */
+export interface CircuitSession {
+  id: number;
+  token: string;
+  session_id: string;
+  circuit_id: string;
+  date: string;
+  /** Le nom du circuit au moment où il a été fait (`ACT-06`). */
+  name: string;
+  rounds: number;
+  duration_min: number;
+  rpe: number | null;
+  source: string;
+  sets: CircuitSessionSet[];
 }
 
 // ── Charges des exercices de tabata ───────────────────
@@ -632,6 +529,18 @@ export interface LoadDetail {
   /** **Exactement 30 entrées**, la dernière étant le jour du serveur. */
   sessions: LoadDay[];
   circuits: string[];
+  /**
+   * L'adresse du GIF de démonstration, servi par l'instance Cadence de l'utilisateur.
+   *
+   * `null` dans trois cas — pas d'adresse de base réglée, instance injoignable, nom sans
+   * correspondance exacte au catalogue — et l'écran ne les distingue pas : aucun n'appelle
+   * un geste différent, et « démonstration indisponible » ferait passer pour une panne
+   * l'état normal d'un exercice écrit à la main.
+   *
+   * Metric ne relaie aucun octet : le navigateur va chercher l'image là où elle est déjà
+   * servie. L'adresse porte donc la clé d'accès de la base.
+   */
+  demo_url: string | null;
 }
 
 export interface LoadPayload {
@@ -642,8 +551,6 @@ export interface LoadPayload {
 
 export const activityApi = {
   overview: () => request<ActivityOverview>('/api/activity'),
-  progress: () => request<ExerciseProgress[]>('/api/activity/progress'),
-  types: () => request<string[]>('/api/activity/types'),
   muscleGroups: () => request<string[]>('/api/activity/muscle-groups'),
 
   createRun: (payload: RunPayload) =>
@@ -661,20 +568,6 @@ export const activityApi = {
   deleteRun: (id: number, token: string) =>
     request<undefined>(`/api/activity/runs/${id}`, { method: 'DELETE', headers: guard(token) }),
 
-  createWorkout: (payload: WorkoutPayload) =>
-    request<Workout>('/api/activity/workouts', { method: 'POST', body: payload }),
-  readWorkout: (id: number) => request<Workout>(`/api/activity/workouts/${id}`),
-  updateWorkout: (id: number, token: string, payload: WorkoutPayload) =>
-    request<Workout>(`/api/activity/workouts/${id}`, {
-      method: 'PATCH',
-      headers: guard(token),
-      body: payload,
-    }),
-  deleteWorkout: (id: number, token: string) =>
-    request<undefined>(`/api/activity/workouts/${id}`, {
-      method: 'DELETE',
-      headers: guard(token),
-    }),
   circuits: () => request<CircuitList>('/api/activity/circuits'),
   circuitExercises: (query = '') =>
     request<CircuitSuggestion[]>(`/api/activity/circuits/exercises?q=${encodeURIComponent(query)}`),
@@ -717,66 +610,20 @@ export const activityApi = {
       body: { wish },
     }),
   completeCircuit: (id: number, payload: CircuitDonePayload) =>
-    request<Workout>(`/api/activity/circuits/${id}/done`, { method: 'POST', body: payload }),
-
-  duplicateWorkout: (id: number, date: string) =>
-    request<Workout>(`/api/activity/workouts/${id}/duplicate`, {
+    request<CircuitSession>(`/api/activity/circuits/${id}/done`, {
       method: 'POST',
-      body: { date },
+      body: payload,
     }),
-
-  exercises: () => request<Exercise[]>('/api/activity/exercises'),
 
   /**
-   * Lit une séance écrite en clair, ou photographiée. **N'écrit rien** (`C07`).
+   * Supprime une séance tabata **et ses séries**.
    *
-   * Une photo passe par le même modèle que le texte : l'OCR n'est pas une brique à part.
+   * C'est ce qui autorise « je l'ai fait » à ne rien demander : l'addition se défait par
+   * la suppression que l'utilisateur ferait de toute façon. Cadence ne pouvant pas dire à
+   * Metric qu'une séance a eu lieu, la déclarer deux fois reste possible.
    */
-  readNotes: (text: string, photo: File | null) => {
-    const form = new FormData();
-    if (text.trim()) form.set('text', text.trim());
-    if (photo) form.set('photo', photo);
-    return request<NoteDraft>('/api/activity/notes/read', { method: 'POST', form });
-  },
-
-  /** Fait reconnaître une autre écriture d'un exercice. Le nom du catalogue ne bouge pas. */
-  addAlias: (exerciseId: string, alias: string) =>
-    request<Exercise>(`/api/activity/exercises/${exerciseId}/aliases`, {
-      method: 'POST',
-      body: { alias },
-    }),
-  createExercise: (name: string, muscle_group: string, aliases?: string[]) =>
-    request<Exercise>('/api/activity/exercises', {
-      method: 'POST',
-      body: aliases === undefined ? { name, muscle_group } : { name, muscle_group, aliases },
-    }),
-  /** Corrige nom et groupe. Le serveur répercute la correction sur les séries (`ACT-06`). */
-  updateExercise: (id: number, token: string, name: string, muscle_group: string) =>
-    request<Exercise>(`/api/activity/exercises/${id}`, {
-      method: 'PATCH',
-      headers: guard(token),
-      body: { name, muscle_group },
-    }),
-  deleteExercise: (id: number, token: string) =>
-    request<undefined>(`/api/activity/exercises/${id}`, {
-      method: 'DELETE',
-      headers: guard(token),
-    }),
-
-  logExercise: (workoutId: number, payload: ExerciseEntryPayload) =>
-    request<ExerciseEntry>(`/api/activity/workouts/${workoutId}/exercises`, {
-      method: 'POST',
-      body: payload,
-    }),
-  /** La séance et le jour d'une série ne changent pas : le serveur les préserve. */
-  updateEntry: (id: number, token: string, payload: ExerciseEntryPayload) =>
-    request<ExerciseEntry>(`/api/activity/exercise-log/${id}`, {
-      method: 'PATCH',
-      headers: guard(token),
-      body: payload,
-    }),
-  deleteEntry: (id: number, token: string) =>
-    request<undefined>(`/api/activity/exercise-log/${id}`, {
+  deleteSession: (id: number, token: string) =>
+    request<undefined>(`/api/activity/sessions/${id}`, {
       method: 'DELETE',
       headers: guard(token),
     }),
