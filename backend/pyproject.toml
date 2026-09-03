@@ -99,7 +99,27 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-filterwarnings = ["error"]
+filterwarnings = [
+  "error",
+  # **Une seule exception, et elle n'est pas la nôtre.** `starlette.testclient` lit
+  # `anyio.abc.BlockingPortal` au moment de l'import ; `anyio` 4.15 a transformé cet alias
+  # en shim qui avertit. La batterie tombe donc à la **collecte**, avant tout test, sur une
+  # dépréciation qu'aucune ligne du projet ne provoque et qu'aucune ne peut corriger.
+  #
+  # Écarté : figer `anyio < 4.15`. Ce serait retenir une bibliothèque du cœur asynchrone
+  # de l'application — celle qui porte le stockage et l'API — pour un avertissement qui
+  # n'existe qu'au banc d'essai. Le prix serait payé en production pour un défaut de test.
+  #
+  # Le filtre vise le message exact : il ne masque rien d'autre, et il ne masquera pas la
+  # rupture qui vient. Le jour où `anyio` **retire** l'alias, `starlette` lèvera une
+  # `ImportError` que ceci n'attrape pas. Cette ligne disparaît dès que starlette lit
+  # `anyio.from_thread.BlockingPortal` — vérifié à chaque montée de version.
+  #
+  # Trouvé en production, pas ici : l'installation du serveur est neuve à chaque release
+  # et résout les versions les plus récentes, là où le venv local vieillit. C'est pour
+  # cette raison que les versions locales ont été montées avec ce correctif.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
 # La couche stockage est asynchrone de bout en bout : `async def test_…` sans décorateur.
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
