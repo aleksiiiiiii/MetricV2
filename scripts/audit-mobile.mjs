@@ -69,11 +69,12 @@ const PRIVATE_ROUTES = [
   ['/', 'accueil'],
   ['/corps', 'corps'],
   ['/activite', 'activite'],
-  // Les deux sous-pages d'Activité. Même règle que la table `SURFACES` de
+  // Les sous-pages d'Activité. Même règle que la table `SURFACES` de
   // `audit-surfaces.mjs` : une page qui s'ajoute à l'application s'ajoute ici, sans quoi
-  // elle rejoint l'angle mort dont le lot vient de la sortir.
-  ['/activite/catalogue', 'activite-catalogue'],
-  ['/activite/statistiques', 'activite-statistiques'],
+  // elle rejoint l'angle mort dont le lot vient de la sortir — et une page qui en part
+  // s'en retire, sans quoi l'audit rend « écran vide » sur une adresse qui n'existe plus.
+  // `/activite/catalogue` et `/activite/statistiques` sont sorties avec la musculation
+  // saisie série par série (phase 5 de `docs/refonte-activite.md`).
   ['/activite/seances', 'activite-seances'],
   ['/activite/charges', 'activite-charges'],
   // La composition assistée. Elle est mesurée **vide** : sa proposition demande un

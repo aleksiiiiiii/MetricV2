@@ -62,15 +62,12 @@ const SURFACES = [
   // toujours. Partir de `/` ferait dépendre la mesure de la santé du tableau de bord.
   ['/activite', 'Noter', 'saisie rapide'],
   ['/activite', 'Plus', 'navigation « Plus »'],
-  // Les deux boutons « Nouvelle séance » et « Nouvelle course » ont laissé la place à un
-  // assistant qui demande la nature à sa première étape (`C06`). C'est cette première
-  // étape qu'on mesure ici ; les suivantes demandent de remplir des champs, ce que ce
-  // script s'interdit — il ouvre et il mesure, il ne saisit rien.
-  ['/activite', 'Enregistrer une activité', 'assistant d’activité'],
-  // Le catalogue avait deux lignes ici. Il n'est plus une feuille mais une page
-  // (`/activite/catalogue`), donc il est mesuré par `audit-mobile.mjs` comme les autres :
-  // le laisser ici rendait « bouton introuvable » sur trois largeurs, ce qui est un
-  // constat exact et une ligne de rapport inutile.
+  // L'assistant de saisie d'une course. Son étape « Course ou Séance ? » est partie avec
+  // la musculation saisie à la main : il ne reste qu'une nature, et la feuille ouvre
+  // directement sur la première étape du parcours. C'est elle qu'on mesure ; les suivantes
+  // demandent de remplir des champs, ce que ce script s'interdit — il ouvre et il mesure,
+  // il ne saisit rien.
+  ['/activite', 'Enregistrer une course', 'assistant de course'],
   ['/assistant', 'Mémoire', 'carnet de l’assistant'],
   ['/assistant', 'Discussions', 'fil de l’assistant'],
   // La feuille d'ajout d'un repas et ses quatre modes (C05). Elle s'ajoute ici le jour

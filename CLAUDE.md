@@ -155,8 +155,8 @@ et `routes/activity/`.
 ### Ce que `make check` couvre
 
 ```bash
-make check     # ruff, ruff format, mypy (157 fichiers), 1 120 tests backend
-               # prettier, eslint, tsc, 285 tests d'écran
+make check     # ruff, ruff format, mypy (203 fichiers), 1 681 tests backend
+               # prettier, eslint, tsc, 479 tests d'écran
 ```
 
 Il doit être vert **avant** de commiter, sans exception.
@@ -277,12 +277,17 @@ ce qui a été mesuré, ce qui a été écarté et pourquoi, et finit par ce qui
 
 | Sujet | État |
 |---|---|
-| `LogButton` casse les noms longs sur trois lignes, hauteurs inégales dans la grille | vu en capture sur `/activite` ; correction dans `primitives.tsx`, vaut aussi pour la saisie rapide |
-| Calculs métier côté client sur `/activite` | la tuile « Tonnage » somme `data.muscles[]`, deux `Bars` dérivent leur ratio d'un `Math.max` |
-| **Huit** écrans encore sur `className="wrap"` au lieu de `cx('wrap', styles.screen)` | `.wrap .wrap` neutralise la conséquence visible en attendant |
+| `LogButton` casse les noms longs sur trois lignes, hauteurs inégales dans la grille | la grille de `/activite` est partie avec le journal ; le défaut reste dans `primitives.tsx`, et donc sur la saisie rapide et `/activite/charges` |
+| **Onze** écrans encore sur `className="wrap"` au lieu de `cx('wrap', styles.screen)` | `.wrap .wrap` neutralise la conséquence visible en attendant |
 | Trois styles en ligne dans `routes/settings/Tracks.tsx` | `marginTop: 14`, qui contournent l'échelle `--s1`…`--s8` |
-| `Tracks.tsx` (856 l.) et `Planning.tsx` (877 l.) | à découper par section |
+| `Tracks.tsx` (856 l.) et `Planning.tsx` (919 l.) | à découper par section |
+| Les phases 4 et 6 de [`refonte-activite.md`](docs/refonte-activite.md) | la copie de sauvegarde, puis la suppression de `workouts.csv`, `exercises.csv` et `exercise_log.csv`. **À la main, par l'utilisateur** — ce sont de vraies données de santé et le projet n'a aucune annulation |
+| Aucune route ne supprime une charge (`circuit_loads.csv`) | on peut en créer et en corriger, jamais en retirer : une ligne dont l'exercice quitte tous les circuits devient invisible et survit dans le fichier |
+| La démonstration d'un exercice ne s'affiche que sur un nom **exact** du catalogue | `exercise_media.py` ; un rapprochement approximatif reproduirait celui de Cadence, ce que le dépôt refuse en toutes lettres |
 | Aucun écran n'a jamais été touché sur un **vrai téléphone** | l'émulation ne reproduit ni le pouce, ni le clavier système, ni la latence |
+
+Deux lignes sont sorties de ce tableau avec la phase 5 : les calculs métier de `/activite`
+(la tuile « Tonnage » et ses deux `Bars`) ont disparu avec l'écran qui les portait.
 
 **Un point d'environnement** : une instance d'API tourne parfois depuis plusieurs jours sur
 le port 8000 avec un stockage Nextcloud devenu injoignable. Symptôme : `storage_unavailable`

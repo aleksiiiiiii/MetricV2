@@ -1,5 +1,14 @@
 # `/activite` — refonte des gestes sur les exercices et les séances
 
+> **Document historique (3 septembre 2026).** Ce plan décrit l'écran d'avant la refonte de
+> l'activité : le journal série par série, le catalogue de Metric, les statistiques de
+> tonnage. La **phase 5** de [`refonte-activite.md`](refonte-activite.md) a supprimé tout
+> cela avec `exercise_log.csv`. Ce qui reste vrai ici est le **raisonnement** — pourquoi ce
+> qu'on fait passe devant ce qu'on lit, pourquoi un geste n'est jamais la seule porte,
+> pourquoi une correction impossible contamine tout ce qui en dérive. Ce qui est faux est
+> l'inventaire des écrans et des routes. Ne pas s'en servir comme description de
+> l'existant ; pour ça, c'est le code.
+
 Plan de travail. Il décrit ce qui change dans la mise en page, par quelle porte chaque
 geste devient accessible, et ce qu'il faut écrire côté serveur.
 

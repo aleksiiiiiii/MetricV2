@@ -246,4 +246,59 @@ des défauts sont sortis là et zéro de la batterie.
 
 ---
 
+---
+
+## 9. Journal
+
+### Phase 5 — la suppression (2 → 3 septembre 2026)
+
+**+1 052 / −5 093 lignes.** Le backend est parti d'abord — `notes.py`, les routes
+`workouts` / `exercises` / `exercise-log`, la moitié de `stats.py`, trois actions et trois
+tranches de l'assistant — puis le front : `Journal.tsx`, `Catalogue.tsx`, `Stats.tsx`,
+`NotesStep.tsx`, et `Activity.test.tsx` réécrit de 1 324 à 290 lignes.
+
+**Trois choses que le plan disait mal, et que le code a corrigées :**
+
+1. **`ActivitySheet.tsx` et `NewActivitySheet.tsx` ne partent pas.** Le §2 les rangeait
+   sous « la saisie d'une séance muscu ». Ce sont aussi, et surtout, **les seuls endroits
+   d'où l'on crée ou corrige une course** — les supprimer aurait emporté ce que **R1**
+   protège explicitement. C'est leur moitié séance qui est partie. L'étape « Course ou
+   Séance ? » de l'assistant disparaît avec elle : il ne reste qu'une réponse possible, et
+   la poser serait un appui de plus pour rien.
+2. **Une séance tabata ne se supprimait pas.** `mark_done` n'exige aucun `If-Match` et ne
+   demande aucune confirmation ; l'invariant qui l'autorise dit qu'une addition se défait
+   par la suppression que l'utilisateur ferait de toute façon. Il n'existait ni route ni
+   méthode pour la faire. `DELETE /activity/sessions/{row_id}` comble le trou, emporte les
+   séries **avant** la séance — des séries orphelines seraient invisibles à l'écran et
+   comptées par l'assiduité — et vérifie le jeton avant de toucher à quoi que ce soit, pour
+   qu'un conflit ne détruise pas le détail d'une séance qu'il conserve.
+3. **La décision laissée ouverte au §8 est tranchée : l'historique reste.** Il est
+   rebranché sur `circuit_sessions.csv` plutôt que supprimé. Une séance y dit ses
+   **rounds** — le seul des deux nombres que la réponse porte — et n'offre plus ni
+   « ouvrir » ni « corriger » : il n'y a plus de journal, et le serveur n'a aucune route
+   pour modifier une séance. `/activite` garde donc une réponse à « qu'est-ce que j'ai fait
+   la semaine dernière ».
+
+### Phase 7 — le nettoyage (3 septembre 2026)
+
+Les deux tables d'audit, qui mesuraient des adresses disparues : `/activite/catalogue` et
+`/activite/statistiques` sortent de `audit-mobile.mjs`, et `SURFACES` vise « Enregistrer
+une course » au lieu de « Enregistrer une activité ». Sans ça, l'audit rendait « écran
+vide » et « bouton introuvable » sur trois largeurs — des constats exacts et trois lignes
+de rapport inutiles.
+
+`CLAUDE.md` §5 et §7 : les compteurs (1 681 tests backend, 479 d'écran, 203 fichiers mypy)
+et le tableau de ce qui est ouvert. Deux lignes en sortent — les calculs métier côté client
+de `/activite` sont partis avec l'écran qui les portait ; deux y entrent, dont les phases 4
+et 6, qui restent à faire **à la main**.
+
+[`activite-ux.md`](activite-ux.md) porte un bandeau : son raisonnement tient, son inventaire
+d'écrans et de routes ne décrit plus rien.
+
+### Ce qui reste
+
+Les phases **4** et **6**, dans cet ordre et par l'utilisateur : la copie de sauvegarde
+hors de `activity/`, vérifiée lisible, **puis** la suppression de `workouts.csv`,
+`exercises.csv` et `exercise_log.csv`. Le code ne les lit plus — les mentions qui restent
+dans le dépôt sont des commentaires qui expliquent d'où vient une règle, pas des lectures.
 
