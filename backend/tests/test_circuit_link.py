@@ -205,6 +205,34 @@ def test_no_base_address_means_no_link_at_all() -> None:
     assert build_url("   ", LinkCircuit("A", 1, 0, (timed("Ex", 30),))) is None
 
 
+@pytest.mark.parametrize(
+    ("base", "expected"),
+    [
+        ("https://ct.exemple.fr", "https://ct.exemple.fr?w=A~1~0~Ex:30s:0"),
+        # Une base qui porte déjà une clé d'accès : le paramètre de séance s'ajoute avec
+        # `&`. Un second `?` donnerait une chaîne qui ressemble à une URL, où Cadence ne
+        # lirait aucune séance — et l'écran, lui, afficherait un bouton « Ouvrir ».
+        (
+            "https://ct.exemple.fr/?key=274",
+            "https://ct.exemple.fr/?key=274&w=A~1~0~Ex:30s:0",
+        ),
+        # Une base collée avec son `?` ou son `&` final ne gagne pas de séparateur en
+        # double : `…?&w=` serait lisible par un navigateur, mais pas par un humain.
+        ("https://ct.exemple.fr/?", "https://ct.exemple.fr/?w=A~1~0~Ex:30s:0"),
+        ("https://ct.exemple.fr/?key=274&", "https://ct.exemple.fr/?key=274&w=A~1~0~Ex:30s:0"),
+    ],
+)
+def test_the_workout_param_joins_an_address_that_already_has_one(base: str, expected: str) -> None:
+    circuit = LinkCircuit("A", 1, 0, (timed("Ex", 30),))
+
+    url = build_url(base, circuit)
+
+    assert url == expected
+    # Et le lien reste relisible : `_raw_param` cherche `w` parmi les paramètres, il ne
+    # suppose pas qu'il est le premier.
+    assert parse_url(expected) == circuit
+
+
 def test_a_circuit_without_a_named_exercise_has_no_link() -> None:
     assert build_url(BASE, LinkCircuit("A", 1, 0, (timed("  ", 30),))) is None
 

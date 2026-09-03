@@ -10,8 +10,10 @@ attrapent la faute de frappe et le champ mal rempli, pas la performance inhabitu
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from pydantic import AfterValidator, Field
 
@@ -115,24 +117,74 @@ Label = Annotated[str, Field(min_length=1, max_length=80, description="Libellé 
 
 # ── Adresses d'applications externes ──────────────────
 
-#: Adresse **de base** d'une application tierce, à laquelle on ajoutera une query string.
-#:
-#: Trois bornes, et chacune évite un lien cassé plutôt qu'une valeur aberrante :
+#: Le paramètre que le lien de séance ajoute (`activity/circuit_link.py`). Il est nommé
+#: ici parce que c'est exactement ce qu'une adresse **de base** n'a pas le droit de porter
+#: déjà : deux `w` dans une URL, et Cadence en exécute un des deux, en silence.
+WORKOUT_PARAM = "w"
+
+#: Forme d'une adresse de base exploitable. Trois bornes, et chacune évite un lien cassé
+#: plutôt qu'une valeur aberrante :
 #:
 #: * **La chaîne vide est acceptée**, et c'est une valeur au sens plein : elle veut dire
 #:   « pas d'adresse ». Sans elle, un réglage renseigné par erreur ne pourrait plus être
 #:   effacé — il n'y a pas de défaut sur lequel retomber, contrairement à un objectif.
-#: * **Ni `?` ni `#`.** Une base qui porte déjà une query string ou une ancre donnerait
-#:   `…?a=b?w=…` une fois le paramètre ajouté, ce qui n'est pas une URL mais un texte qui
-#:   y ressemble. Le refus arrive à la saisie, où il se corrige, et non à l'ouverture du
-#:   lien, où il ne se comprend pas.
+#: * **Une query string est admise, une ancre non.** Une base peut légitimement porter des
+#:   paramètres — une clé d'accès, par exemple (`https://…/?key=…`) : le paramètre de
+#:   séance s'y ajoute alors avec `&`, ce que `build_url` sait faire. Un `#`, lui, n'a pas
+#:   d'équivalent : tout ce qui suit une ancre est le fragment, donc `…#x?w=…` ne porte
+#:   aucun paramètre et Cadence ouvrirait son écran d'accueil.
 #: * **`http` ou `https` seulement.** Un `javascript:` ou un `data:` dans un `href` rendu
 #:   par l'application est une porte qu'on n'ouvre pas, fût-elle à un seul utilisateur.
+BASE_URL_PATTERN = r"^$|^https?://[^\s?#]+(\?[^\s#]*)?$"
+
+_BASE_URL = re.compile(BASE_URL_PATTERN)
+
+
+def _carries_workout_param(url: str) -> bool:
+    """Vrai si l'adresse porte déjà le paramètre de séance.
+
+    Découpage à la main plutôt que `parse_qs` : on ne compare que des noms de paramètres,
+    et décoder la valeur — qui est une séance entière, tildes et `%7E` compris — n'aurait
+    aucun intérêt ici.
+    """
+    query = urlsplit(url).query
+    return any(part.split("=", 1)[0] == WORKOUT_PARAM for part in query.split("&") if part)
+
+
+def reject_workout_param(value: str) -> str:
+    """Refuse une base qui décrit déjà une séance.
+
+    C'est l'adresse **de l'application** qui est demandée, pas un lien de séance copié
+    depuis Cadence. Le refus arrive à la saisie, où il se corrige, et non à l'ouverture du
+    lien, où une séance en remplacerait silencieusement une autre.
+    """
+    if _carries_workout_param(value):
+        raise ValueError("cette adresse porte déjà une séance : coller l'adresse de l'application")
+    return value
+
+
+#: Adresse **de base** d'une application tierce, à laquelle on ajoutera un paramètre.
 BaseUrl = Annotated[
     str,
     Field(
         max_length=200,
-        pattern=r"^$|^https?://[^\s?#]+$",
+        pattern=BASE_URL_PATTERN,
         description="Adresse de base d'une application externe, ou vide",
     ),
+    AfterValidator(reject_workout_param),
 ]
+
+
+def usable_base_url(raw: str) -> str:
+    """L'adresse si elle est exploitable, sinon la chaîne vide.
+
+    Les mêmes règles que `BaseUrl`, appliquées **en lecture** : la saisie est déjà bornée,
+    mais le fichier de réglages s'ouvre dans un tableur, et une cellule collée de travers
+    y est une possibilité normale. Le repli est la chaîne vide et non le texte tel quel —
+    une adresse abîmée donne **aucun lien**, un état que l'écran sait déjà dire, au lieu
+    d'un bouton « Ouvrir » qui mène à une page d'erreur.
+    """
+    cleaned = raw.strip()
+    if not _BASE_URL.match(cleaned) or _carries_workout_param(cleaned):
+        return ""
+    return cleaned

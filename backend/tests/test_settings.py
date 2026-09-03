@@ -136,7 +136,8 @@ def test_a_bogus_preset_list_keeps_the_readable_values(
     [
         "cadence.exemple.fr",  # sans protocole : un href relatif, pas une adresse
         "javascript:alert(1)",  # protocole qu'on ne rend jamais dans un href
-        "https://cadence.exemple.fr/?utm=x",  # une query string qui casserait le `?w=`
+        "https://cadence.exemple.fr/#accueil",  # une ancre avale le paramètre de séance
+        "https://cadence.exemple.fr/?w=deja",  # une séance, pas l'application
         "   ",  # cellule vidée à la main
     ],
 )
@@ -155,13 +156,23 @@ def test_an_unusable_base_url_gives_no_link_rather_than_a_broken_one(
     assert read(app_client, auth)["values"]["cadence_base_url"] == ""
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://cadence.exemple.fr/",
+        # Une clé d'accès dans l'adresse : c'est ce que sert une instance privée, et la
+        # base est alors inséparable de son paramètre. `build_url` ajoute le sien avec `&`.
+        "https://cadence.exemple.fr/?key=2740101265485712",
+    ],
+)
 def test_a_usable_base_url_is_served_as_written(
-    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav
+    app_client: TestClient, auth: dict[str, str], dav: FakeWebDav, raw: str
 ) -> None:
-    """La barre finale est conservée : c'est l'adresse de l'utilisateur, pas la nôtre."""
-    dav.seed(FILE, "key,value\ncadence_base_url,https://cadence.exemple.fr/\n")
+    """La barre finale et la query string sont conservées : c'est l'adresse de
+    l'utilisateur, pas la nôtre."""
+    dav.seed(FILE, f"key,value\ncadence_base_url,{raw}\n")
 
-    assert read(app_client, auth)["values"]["cadence_base_url"] == "https://cadence.exemple.fr/"
+    assert read(app_client, auth)["values"]["cadence_base_url"] == raw
 
 
 # ── Modification (`L08-02`) ───────────────────────────
@@ -291,10 +302,12 @@ def test_the_token_changes_when_the_file_changes(
         ("hydration_presets_ml", []),
         ("hydration_presets_ml", [100, 200, 300, 400, 500, 600, 700]),
         ("heatmap_metric", ""),
-        # Les trois formes que `BaseUrl` refuse. La chaîne vide, elle, est légitime et
-        # se vérifie plus bas — c'est l'effacement du réglage.
+        # Les quatre formes que `BaseUrl` refuse. Une query string, elle, est acceptée
+        # depuis qu'une instance privée peut porter sa clé d'accès dans l'adresse ; la
+        # chaîne vide l'est aussi, et se vérifie plus bas — c'est l'effacement du réglage.
         ("cadence_base_url", "cadence.exemple.fr"),
         ("cadence_base_url", "javascript:alert(1)"),
+        ("cadence_base_url", "https://cadence.exemple.fr/#accueil"),
         ("cadence_base_url", "https://cadence.exemple.fr/?w=deja"),
     ],
 )
@@ -317,6 +330,10 @@ def test_the_base_url_can_be_set_then_cleared(app_client: TestClient, auth: dict
     """
     assert patch(app_client, auth, cadence_base_url="https://cadence.exemple.fr").status_code == 200
     assert read(app_client, auth)["values"]["cadence_base_url"] == "https://cadence.exemple.fr"
+
+    keyed = "https://cadence.exemple.fr/?key=2740101265485712"
+    assert patch(app_client, auth, cadence_base_url=keyed).status_code == 200
+    assert read(app_client, auth)["values"]["cadence_base_url"] == keyed
 
     assert patch(app_client, auth, cadence_base_url="").status_code == 200
     assert read(app_client, auth)["values"]["cadence_base_url"] == ""

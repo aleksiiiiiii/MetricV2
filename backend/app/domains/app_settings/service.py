@@ -13,9 +13,9 @@ plutôt que de propager une erreur — c'est un confort d'affichage, pas une don
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 
+from app.core.validation import usable_base_url
 from app.domains.app_settings.models import SettingRow
 from app.domains.app_settings.schemas import SettingsPayload, SettingsValues, SettingsView
 from app.storage.csv_repo import CsvRepository
@@ -64,25 +64,6 @@ def _volumes(raw: str, fallback: list[int]) -> list[int]:
     return values or fallback
 
 
-#: La forme qu'une adresse de base doit avoir pour être exploitable. Le même motif que
-#: `BaseUrl` de `core/validation.py`, appliqué **en lecture** : la saisie est déjà bornée,
-#: mais le fichier s'ouvre dans un tableur, et une cellule collée de travers y est une
-#: possibilité normale.
-_BASE_URL = re.compile(r"^https?://[^\s?#]+$")
-
-
-def _base_url(raw: str) -> str:
-    """Adresse de base lisible, ou rien.
-
-    Le repli est la chaîne vide et non le texte tel quel, et c'est tout l'intérêt : une
-    adresse abîmée donne **aucun lien** — un état que l'écran sait déjà dire — au lieu
-    d'un bouton « Ouvrir » qui mène à une page d'erreur. Le principe est celui du module :
-    un réglage illisible ne casse jamais un écran, il retombe sur son défaut.
-    """
-    cleaned = raw.strip()
-    return cleaned if _BASE_URL.match(cleaned) else ""
-
-
 def _render(value: object) -> str:
     """Sérialise une valeur typée vers la cellule du fichier.
 
@@ -107,7 +88,10 @@ def _typed(raw: dict[str, str]) -> SettingsValues:
         target_hydration_ml=_whole(raw["target_hydration_ml"], 2000),
         hydration_presets_ml=_volumes(raw["hydration_presets_ml"], [250, 500, 750]),
         heatmap_metric=raw["heatmap_metric"].strip() or "activity",
-        cadence_base_url=_base_url(raw["cadence_base_url"]),
+        # `usable_base_url` et non un motif recopié ici : la règle de ce qu'est une
+        # adresse exploitable vit avec `BaseUrl`, qui la fait respecter à la saisie.
+        # Deux écritures finiraient par diverger, et l'écart ne se verrait qu'au clic.
+        cadence_base_url=usable_base_url(raw["cadence_base_url"]),
     )
 
 

@@ -234,7 +234,7 @@ function CadenceCard({
             spellCheck={false}
             value={value}
             error={error}
-            hint="Sans « ? » ni « # » : le paramètre de séance s’ajoute après · vide pour effacer"
+            hint="Une clé dans l’adresse est acceptée, une ancre « # » non · vide pour effacer"
             onChange={onChange}
           />
         </div>

@@ -420,7 +420,8 @@ Nommé plutôt qu'oublié.
 1. **La borne est une borne de lien, pas de vraisemblance.** `BaseUrl` refuse `?` et `#`
    — une base qui en porte donnerait `…?a=b?w=…` une fois le paramètre ajouté — et refuse
    tout ce qui n'est pas `http`/`https`, parce que la valeur finit dans un `href` rendu par
-   l'application. Le refus arrive à la saisie, où il se corrige.
+   l'application. Le refus arrive à la saisie, où il se corrige. *(Le refus du `?` est
+   tombé le 2 septembre 2026 — voir la dernière entrée de ce journal ; le reste tient.)*
 2. **Une adresse abîmée retombe sur rien, pas sur elle-même.** Le fichier s'ouvre dans un
    tableur ; une cellule collée de travers y est normale. Le service applique le même motif
    **en lecture** et rend la chaîne vide : l'écran dit alors « non renseignée », un état
@@ -819,3 +820,29 @@ la première exception à « aucune couleur en dur » en appellerait une seconde
 vérifier que le nœud était encore dans le document. Tout ce qui vide le corps de la page
 laissait la variable pointer sur une surface détachée, et **plus aucune célébration ne
 s'affichait** — sans qu'une ligne de code puisse le dire. `isConnected` règle le cas.
+
+### Une base peut porter sa clé d'accès (2 septembre 2026)
+
+L'instance visée est `https://ct.aleksi.systems/?key=2740101265485712` : une installation
+privée sert sa clé **dans l'adresse**. La base et son paramètre y sont inséparables, et
+`BaseUrl` les refusait — le refus du `?` supposait que toute base était un domaine nu.
+
+**Ce qui change, et ce qui ne change pas :**
+
+- `BaseUrl` **accepte une query string**. `build_url` colle alors son paramètre avec `&`,
+  et avec `?` quand il n'y en a pas — une base finissant déjà par `?` ou `&` n'en gagne pas
+  un second.
+- **`#` reste refusé**, et pour une raison qui n'a pas d'échappatoire : tout ce qui suit une
+  ancre est le fragment, jamais un paramètre. `…#x&w=…` n'ouvrirait aucune séance.
+- **`?w=` reste refusé**, mais la règle a déménagé du motif vers un validateur. Elle demande
+  de lire les noms de paramètres, ce qu'une expression régulière de champ ne fait pas
+  lisiblement ; en échange, le message est en français — « cette adresse porte déjà une
+  séance » — au lieu du motif brut que pydantic affichait à l'utilisateur.
+- **Une seule écriture de la règle.** Le service des réglages appliquait sa propre copie du
+  motif en lecture ; il appelle maintenant `usable_base_url`, à côté de `BaseUrl`. Deux
+  écritures auraient divergé sur ce lot précisément, et l'écart ne se serait vu qu'au clic.
+
+**Vérifié** : les liens des cinq exemples de la spécification sont inchangés (base sans
+query), le lien d'une base à clé se relit par `parse_url` — `_raw_param` cherchait déjà `w`
+parmi les paramètres sans supposer qu'il est le premier —, et les quatre formes refusées à
+la saisie le sont encore.

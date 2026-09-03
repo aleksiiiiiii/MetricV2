@@ -186,7 +186,20 @@ def build_url(base: str, circuit: LinkCircuit) -> str | None:
             field += f":{_encode(exercise.note)}"
         segments.append(field)
 
-    return f"{base.strip()}?w=" + "~".join(segments)
+    return _with_workout(base.strip(), "~".join(segments))
+
+
+def _with_workout(base: str, workout: str) -> str:
+    """Colle le paramètre de séance à l'adresse de base.
+
+    `&` quand la base porte déjà une query string, `?` sinon. Certaines installations de
+    Cadence servent une clé d'accès dans l'adresse (`https://…/?key=…`) : un `?` de plus
+    donnerait une chaîne qui ressemble à une URL sans en être une, et le paramètre `w`
+    n'arriverait pas. C'est le pendant de ce que `BaseUrl` accepte désormais à la saisie.
+    """
+    if base.endswith(("?", "&")):
+        return f"{base}w={workout}"
+    return f"{base}{'&' if '?' in base else '?'}w={workout}"
 
 
 def _whole(raw: str, fallback: int) -> int:
